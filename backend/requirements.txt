@@ -1,0 +1,7 @@
+Django==5.2.4
+djangorestframework
+django-cors-headers
+web3
+eth-account
+python-decouple
+requests 
