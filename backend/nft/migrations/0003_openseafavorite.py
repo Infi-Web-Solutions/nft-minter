@@ -1,0 +1,35 @@
+# Generated manually for OpenSeaFavorite model
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('nft', '0002_userprofile_following'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='OpenSeaFavorite',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('user_address', models.CharField(max_length=42)),
+                ('opensea_nft_id', models.CharField(max_length=255)),
+                ('nft_name', models.CharField(max_length=255)),
+                ('nft_description', models.TextField(blank=True, null=True)),
+                ('nft_image_url', models.URLField()),
+                ('nft_collection', models.CharField(blank=True, max_length=255, null=True)),
+                ('nft_token_id', models.CharField(blank=True, max_length=100, null=True)),
+                ('nft_contract_address', models.CharField(blank=True, max_length=42, null=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+            ],
+            options={
+                'db_table': 'opensea_favorites',
+            },
+        ),
+        migrations.AlterUniqueTogether(
+            name='openseafavorite',
+            unique_together={('user_address', 'opensea_nft_id')},
+        ),
+    ]

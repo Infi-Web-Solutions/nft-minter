@@ -1,0 +1,4 @@
+# Example .env for Sepolia deployment
+PRIVATE_KEY=ebb51a573b7dbfb3163e8f856249b75d9f973f78c17760f937a5eea285cfbe8b
+TESTNET_URL=https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE
+ETHERSCAN_API_KEY=UKBK8JQV3H56272HGXQVGEY9UNZIMG4DSE
