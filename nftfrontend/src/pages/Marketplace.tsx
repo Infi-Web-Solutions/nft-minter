@@ -12,10 +12,12 @@ import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { useSearchParams } from 'react-router-dom';
 
 const Marketplace = () => {
   const { address } = useWallet();
   const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const [searchParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeTab, setActiveTab] = useState('all');
@@ -29,6 +31,19 @@ const Marketplace = () => {
     collections: [] as string[],
     blockchain: [] as string[]
   });
+
+  // Initialize filters from URL query params
+  useEffect(() => {
+    const category = (searchParams.get('category') || '').toLowerCase();
+    const statusParam = searchParams.get('status');
+
+    if (category && ['all', 'art', 'gaming', 'music'].includes(category)) {
+      setActiveTab(category);
+    }
+    if (statusParam) {
+      setFilters(prev => ({ ...prev, status: [statusParam] }));
+    }
+  }, [searchParams]);
 
   // Fetch NFTs from API
   useEffect(() => {
