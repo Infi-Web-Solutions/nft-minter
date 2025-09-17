@@ -11,6 +11,7 @@ import Footer from '@/components/Footer';
 import { apiService } from '@/services/api';
 import { toast } from 'sonner';
 import { nftService, NFT } from '@/services/nftService';
+import { apiUrl } from '@/config';
 
 interface Collection {
   name: string;
@@ -116,7 +117,7 @@ const Rankings = () => {
         const addressToAvatar = new Map<string, string>();
         await Promise.all(uniqueCreators.map(async (addr) => {
           try {
-            const res = await fetch(`http://localhost:8000/api/profiles/${addr}/`);
+            const res = await fetch(apiUrl(`/profiles/${addr}/`));
             const data = await res.json();
             if (data?.success) {
               addressToAvatar.set(addr, data.data?.avatar_url || '');
@@ -139,7 +140,6 @@ const Rankings = () => {
           const creatorAddr = items[0]?.creator_address || items[0]?.owner_address || '';
           const avatar = (creatorAddr && addressToAvatar.get(creatorAddr)) || '';
           return {
-            id: items[0]?.collection?.slug ? undefined : undefined,
             name,
             description: '',
             image_url: avatar || items[0]?.image_url || '',
@@ -521,7 +521,7 @@ const Rankings = () => {
                         </div>
                         <div>
                           <p className="text-muted-foreground mb-1">24h Volume</p>
-                          <p className="font-medium">Ξ {formatVolume((collection as any).volume_24h ?? (collection as any).total_volume || 0)}</p>
+                          <p className="font-medium">Ξ {formatVolume(((collection as any).volume_24h ?? (collection as any).total_volume) || 0)}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground mb-1">24h Change</p>

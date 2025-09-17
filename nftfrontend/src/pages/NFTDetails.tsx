@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
 import { nftService } from '@/services/nftService';
+import { apiUrl } from '@/config';
 
 const NFTDetails = () => {
   const { id } = useParams();
@@ -59,7 +60,7 @@ const NFTDetails = () => {
         
         console.log('[NFTDetails] Fetching NFT with combined ID:', id);
         
-        const res = await fetch(`http://localhost:8000/api/nfts/combined/${id}/`);
+        const res = await fetch(apiUrl(`/nfts/combined/${id}/`));
         const data = await res.json();
         if (data.success) {
           nftData = data.data;
@@ -96,7 +97,7 @@ const NFTDetails = () => {
         // Fetch owner and creator profiles if addresses are available
         if (nftData.owner_address) {
           try {
-            const ownerRes = await fetch(`http://localhost:8000/api/profiles/${nftData.owner_address}/`);
+            const ownerRes = await fetch(apiUrl(`/profiles/${nftData.owner_address}/`));
             if (ownerRes.ok) {
             const ownerData = await ownerRes.json();
               if (ownerData.success) {
@@ -132,7 +133,7 @@ const NFTDetails = () => {
         
         if (nftData.creator_address) {
           try {
-            const creatorRes = await fetch(`http://localhost:8000/api/profiles/${nftData.creator_address}/`);
+            const creatorRes = await fetch(apiUrl(`/profiles/${nftData.creator_address}/`));
             if (creatorRes.ok) {
             const creatorData = await creatorRes.json();
               if (creatorData.success) {
@@ -184,7 +185,7 @@ const NFTDetails = () => {
   const fetchNFTStats = async (nftData: any) => {
     try {
       // Fetch NFT statistics from backend
-      const statsRes = await fetch(`http://localhost:8000/api/nfts/${nftData.id}/stats/`);
+      const statsRes = await fetch(apiUrl(`/nfts/${nftData.id}/stats/`));
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         if (statsData.success) {
@@ -208,7 +209,7 @@ const NFTDetails = () => {
     const fetchActivity = async () => {
       try {
         const activityId = id.startsWith('local_') ? id.replace('local_', '') : id;
-        const res = await fetch(`http://localhost:8000/api/activities/?nft=${activityId}`);
+        const res = await fetch(apiUrl(`/activities/?nft=${activityId}`));
         const data = await res.json();
         if (data.success) setActivity(data.data);
       } catch (e) { 
@@ -233,7 +234,7 @@ const NFTDetails = () => {
     if (!nft?.id) return;
     
     try {
-      const response = await fetch(`http://localhost:8000/api/nfts/${nft.id}/track-view/`, {
+      const response = await fetch(apiUrl(`/nfts/${nft.id}/track-view/`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

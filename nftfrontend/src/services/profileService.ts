@@ -1,16 +1,17 @@
 import { toast } from 'sonner';
+import { apiUrl } from '../config';
 
 export const createOrUpdateProfile = async (address: string) => {
   try {
     // First try to get the profile
-    const response = await fetch(`http://localhost:8000/api/profiles/${address}/`);
+    const response = await fetch(apiUrl(`/profiles/${address}/`));
     
     if (!response.ok && response.status !== 404) {
       throw new Error('Failed to check profile existence');
     }
     
     // If profile doesn't exist or we need to update it
-    const updateResponse = await fetch(`http://localhost:8000/api/profiles/${address}/update/`, {
+    const updateResponse = await fetch(apiUrl(`/profiles/${address}/update/`), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

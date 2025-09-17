@@ -12,6 +12,7 @@ import { apiService } from '@/services/api';
 import { toast } from 'sonner';
 import NFTCard from '@/components/NFTCard';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { apiUrl } from '@/config';
 
 interface Collection {
   name: string;
@@ -53,7 +54,7 @@ const Collections = () => {
         }
         // Fetch top liked NFTs from local combined endpoint
         console.log('[Collections] Fetching top liked NFTs...');
-        const nftsRes = await fetch('http://localhost:8000/api/nfts/combined/?sort=likes');
+        const nftsRes = await fetch(apiUrl('/nfts/combined/?sort=likes'));
         const nftsData = await nftsRes.json();
         if (nftsData.success) {
           setTopLikedNfts(nftsData.data || []);

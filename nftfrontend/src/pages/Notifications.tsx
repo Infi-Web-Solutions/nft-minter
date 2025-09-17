@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { apiUrl } from '@/config';
 import { Check, X, Clock, Heart, ShoppingBag, UserPlus, UserMinus, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -108,7 +109,7 @@ const Notifications = () => {
 
       // Follow/unfollow using followers snapshot
       try {
-        const followersRes = await fetch(`http://localhost:8000/api/profiles/${address}/followers/`);
+        const followersRes = await fetch(apiUrl(`/profiles/${address}/followers/`));
         const followersData = await followersRes.json();
         const key = `followersSnapshot:${address.toLowerCase()}`;
         const prev: string[] = JSON.parse(localStorage.getItem(key) || '[]');

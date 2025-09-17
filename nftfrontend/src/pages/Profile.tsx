@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { apiUrl } from '@/config';
 
 const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
@@ -58,7 +59,7 @@ const Profile = () => {
     if (!address) return;
     const fetchFollowers = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/profiles/${address}/followers/`);
+        const res = await fetch(apiUrl(`/profiles/${address}/followers/`));
         const data = await res.json();
         if (data.success) {
           setFollowersCount(data.count);
@@ -68,7 +69,7 @@ const Profile = () => {
     };
     const fetchFollowing = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/profiles/${address}/following/`);
+        const res = await fetch(apiUrl(`/profiles/${address}/following/`));
         const data = await res.json();
         if (data.success) {
           setFollowingCount(data.count);
@@ -83,7 +84,7 @@ const Profile = () => {
   // Follow/unfollow logic
   const handleFollow = async (targetAddress: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/profiles/${targetAddress}/follow/`, {
+      const res = await fetch(apiUrl(`/profiles/${targetAddress}/follow/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ follower_address: address })
@@ -102,7 +103,7 @@ const Profile = () => {
   };
   const handleUnfollow = async (targetAddress: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/profiles/${targetAddress}/unfollow/`, {
+      const res = await fetch(apiUrl(`/profiles/${targetAddress}/unfollow/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ follower_address: address })
@@ -195,7 +196,7 @@ const Profile = () => {
         }));
 
         // Save to backend
-        const response = await fetch(`http://localhost:8000/api/profiles/${address}/update/`, {
+        const response = await fetch(apiUrl(`/profiles/${address}/update/`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -228,7 +229,7 @@ const Profile = () => {
     if (!address) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/api/profiles/${address}/update/`, {
+      const response = await fetch(apiUrl(`/profiles/${address}/update/`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -258,7 +259,7 @@ const Profile = () => {
       if (!address) return;
       
       try {
-        const response = await fetch(`http://localhost:8000/api/profiles/${address}/`);
+        const response = await fetch(apiUrl(`/profiles/${address}/`));
         const data = await response.json();
         if (data.success) {
           setProfile(prev => ({
@@ -281,7 +282,7 @@ const Profile = () => {
     if (!address) return;
     const fetchCreatedNFTs = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/profiles/${address}/created/`);
+        const res = await fetch(apiUrl(`/profiles/${address}/created/`));
         const data = await res.json();
         if (data.success) setCreatedNFTs(data.data);
       } catch (e) { /* ignore */ }
@@ -294,7 +295,7 @@ const Profile = () => {
     if (!address) return;
     const fetchOwnedNFTs = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/profiles/${address}/nfts/`);
+        const res = await fetch(apiUrl(`/profiles/${address}/nfts/`));
         const data = await res.json();
         if (data.success) setOwnedNFTs(data.data);
       } catch (e) { /* ignore */ }
@@ -307,7 +308,7 @@ const Profile = () => {
     if (!address) return;
     const fetchActivity = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/activities/?user=${address}`);
+        const res = await fetch(apiUrl(`/activities/?user=${address}`));
         const data = await res.json();
         if (data.success) setActivity(data.data);
       } catch (e) { /* ignore */ }

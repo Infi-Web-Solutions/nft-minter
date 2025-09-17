@@ -36,14 +36,16 @@ export interface NFTResponse {
   error?: string;
 }
 
+import { apiUrl } from '../config';
+
 class NFTService {
-  private baseUrl = 'http://localhost:8000/api';
+  private baseUrl = apiUrl('');
 
   async getCombinedNFTs(userAddress?: string): Promise<NFT[]> {
     try {
       const url = userAddress 
-        ? `${this.baseUrl}/nfts/combined/?user_address=${userAddress}`
-        : `${this.baseUrl}/nfts/combined/`;
+        ? apiUrl(`/nfts/combined/?user_address=${userAddress}`)
+        : apiUrl('/nfts/combined/');
       
       const response = await fetch(url);
       const data: NFTResponse = await response.json();
@@ -65,7 +67,7 @@ class NFTService {
 
   async getUserCreatedNFTs(walletAddress: string): Promise<NFT[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/profiles/${walletAddress}/created/`);
+      const response = await fetch(apiUrl(`/profiles/${walletAddress}/created/`));
       const data = await response.json();
       
       if (data.success) {
@@ -82,7 +84,7 @@ class NFTService {
 
   async getUserCollectedNFTs(walletAddress: string): Promise<NFT[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/profiles/${walletAddress}/nfts/`);
+      const response = await fetch(apiUrl(`/profiles/${walletAddress}/nfts/`));
       const data = await response.json();
       
       if (data.success) {
@@ -101,7 +103,7 @@ class NFTService {
     try {
       console.log('[nftService] toggleNFTLike called with:', { nftId, nftId_type: typeof nftId, userAddress });
       // Pass the full combined ID (local_1, local_2, etc.) to the backend
-      const response = await fetch(`${this.baseUrl}/nfts/${nftId}/toggle-like/`, {
+      const response = await fetch(apiUrl(`/nfts/${nftId}/toggle-like/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_address: userAddress }),
@@ -117,7 +119,7 @@ class NFTService {
 
   async updateNFTOwner(tokenId: string | number, userAddress: string): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/nfts/${tokenId}/transfer/`, {
+      const response = await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_owner: userAddress }),
@@ -134,7 +136,7 @@ class NFTService {
   async getUserLikedNFTs(userAddress: string): Promise<NFT[]> {
     try {
       console.log('[nftService] getUserLikedNFTs called for:', userAddress);
-      const response = await fetch(`${this.baseUrl}/profiles/${userAddress}/liked/`);
+      const response = await fetch(apiUrl(`/profiles/${userAddress}/liked/`));
       const data = await response.json();
       
       if (data.success) {

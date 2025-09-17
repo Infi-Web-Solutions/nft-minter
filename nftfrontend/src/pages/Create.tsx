@@ -16,6 +16,7 @@ import { ethers } from 'ethers';
 import WalletGuard from '@/components/WalletGuard';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { apiUrl } from '@/config';
 
 // Import ABI and contract address
 import NFTMarketplaceABI from '../../../smartcontract/artifacts/contracts/nftmarketplace.sol/NFTMarketplace.json';
@@ -77,7 +78,7 @@ const Create = () => {
       formData.append('file', file);
       
       // Replace with your IPFS upload endpoint
-      const response = await fetch('http://localhost:8000/api/upload/ipfs/', {
+      const response = await fetch(apiUrl('/upload/ipfs/'), {
         method: 'POST',
         body: formData
       });
@@ -252,7 +253,7 @@ const Create = () => {
           collection: formData.collection || 'Default Collection',
           category: formData.category,
         };
-        await fetch('http://localhost:8000/api/nfts/register/', {
+        await fetch(apiUrl('/nfts/register/'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(registerData),

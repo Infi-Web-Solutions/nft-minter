@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import NFTCard from '@/components/NFTCard';
+import { apiUrl } from '@/config';
 
 const CollectionDetails = () => {
   const { slug } = useParams();
@@ -16,7 +17,7 @@ const CollectionDetails = () => {
       setLoading(true);
       try {
         // Fetch collection details (local only)
-        const colRes = await fetch(`http://localhost:8000/api/collections/?slug=${slug}`);
+        const colRes = await fetch(apiUrl(`/collections/?slug=${slug}`));
         const colData = await colRes.json();
         if (colData.success && colData.data.length > 0) {
           setCollection(colData.data[0]);
@@ -25,7 +26,7 @@ const CollectionDetails = () => {
         }
 
         // Fetch only local NFTs and filter by collection name
-        const nftsRes = await fetch(`http://localhost:8000/api/nfts/combined/`);
+        const nftsRes = await fetch(apiUrl(`/nfts/combined/`));
         const nftsData = await nftsRes.json();
         if (nftsData.success) {
           const filtered = (nftsData.data || []).filter((n: any) => {

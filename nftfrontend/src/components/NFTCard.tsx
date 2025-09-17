@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
 import { nftService } from '@/services/nftService';
+import { apiUrl } from '@/config';
 
 interface NFTCardProps {
   title: string;
@@ -150,7 +151,7 @@ const NFTCard = ({
           gas_price: 0,
         };
         if (simulated && address) payload.new_owner = address;
-        await fetch(`http://localhost:8000/api/nfts/${tokenId}/transfer/`, {
+        await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -170,7 +171,7 @@ const NFTCard = ({
         // Allow user to simulate purchase for testing
         try {
           toast.message('Insufficient funds. Proceeding with simulated transfer for testing.');
-          await fetch(`http://localhost:8000/api/nfts/${tokenId}/transfer/`, {
+          await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
@@ -210,7 +211,7 @@ const NFTCard = ({
       if (result && result.hash) {
         // Notify backend for activity logging
         try {
-          await fetch(`http://localhost:8000/api/nfts/${tokenId}/transfer/`, {
+          await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -226,7 +227,7 @@ const NFTCard = ({
         }
         // Call backend to set is_listed = true only if on-chain listing succeeded
         try {
-          const resp = await fetch(`http://localhost:8000/api/nfts/${tokenId}/set_listed/`, {
+          const resp = await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
           });
@@ -273,7 +274,7 @@ const NFTCard = ({
     if ((e.target as HTMLElement).closest('button,svg,a,input')) return;
     if (id) {
       try {
-        await fetch(`http://localhost:8000/api/nfts/${id}/track-view/`, {
+        await fetch(apiUrl(`/nfts/${id}/track-view/`), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

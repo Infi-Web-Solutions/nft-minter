@@ -22,6 +22,7 @@ import { useWallet } from '@/contexts/WalletContext';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { apiUrl } from '@/config';
 
 interface UserProfileData {
   id: string;
@@ -66,7 +67,7 @@ const UserProfile = () => {
       try {
         setLoading(true);
         console.log(`[UserProfile] Fetching profile for wallet: ${walletAddress}`);
-        const res = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/`);
+        const res = await fetch(apiUrl(`/profiles/${walletAddress}/`));
         console.log(`[UserProfile] Profile response status:`, res.status);
         const data = await res.json();
         console.log(`[UserProfile] Profile data:`, data);
@@ -93,13 +94,13 @@ const UserProfile = () => {
   const fetchSocialData = async () => {
     if (!walletAddress) return;
     try {
-      const followersRes = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/followers/`);
+      const followersRes = await fetch(apiUrl(`/profiles/${walletAddress}/followers/`));
       const followersData = await followersRes.json();
       if (followersData.success) {
         setFollowersCount(followersData.count);
       }
 
-      const followingRes = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/following/`);
+      const followingRes = await fetch(apiUrl(`/profiles/${walletAddress}/following/`));
       const followingData = await followingRes.json();
       if (followingData.success) {
         setFollowingCount(followingData.count);
@@ -107,7 +108,7 @@ const UserProfile = () => {
 
       // Check if current user is following this profile
       if (address && address !== walletAddress) {
-        const isFollowingRes = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/followers/`);
+        const isFollowingRes = await fetch(apiUrl(`/profiles/${walletAddress}/followers/`));
         const isFollowingData = await isFollowingRes.json();
         if (isFollowingData.success) {
           const isFollowingUser = isFollowingData.followers.some(
@@ -135,7 +136,7 @@ const UserProfile = () => {
         
         switch (activeTab) {
           case 'collected':
-            const collectedRes = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/nfts/`);
+            const collectedRes = await fetch(apiUrl(`/profiles/${walletAddress}/nfts/`));
             console.log(`[UserProfile] Collected NFTs response status:`, collectedRes.status);
             const collectedData = await collectedRes.json();
             console.log(`[UserProfile] Collected NFTs data:`, collectedData);
@@ -150,7 +151,7 @@ const UserProfile = () => {
             break;
             
           case 'created':
-            const createdRes = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/created/`);
+            const createdRes = await fetch(apiUrl(`/profiles/${walletAddress}/created/`));
             console.log(`[UserProfile] Created NFTs response status:`, createdRes.status);
             const createdData = await createdRes.json();
             console.log(`[UserProfile] Created NFTs data:`, createdData);
@@ -166,7 +167,7 @@ const UserProfile = () => {
             
           case 'liked':
             if (isOwnProfile) {
-              const likedRes = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/liked/`);
+              const likedRes = await fetch(apiUrl(`/profiles/${walletAddress}/liked/`));
               console.log(`[UserProfile] Liked NFTs response status:`, likedRes.status);
               const likedData = await likedRes.json();
               console.log(`[UserProfile] Liked NFTs data:`, likedData);
@@ -202,7 +203,7 @@ const UserProfile = () => {
 
     try {
       const endpoint = isFollowing ? 'unfollow' : 'follow';
-      const res = await fetch(`http://localhost:8000/api/profiles/${walletAddress}/${endpoint}/`, {
+      const res = await fetch(apiUrl(`/profiles/${walletAddress}/${endpoint}/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ follower_address: address })

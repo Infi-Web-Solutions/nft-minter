@@ -59,37 +59,86 @@ const Marketplace = () => {
   // Filter and sort NFTs based on current filters
   const filteredNfts = useMemo(() => {
     console.log('[Marketplace] Starting filter with', allNfts.length, 'NFTs');
-    
-    // Temporarily disable all filters to see if that's the issue
-    let filtered = allNfts;
-    
-    // Only apply tab filter for now
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(nft => nft.category === activeTab);
-      console.log('[Marketplace] After tab filter:', filtered.length);
-    }
-    
-    // Apply sorting
+
+    const getNumericPrice = (nft: NFT): number => {
+      // prefer explicit price, then current_price, then first sell order (wei -> ETH)
+      if (nft.price !== undefined && nft.price !== null) {
+        return typeof nft.price === 'string' ? parseFloat(nft.price) : nft.price;
+      }
+      if (nft.current_price !== undefined && nft.current_price !== null) {
+        return typeof nft.current_price === 'string' ? parseFloat(nft.current_price) : nft.current_price;
+      }
+      if (nft.sell_orders && nft.sell_orders.length > 0) {
+        const first = nft.sell_orders[0];
+        if (first.current_price !== undefined && first.current_price !== null) {
+          const raw = parseFloat(String(first.current_price));
+          if (!isNaN(raw)) return raw / (10 ** 18);
+        }
+      }
+      return 0;
+    };
+
+    const hasStatus = (nft: NFT, statusLabel: string): boolean => {
+      switch (statusLabel) {
+        case 'Buy Now':
+          return Boolean(nft.is_listed);
+        case 'On Auction':
+          return Boolean(nft.is_auction || nft.isAuction);
+        case 'New': {
+          const created = nft.createdAt ? new Date(nft.createdAt).getTime() : 0;
+          if (!created) return false;
+          const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+          return Date.now() - created <= sevenDaysMs;
+        }
+        case 'Has Offers':
+          return Array.isArray(nft.sell_orders) && nft.sell_orders.length > 0;
+        default:
+          // fallback to direct status match if provided
+          return (nft.status || '') === statusLabel;
+      }
+    };
+
+    let filtered = allNfts.filter((nft) => {
+      // Tab filter by category
+      if (activeTab !== 'all' && nft.category !== activeTab) return false;
+
+      // Status filter (any of the selected statuses should match)
+      if (filters.status.length > 0) {
+        const anyMatch = filters.status.some((label) => hasStatus(nft, label));
+        if (!anyMatch) return false;
+      }
+
+      // Price range filter (inclusive)
+      const price = getNumericPrice(nft);
+      if (price < filters.priceRange[0] || price > filters.priceRange[1]) return false;
+
+      // Collections filter
+      if (filters.collections.length > 0) {
+        const collectionName = typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || '';
+        if (!filters.collections.includes(collectionName)) return false;
+      }
+
+      // Blockchain filter
+      if (filters.blockchain.length > 0) {
+        const chain = nft.blockchain || '';
+        if (!filters.blockchain.includes(chain)) return false;
+      }
+
+      return true;
+    });
+
+    // Sorting
     switch (sortBy) {
       case 'price-low':
-        filtered.sort((a, b) => {
-          const priceA = typeof a.price === 'string' ? parseFloat(a.price) : a.price;
-          const priceB = typeof b.price === 'string' ? parseFloat(b.price) : b.price;
-          return priceA - priceB;
-        });
+        filtered.sort((a, b) => getNumericPrice(a) - getNumericPrice(b));
         break;
       case 'price-high':
-        filtered.sort((a, b) => {
-          const priceA = typeof a.price === 'string' ? parseFloat(a.price) : a.price;
-          const priceB = typeof b.price === 'string' ? parseFloat(b.price) : b.price;
-          return priceB - priceA;
-        });
+        filtered.sort((a, b) => getNumericPrice(b) - getNumericPrice(a));
         break;
       case 'ending':
-        filtered = filtered.filter(nft => nft.isAuction || nft.is_auction).sort((a, b) => {
-          // Sort by time left (ascending) - simplified for demo
-          return Math.random() - 0.5;
-        });
+        filtered = filtered
+          .filter(nft => nft.isAuction || nft.is_auction)
+          .sort(() => Math.random() - 0.5);
         break;
       case 'most-liked':
         filtered.sort((a, b) => (b.views || 0) - (a.views || 0));
