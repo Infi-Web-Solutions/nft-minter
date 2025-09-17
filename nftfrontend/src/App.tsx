@@ -22,6 +22,7 @@ import NotFound from "./pages/NotFound";
 import NFTDetails from "./pages/NFTDetails";
 import CollectionDetails from "./pages/CollectionDetails";
 import Favorites from "./pages/Favorites";
+import Contact from "./pages/Contact";
 import { LikedNFTsProvider } from '@/contexts/LikedNFTsContext';
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ const App = () => (
                 <Route path="/rankings" element={<Rankings />} />
                 <Route path="/activity" element={<Activity />} />
                 <Route path="/stats" element={<Stats />} />
+                <Route path="/contact" element={<Contact />} />
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/nft/:id" element={<NFTDetails />} />
