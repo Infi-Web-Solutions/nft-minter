@@ -27,6 +27,8 @@ import {
 import { useWallet } from '@/contexts/WalletContext';
 import { nftService } from '@/services/nftService';
 import { apiUrl } from '@/config';
+import { web3Service } from '@/services/web3Service';
+import { ethers } from 'ethers';
 
 const NFTDetails = () => {
   const { id } = useParams();
@@ -279,12 +281,60 @@ const NFTDetails = () => {
     }
   };
 
-  const handleBuyNow = () => {
-    if (!address) {
-      toast.error('Please connect your wallet first');
-      return;
+  const handleBuyNow = async () => {
+    try {
+      if (!address) {
+        toast.error('Please connect your wallet first');
+        return;
+      }
+      if (!nft) return;
+      if (!nft.is_listed || !nft.price || nft.price === '0') {
+        toast.error('This NFT is not for sale');
+        return;
+      }
+      if (nft.owner_address && nft.owner_address.toLowerCase() === address.toLowerCase()) {
+        toast.error('You already own this NFT');
+        return;
+      }
+
+      const tokenId: number = Number(nft.token_id);
+      const priceStr: string = typeof nft.price === 'string' ? nft.price : nft.price.toString();
+
+      toast.loading('Confirm the purchase in your wallet...', { id: 'buy' });
+
+      // 1) On-chain buy
+      const tx = await web3Service.buyNFT(tokenId, priceStr);
+      const receipt = await web3Service.waitForTransaction(tx);
+
+      // 2) Update backend owner and mark as not listed
+      try {
+        await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            new_owner: address,
+            transaction_hash: receipt?.hash || tx.hash,
+            price: priceStr
+          })
+        });
+        await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
+      } catch (e) {
+        console.warn('Backend ownership update failed (continuing):', e);
+      }
+
+      // 3) Update UI
+      setNFT((prev: any) => prev ? {
+        ...prev,
+        owner_address: address,
+        is_listed: false
+      } : prev);
+
+      toast.success('Purchase successful!', { id: 'buy' });
+    } catch (err: any) {
+      const message = err?.message || 'Failed to buy NFT';
+      toast.error(message, { id: 'buy' });
+      console.error('[NFTDetails] Buy failed:', err);
     }
-    toast.info('Buy functionality coming soon!');
   };
 
   const handleMakeOffer = () => {
