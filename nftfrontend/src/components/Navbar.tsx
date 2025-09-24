@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ShoppingCart, User, Bell, Menu, LogOut, Loader2 } from 'lucide-react';
+import { Search, User, Bell, Menu, LogOut, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NavigationMenu, NavigationMenuContent, NavigationMenuItem, NavigationMenuLink, NavigationMenuList, NavigationMenuTrigger } from '@/components/ui/navigation-menu';
@@ -135,9 +135,6 @@ const Navbar = () => {
             {/* Actions */}
             <div className="flex items-center space-x-4">
               <ThemeToggle />
-              <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => navigate('/cart')}>
-                <ShoppingCart className="h-4 w-4" />
-              </Button>
               <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => navigate('/notifications')}>
                 <Bell className="h-4 w-4" />
               </Button>

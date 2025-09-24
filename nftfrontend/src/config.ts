@@ -1,5 +1,5 @@
 // Centralized frontend configuration
-export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api';
+export const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL;
 
 // Helper to build full API URLs safely
 export function apiUrl(path: string): string {
