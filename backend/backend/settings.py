@@ -30,7 +30,7 @@ SECRET_KEY = 'django-insecure-)(gxwut35+tjavep3mwj&yjy!2h3zpgcg7d=p#9-7x_5!(en4n
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['nftminter-api.infiwebsolutions.com']
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Only for development
