@@ -192,7 +192,7 @@ const Collections = () => {
                             alt={collection.name}
                             className="h-full w-full object-cover hover:scale-105 transition-transform duration-300"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=400&h=400&fit=crop';
+                              (e.target as HTMLImageElement).src = '/placeholder.svg';
                             }}
                           />
                         </div>
@@ -243,7 +243,7 @@ const Collections = () => {
                                 alt={collection.name}
                                 className="h-full w-full object-cover"
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=400&h=400&fit=crop';
+                                  (e.target as HTMLImageElement).src = '/placeholder.svg';
                                 }}
                               />
                             </div>

@@ -13,12 +13,13 @@ import { Shield, Zap, Users, TrendingUp, Palette, Coins } from 'lucide-react';
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
-import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { useLikes } from '@/contexts/LikeContext';
+
 
 const Index = () => {
   const { address } = useWallet();
   const navigate = useNavigate();
-  const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const { isLiked } = useLikes();
   const [featuredNFTs, setFeaturedNFTs] = useState<NFT[]>([]);
   const [newNFTs, setNewNFTs] = useState<NFT[]>([]);
   const [trendingNFTs, setTrendingNFTs] = useState<NFT[]>([]);
@@ -85,7 +86,6 @@ const Index = () => {
         setTrendingNFTs(updateNFTs);
         
         toast.success(actualLikedState ? 'Added to favorites' : 'Removed from favorites');
-        await refreshLikedNFTs();
       } else {
         toast.error(result.error || 'Failed to update like status');
       }
@@ -205,7 +205,7 @@ const Index = () => {
                     image={nft.image || nft.image_url}
                     tokenId={nft.token_id}
                     id={nft.id}
-                    liked={likedNFTIds.has(String(nft.id))}
+                    liked={isLiked(nft.id)}
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}
@@ -228,7 +228,7 @@ const Index = () => {
                     image={nft.image || nft.image_url}
                     tokenId={nft.token_id}
                     id={nft.id}
-                    liked={likedNFTIds.has(String(nft.id))}
+                    liked={isLiked(nft.id)}
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}
@@ -251,7 +251,7 @@ const Index = () => {
                     image={nft.image || nft.image_url}
                     tokenId={nft.token_id}
                     id={nft.id}
-                    liked={likedNFTIds.has(String(nft.id))}
+                    liked={isLiked(nft.id)}
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}

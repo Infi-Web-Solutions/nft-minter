@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TrendingUp, TrendingDown, Trophy, Crown, Award, Loader2 } from 'lucide-react';
@@ -13,6 +14,37 @@ import { toast } from 'sonner';
 import { nftService, NFT } from '@/services/nftService';
 import { apiUrl } from '@/config';
 
+// Helper function to handle IPFS and other image URLs
+const getImageUrl = (url: string) => {
+  if (!url) return '';
+  
+  // Strip any extra query params
+  const clean = url.split('?')[0];
+  
+  if (clean.startsWith('ipfs://')) {
+    // Remove any trailing slashes
+    const ipfsHash = clean.replace('ipfs://', '').replace(/\/+$/, '');
+    return `https://ipfs.io/ipfs/${ipfsHash}`;
+  }
+
+  // Handle base64 images
+  if (clean.startsWith('data:')) {
+    return clean;
+  }
+
+  // Handle HTTP/HTTPS URLs
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
+  }
+
+  // If it's just a hash, assume it's an IPFS hash
+  if (clean.match(/^Qm[1-9A-HJ-NP-Za-km-z]{44}|b[A-Za-z2-7]{58}|B[A-Z2-7]{58}|z[1-9A-HJ-NP-Za-km-z]{48}|F[0-9A-F]{50}$/i)) {
+    return `https://ipfs.io/ipfs/${clean}`;
+  }
+
+  return clean;
+};
+
 interface Collection {
   name: string;
   description: string;
@@ -22,6 +54,7 @@ interface Collection {
   total_volume: number;
   total_items: number;
   created_at: string;
+  nft_image?: string; // Random NFT image URL to display
 }
 
 interface TopSeller {
@@ -139,6 +172,12 @@ const Rankings = () => {
           const volume = itemsCount;
           const creatorAddr = items[0]?.creator_address || items[0]?.owner_address || '';
           const avatar = (creatorAddr && addressToAvatar.get(creatorAddr)) || '';
+          // Get 1 random NFT image from the collection
+          const randomImage = items.length > 0 ?
+            getImageUrl(items[Math.floor(Math.random() * items.length)].image_url || 
+                       (items[Math.floor(Math.random() * items.length)] as any).image) :
+            '';
+            
           return {
             name,
             description: '',
@@ -152,7 +191,8 @@ const Rankings = () => {
             sales_24h: 0,
             change_24h: 0,
             volume_24h: 0,
-          } as unknown as Collection & { sales_24h?: number; change_24h?: number; volume_24h?: number };
+            nft_image: randomImage, // Add random NFT image
+          } as unknown as Collection & { sales_24h?: number; change_24h?: number; volume_24h?: number; nft_images: string[] };
         }).sort((a, b) => (b.total_items || 0) - (a.total_items || 0));
 
         // Fetch 24h and previous 24h buy activities for per-collection stats
@@ -343,7 +383,7 @@ const Rankings = () => {
           id: idx + 1,
           rank: idx + 1,
           name: s.name,
-          avatar: s.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face',
+          avatar: s.avatar || '',
           volume: s.volume,
           sales: s.sales,
           change: 0,
@@ -356,7 +396,7 @@ const Rankings = () => {
           id: idx + 1,
           rank: idx + 1,
           name: b.name,
-          avatar: b.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face',
+          avatar: b.avatar || '',
           volume: b.volume,
           purchases: b.purchases,
           change: 0,
@@ -495,14 +535,27 @@ const Rankings = () => {
                         {getRankIcon(index + 1)}
                       </div>
                       
-                      <div className="w-16 h-16 rounded-lg overflow-hidden">
+                      <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted">
                         <img 
-                          src={collection.image_url} 
+                          src={getImageUrl((collection as any).nft_image || collection.image_url)} 
                           alt={collection.name}
                           className="h-full w-full object-cover"
-                                                     onError={(e) => {
-                             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop';
-                           }}
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            const currentSrc = target.src;
+                            
+                            // If we're using ipfs.io and it failed, try alternate IPFS gateways
+                            if (currentSrc.includes('ipfs.io')) {
+                              if (currentSrc.includes('/ipfs/')) {
+                                const hash = currentSrc.split('/ipfs/')[1];
+                                // Try cloudflare-ipfs.com
+                                target.src = `https://cloudflare-ipfs.com/ipfs/${hash}`;
+                                return;
+                              }
+                            }
+                            // If all else fails, show placeholder
+                            target.src = '/placeholder.svg';
+                          }}
                         />
                       </div>
                       
@@ -563,16 +616,10 @@ const Rankings = () => {
                         {getRankIcon(seller.rank)}
                       </div>
                       
-                                             <div className="w-12 h-12 rounded-full overflow-hidden">
-                         <img 
-                           src={seller.avatar} 
-                           alt={seller.name}
-                           className="h-full w-full object-cover"
-                           onError={(e) => {
-                             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face';
-                           }}
-                         />
-                       </div>
+                                             <Avatar className="h-12 w-12">
+                        {seller.avatar && <AvatarImage src={seller.avatar} alt={seller.name} />}
+                        <AvatarFallback>{seller.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
                       
                       <div className="flex-1">
                         <h3 className="font-semibold">{seller.name}</h3>
@@ -628,16 +675,10 @@ const Rankings = () => {
                         {getRankIcon(buyer.rank)}
                       </div>
                       
-                                             <div className="w-12 h-12 rounded-full overflow-hidden">
-                         <img 
-                           src={buyer.avatar} 
-                           alt={buyer.name}
-                           className="h-full w-full object-cover"
-                           onError={(e) => {
-                             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face';
-                           }}
-                         />
-                       </div>
+                                             <Avatar className="h-12 w-12">
+                        {buyer.avatar && <AvatarImage src={buyer.avatar} alt={buyer.name} />}
+                        <AvatarFallback>{buyer.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                      </Avatar>
                       
                       <div className="flex-1">
                         <h3 className="font-semibold">{buyer.name}</h3>

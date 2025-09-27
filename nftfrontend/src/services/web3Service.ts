@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { NETWORK_CONFIG, CONTRACT_ADDRESS, switchToSepoliaNetwork } from '@/config';
 
 // Smart contract ABI (you'll need to import this from your compiled contract)
 const NFT_MARKETPLACE_ABI = [
@@ -31,9 +32,6 @@ const NFT_MARKETPLACE_ABI = [
   "event AuctionEnded(uint256 indexed tokenId, address indexed winner, uint256 finalPrice)"
 ];
 
-// Contract address (your deployed contract address)
-const CONTRACT_ADDRESS = "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201";
-
 export interface NFTMetadata {
   name: string;
   description: string;
@@ -58,15 +56,32 @@ export class Web3Service {
   private signer: ethers.JsonRpcSigner | null = null;
 
   async initialize(provider: ethers.BrowserProvider) {
+    // First, ensure we're on Sepolia network
+    const network = await provider.getNetwork();
+    if (network.chainId !== BigInt(NETWORK_CONFIG.chainIdDecimal)) {
+      const switched = await switchToSepoliaNetwork();
+      if (!switched) {
+        throw new Error('Please switch to the Sepolia Test Network to continue.');
+      }
+      // Get fresh provider after network switch
+      provider = new ethers.BrowserProvider(window.ethereum);
+    }
+
     this.provider = provider;
     this.signer = await provider.getSigner();
     this.contract = new ethers.Contract(CONTRACT_ADDRESS, NFT_MARKETPLACE_ABI, this.signer);
   }
 
-  // Check if service is initialized
-  private checkInitialized() {
+  // Check if service is initialized and on correct network
+  private async checkInitialized() {
     if (!this.contract || !this.signer) {
       throw new Error('Web3Service not initialized. Call initialize() first.');
+    }
+
+    // Verify we're still on Sepolia
+    const network = await this.provider!.getNetwork();
+    if (network.chainId !== BigInt(NETWORK_CONFIG.chainIdDecimal)) {
+      throw new Error('Please switch to the Sepolia Test Network to continue.');
     }
   }
 
@@ -126,11 +141,27 @@ export class Web3Service {
     return tx;
   }
 
+  // Check if user has sufficient balance
+  async checkBalance(price: string): Promise<boolean> {
+    this.checkInitialized();
+    
+    const priceInWei = ethers.parseEther(price);
+    const balance = await this.provider!.getBalance(await this.signer!.getAddress());
+    
+    return balance >= priceInWei;
+  }
+
   // Buy an NFT
   async buyNFT(tokenId: number, price: string): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
     
     const priceInWei = ethers.parseEther(price);
+    
+    // Check balance before proceeding
+    const hasBalance = await this.checkBalance(price);
+    if (!hasBalance) {
+      throw new Error("Insufficient balance to complete this purchase");
+    }
     
     const tx = await this.contract!.buyNFT(tokenId, { value: priceInWei });
     

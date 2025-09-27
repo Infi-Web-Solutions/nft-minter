@@ -18,7 +18,7 @@ const Cart = () => {
       title: 'Cool NFT #123',
       collection: 'Digital Dreams',
       price: 2.5,
-      image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&h=400&fit=crop&crop=center',
+      image: '/placeholder.svg',
       quantity: 1,
     },
     {
@@ -26,7 +26,7 @@ const Cart = () => {
       title: 'Pixel Art #456',
       collection: 'Retro Collection',
       price: 1.8,
-      image: 'https://images.unsplash.com/photo-1634973357973-f2ed2657db3c?w=400&h=400&fit=crop&crop=center',
+      image: '/placeholder.svg',
       quantity: 1,
     },
   ]);
