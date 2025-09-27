@@ -1,3 +1,4 @@
+import traceback
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -177,12 +178,17 @@ def get_user_profile(request, wallet_address):
             }
         })
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def update_profile(request, wallet_address):
     """Update user profile including profile and cover images"""
     try:
-        data = json.loads(request.body)
+        body = request.body.decode('utf-8') if request.body else '{}'
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
         # Get or create user profile
         profile, created = UserProfile.objects.get_or_create(wallet_address=wallet_address)
         # Handle profile image
@@ -194,7 +200,7 @@ def update_profile(request, wallet_address):
                 filename = f'profile_{wallet_address}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'profile_images/{filename}', file_data)
-                profile.avatar_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.avatar_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
         # Handle cover image
         if 'cover_image' in data:
             image_data = data['cover_image']
@@ -204,7 +210,7 @@ def update_profile(request, wallet_address):
                 filename = f'cover_{wallet_address}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'cover_images/{filename}', file_data)
-                profile.banner_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.banner_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
         # Update other profile fields
         for field in ['username', 'bio', 'website', 'twitter', 'instagram', 'discord']:
             if field in data:
@@ -229,7 +235,9 @@ def update_profile(request, wallet_address):
             }
         })
     except Exception as e:
+        traceback.print_exc()
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])

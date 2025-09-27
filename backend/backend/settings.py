@@ -17,9 +17,24 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+import environ
+env = environ.Env()
+environ.Env.read_env()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+#BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+#env = environ.Env()
+# Explicitly point to .env file
+#environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
+
+# Now you can read safely
+#PINATA_JWT = env("PINATA_JWT", default="")
+
+#print("PINATA_JWT :::::::", PINATA_JWT)
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -33,14 +48,9 @@ DEBUG = True
 ALLOWED_HOSTS = ['nftminter-api.infiwebsolutions.com']
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # Only for development
+#CORS_ALLOW_ALL_ORIGINS = True  # Only for development
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # Vite default port
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",  # Current Vite port
-    "http://127.0.0.1:8080",
-    "http://localhost:8081",  # Alternative Vite port
-    "http://127.0.0.1:8081",
+    "https://nftminter.infiwebsolutions.com"
 ]
 
 # Application definition

@@ -6,9 +6,13 @@ from base64 import b64decode
 from django.conf import settings
 import re
 
+
+PINATA_API_KEY='cf65cebdda6beba7c9a0'
+PINATA_SECRET_KEY='e7720e7eb32ed7b3779f2aed5aa4804e26fb7ceabe2e181655d114a17de02944'
+PINATA_JWT='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI0YjM0ODdmOS1iZWJmLTQwZWQtYjlhZC1hMmE4ZjdmNWNmOWIiLCJlbWFpbCI6ImtyYWphczEyMjVAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImNmNjVjZWJkZGE2YmViYTdjOWEwIiwic2NvcGVkS2V5U2VjcmV0IjoiZTc3MjBlN2ViMzJlZDdiMzc3OWYyYWVkNWFhNDgwNGUyNmZiN2NlYWJlMmUxODE2NTVkMTE0YTE3ZGUwMjk0NCIsImV4cCI6MTc4NTkwMzM3MX0.p-fim6ki_5MrIi1cG0QGexSXtGG5rPA5_46sz6HRfVM'
 # Pinata configuration
 # Read and sanitize the token: strip whitespace/newlines and remove accidental "Bearer" prefix
-_raw_token = os.getenv('PINATA_JWT', '') or ''
+_raw_token = os.getenv('PINATA_JWT', '') or PINATA_JWT
 # Trim leading/trailing whitespace and remove accidental Bearer prefix
 _raw_token = _raw_token.strip()
 if _raw_token.lower().startswith('bearer '):
@@ -17,8 +21,8 @@ if _raw_token.lower().startswith('bearer '):
 _raw_token = _raw_token.replace('\n', '').replace('\r', '').replace('\t', '').replace(' ', '')
 _raw_token = _raw_token.replace('"', '').replace("'", '')
 PINATA_JWT = _raw_token
-PINATA_API_KEY = (os.getenv('PINATA_API_KEY') or '').strip()
-PINATA_API_SECRET = (os.getenv('PINATA_API_SECRET') or '').strip()
+PINATA_API_KEY = (os.getenv('PINATA_API_KEY') or PINATA_API_KEY ).strip()
+PINATA_API_SECRET = (os.getenv('PINATA_API_SECRET') or PINATA_SECRET_KEY).strip()
 _JWT_REGEX = re.compile(r'^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$')
 PINATA_API_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS"
 
