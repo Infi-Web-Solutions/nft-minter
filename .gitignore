@@ -30,3 +30,5 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+# Ignore SQLite database file
+backend/db.sqlite3
