@@ -460,7 +460,7 @@ const Profile = () => {
                   <div className="col-span-full text-center text-muted-foreground">No collected NFTs yet.</div>
                 ) : (
                   Array.from(new Map([...createdNFTs, ...ownedNFTs].map(nft => [nft.id, nft])).values()).map((nft: any) => {
-                    const nftId = nft.id?.toString?.() || String(nft.id);
+                    const nftId = `local_${nft.id?.toString?.() || String(nft.id)}`;
                     console.log('[Profile] Rendering NFT in collected tab:', {
                       original_id: nft.id,
                       converted_id: nftId,
@@ -501,7 +501,7 @@ const Profile = () => {
                   <div className="col-span-full text-center text-muted-foreground">No created NFTs yet.</div>
                 ) : (
                   createdNFTs.map((nft: any) => {
-                    const nftId = nft.id?.toString?.() || String(nft.id);
+                    const nftId = `local_${nft.id?.toString?.() || String(nft.id)}`;
                     return (
                       <NFTCard
                         key={nftId}

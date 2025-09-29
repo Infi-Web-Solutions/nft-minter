@@ -102,9 +102,9 @@ class NFTService {
   async toggleNFTLike(nftId: string | number, userAddress: string): Promise<{ success: boolean; liked?: boolean; like_count?: number; error?: string }> {
     try {
       console.log('[nftService] toggleNFTLike called with:', { nftId, nftId_type: typeof nftId, userAddress });
-      // Normalize ID for backend: strip 'local_' prefix for local items
+      // Backend expects 'local_' prefixed IDs for local NFTs
       const idStr = nftId.toString();
-      const backendId = idStr.startsWith('local_') ? idStr.replace('local_', '') : idStr;
+      const backendId = idStr.startsWith('local_') ? idStr : `local_${idStr}`;
       const response = await fetch(apiUrl(`/nfts/${encodeURIComponent(backendId)}/toggle-like/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
