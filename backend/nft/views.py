@@ -773,9 +773,9 @@ def update_nft_owner(request, token_id):
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
             nft.owner_address = new_owner
-            # If this was a simulated transfer, also mark NFT as not listed
-            if forced_new_owner:
-                nft.is_listed = False
+            # After a successful ownership transfer (buy/transfer), the item should not remain listed
+            # Ensure we always clear the listed flag regardless of simulation vs verified path
+            nft.is_listed = False
             nft.save()
 
             if verification and 'transaction' in verification:
@@ -852,7 +852,10 @@ def toggle_nft_like(request, nft_id):
 @csrf_exempt
 @require_http_methods(["POST"])
 def set_nft_listed(request, token_id):
-    """Set is_listed to true for an NFT, but only if it is listed on-chain."""
+    """
+    Sync the DB `is_listed` flag to the on-chain status.
+    Always returns success with the current status instead of 400.
+    """
     from .models import NFT
     from .web3_utils import web3_instance
     try:
@@ -860,12 +863,11 @@ def set_nft_listed(request, token_id):
         # Check on-chain listing status
         contract = web3_instance.get_nftmarketplace_contract()
         is_listed = contract.functions.isListed(token_id).call()
-        if is_listed:
-            nft.is_listed = True
+        # Update DB to reflect on-chain state
+        if nft.is_listed != is_listed:
+            nft.is_listed = is_listed
             nft.save()
-            return JsonResponse({'success': True, 'is_listed': True})
-        else:
-            return JsonResponse({'success': False, 'error': 'NFT is not listed on-chain'}, status=400)
+        return JsonResponse({'success': True, 'is_listed': is_listed})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
