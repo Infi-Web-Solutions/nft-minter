@@ -194,7 +194,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
       const txHash = result.hash;
       toast.success('Purchase successful! Updating ownership...');
 
-      // Notify backend to update owner (supports simulation if new_owner is provided)
+      // Notify backend to update owner (always pass expected new owner)
       try {
         const payload: any = {
           transaction_hash: txHash,
@@ -202,14 +202,18 @@ const NFTCard: React.FC<NFTCardProps> = ({
           block_number: 0,
           gas_used: 0,
           gas_price: 0,
+          new_owner: address,
         };
-        if (simulated && address) payload.new_owner = address;
         
         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        // Sync listing status with chain (should be delisted after sale)
+        try {
+          await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
+        } catch {}
         toast.success('Ownership updated.');
         if (afterBuy) afterBuy();
       } catch (backendError) {
