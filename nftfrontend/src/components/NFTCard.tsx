@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
 import { nftService } from '@/services/nftService';
-import { apiUrl, NETWORK_CONFIG } from '@/config';
+import { apiUrl, NETWORK_CONFIG, mediaUrl } from '@/config';
 
 interface NFTCardProps {
   title: string;
@@ -52,9 +52,9 @@ const getImageUrl = (url: string) => {
     return clean;
   }
 
-  // Handle HTTP/HTTPS URLs
+  // Handle HTTP/HTTPS URLs or localhost fallbacks by returning normalized media URL
   if (clean.startsWith('http://') || clean.startsWith('https://')) {
-    return clean;
+    return mediaUrl(clean);
   }
 
   // If it's just a hash, assume it's an IPFS hash
@@ -62,7 +62,8 @@ const getImageUrl = (url: string) => {
     return `https://ipfs.io/ipfs/${clean}`;
   }
 
-  return clean;
+  // Resolve any relative paths (e.g., /media/...) through API base
+  return mediaUrl(clean);
 };
 
 const NFTCard: React.FC<NFTCardProps> = ({ 

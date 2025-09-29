@@ -25,6 +25,33 @@ export function apiUrl(path: string): string {
   return `${base}${suffix}`;
 }
 
+// Normalize media URLs (avatars, banners, NFT images) to absolute URLs
+export function mediaUrl(url?: string | null): string {
+  if (!url) return '';
+
+  const clean = url.split('?')[0];
+
+  // Already absolute (http/https or data URI)
+  if (/^(https?:)?\/\//i.test(clean) || clean.startsWith('data:')) {
+    return clean;
+  }
+
+  // IPFS
+  if (clean.startsWith('ipfs://')) {
+    const ipfsHash = clean.replace('ipfs://', '').replace(/\/+$/, '');
+    return `https://ipfs.io/ipfs/${ipfsHash}`;
+  }
+
+  // Handle typical Django media relative paths like /media/.... or media/...
+  if (clean.startsWith('/media/') || clean.startsWith('media/')) {
+    const path = clean.startsWith('/') ? clean : `/${clean}`;
+    return apiUrl(path);
+  }
+
+  // Fallback: treat as relative path under API
+  return apiUrl(clean.startsWith('/') ? clean : `/${clean}`);
+}
+
 // Helper to add Sepolia network to MetaMask
 export async function addSepoliaNetwork() {
   if (!window.ethereum) return false;

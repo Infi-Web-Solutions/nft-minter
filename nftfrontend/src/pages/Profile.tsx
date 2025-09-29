@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikes } from '@/contexts/LikeContext';
-import { apiUrl } from '@/config';
+import { apiUrl, mediaUrl } from '@/config';
 
 const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
@@ -360,7 +360,7 @@ const Profile = () => {
         <div className="relative">
           <div 
             className="h-64 bg-gradient-to-r from-purple-500 to-blue-600 relative group"
-            style={profile.banner_url ? { backgroundImage: `url(${profile.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+            style={profile.banner_url ? { backgroundImage: `url(${mediaUrl(profile.banner_url)})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
           >
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors">
               <Button
@@ -385,7 +385,7 @@ const Profile = () => {
               <div className="flex flex-col md:flex-row gap-6">
                 <div className="relative">
                   <Avatar className="h-32 w-32 border-4 border-background">
-                    <AvatarImage src={profile.avatar_url || undefined} />
+                    <AvatarImage src={mediaUrl(profile.avatar_url) || undefined} />
                     <AvatarFallback>
                       {address ? address.slice(2, 4).toUpperCase() : 'U'}
                     </AvatarFallback>

@@ -22,7 +22,7 @@ import { useWallet } from '@/contexts/WalletContext';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikes } from '@/contexts/LikeContext';
-import { apiUrl } from '@/config';
+import { apiUrl, mediaUrl } from '@/config';
 
 interface UserProfileData {
   id: string;
@@ -247,7 +247,7 @@ const UserProfile = () => {
   };
 
   const getProfileImageUrl = (profile: UserProfileData | null) => {
-    return profile?.avatar_url || '';
+    return mediaUrl(profile?.avatar_url || '');
   };
 
   const getProfileDisplayName = (profile: UserProfileData | null, address: string) => {

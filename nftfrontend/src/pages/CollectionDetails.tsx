@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import NFTCard from '@/components/NFTCard';
-import { apiUrl } from '@/config';
+import { apiUrl, mediaUrl } from '@/config';
 
 const CollectionDetails = () => {
   const { slug } = useParams();
@@ -55,10 +55,10 @@ const CollectionDetails = () => {
       <Navbar />
       <div className="w-full h-60 bg-muted flex items-end relative">
         {collection.banner_url && (
-          <img src={collection.banner_url} alt="Banner" className="absolute inset-0 w-full h-full object-cover" />
+          <img src={mediaUrl(collection.banner_url)} alt="Banner" className="absolute inset-0 w-full h-full object-cover" />
         )}
         <div className="relative z-10 flex items-end gap-6 p-8 w-full">
-          <img src={collection.image_url || '/placeholder.svg'} alt="Profile" className="w-32 h-32 rounded-xl border-4 border-background bg-background -mb-12" />
+          <img src={mediaUrl(collection.image_url) || '/placeholder.svg'} alt="Profile" className="w-32 h-32 rounded-xl border-4 border-background bg-background -mb-12" />
           <div className="flex-1">
             <h1 className="text-3xl font-bold">{collection.name}</h1>
             <div className="text-muted-foreground text-sm mt-1">By {collection.creator_address}</div>
