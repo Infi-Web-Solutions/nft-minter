@@ -98,21 +98,12 @@ const NFTCard: React.FC<NFTCardProps> = ({
   // Derived state
   const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
 
-  // Debug: Log props on mount
+  // Reduce noisy logging in production
   React.useEffect(() => {
-    console.log('[NFTCard] Rendered with props:', {
-      title,
-      collection,
-      price,
-      image,
-      imageUrl: getImageUrl(image),
-      tokenId,
-      id,
-      id_type: typeof id,
-      liked,
-      isOwner
-    });
-  }, [title, collection, price, image, tokenId, id, liked, isOwner]);
+    if (import.meta && (import.meta as any).env?.MODE === 'development') {
+      console.log('[NFTCard] Rendered with props:', { title, tokenId, id, liked });
+    }
+  }, [title, tokenId, id, liked]);
 
   const handleLike = async () => {
     if (isLiking || !id || !address) return;
@@ -367,6 +358,8 @@ const NFTCard: React.FC<NFTCardProps> = ({
             src={getImageUrl(image)} 
             alt={title}
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+            loading="lazy"
+            decoding="async"
             onError={(e) => {
               const img = e.target as HTMLImageElement;
               const currentSrc = img.src;

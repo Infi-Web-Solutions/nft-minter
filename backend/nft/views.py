@@ -401,10 +401,9 @@ def get_collections(request):
 def get_user_nfts(request, wallet_address):
     """Get NFTs collected by a user (owned or created, no duplicates)"""
     try:
-        # NFTs where user is owner
-        owned_nfts = NFT.objects.filter(owner_address=wallet_address)
-        # NFTs where user is creator
-        created_nfts = NFT.objects.filter(creator_address=wallet_address)
+        # Case-insensitive match for Ethereum addresses (checksum vs lowercase)
+        owned_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
         # Combine and deduplicate by token_id
         nft_dict = {}
         for nft in owned_nfts:
