@@ -39,12 +39,12 @@ const Navbar = () => {
     <>
       <nav className="sticky top-0 z-50 bg-background border-b border-border/40 backdrop-blur supports-[backdrop-filter]:bg-background/95">
         <div className="container mx-auto px-4">
-          <div className="flex h-16 items-center justify-between gap-2">
+          <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <div className="flex items-center space-x-8">
-              <Link to="/" className="flex items-center space-x-2">
-                <img src="/logo.png" alt="NFTMinter" className="h-8 w-8 rounded" />
-                <span className="text-xl font-bold">NFTMinter</span>
+              <Link to="/" className="flex items-center space-x-2 min-w-0">
+                <img src="/logo.png" alt="NFTMinter" className="h-8 w-8 rounded flex-shrink-0" />
+                <span className="text-xl font-bold truncate">NFTMinter</span>
               </Link>
               
               <div className="hidden md:flex">
@@ -118,7 +118,7 @@ const Navbar = () => {
             </div>
 
             {/* Search */}
-            <div className="hidden md:flex flex-1 max-w-xs lg:max-w-lg mx-2 lg:mx-8">
+            <div className="hidden md:flex flex-1 max-w-lg mx-4 md:mx-8">
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input 
@@ -134,11 +134,11 @@ const Navbar = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <Button variant="ghost" size="sm" className="md:hidden" onClick={() => navigate('/notifications')}>
+            <div className="flex items-center space-x-2 md:space-x-4">
+              <div className="hidden md:inline-flex"><ThemeToggle /></div>
+              <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => navigate('/notifications')}>
                 <Bell className="h-4 w-4" />
               </Button>
-              <ThemeToggle />
               <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => navigate('/profile')}>
                 <User className="h-4 w-4" />
               </Button>
@@ -178,7 +178,7 @@ const Navbar = () => {
                 </DropdownMenu>
               ) : (
                 <Button 
-                  className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 whitespace-nowrap"
+                  className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700"
                   onClick={() => setShowWalletModal(true)}
                   disabled={isLoading}
                 >
@@ -204,12 +204,6 @@ const Navbar = () => {
       {mobileOpen && (
         <div id="mobile-menu" className="md:hidden bg-background border-b border-border/40">
           <div className="px-4 py-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">Menu</span>
-              <Button variant="ghost" size="sm" onClick={() => navigate('/notifications')}>
-                <Bell className="h-4 w-4" />
-              </Button>
-            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input 
@@ -222,10 +216,15 @@ const Navbar = () => {
               <Button variant="outline" onClick={() => { navigate('/collections'); setMobileOpen(false); }}>Collections</Button>
               <Button variant="outline" onClick={() => { navigate('/rankings'); setMobileOpen(false); }}>Rankings</Button>
               <Button variant="outline" onClick={() => { navigate('/activity'); setMobileOpen(false); }}>Activity</Button>
+              <Button variant="outline" onClick={() => { navigate('/notifications'); setMobileOpen(false); }}>Notifications</Button>
             </div>
             <div className="flex gap-2">
               <Button className="flex-1" onClick={() => { navigate('/create'); setMobileOpen(false); }}>Create</Button>
               <Button variant="outline" className="flex-1" onClick={() => { navigate('/profile'); setMobileOpen(false); }}>Profile</Button>
+            </div>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-sm text-muted-foreground">Theme</span>
+              <ThemeToggle />
             </div>
           </div>
         </div>

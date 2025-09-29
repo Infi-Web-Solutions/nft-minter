@@ -617,7 +617,7 @@ const Rankings = () => {
                         {getRankIcon(seller.rank)}
                       </div>
                       
-                      <Avatar className="h-12 w-12">
+                                             <Avatar className="h-12 w-12">
                         {seller.avatar && <AvatarImage src={mediaUrl(seller.avatar)} alt={seller.name} />}
                         <AvatarFallback>{seller.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
@@ -676,7 +676,7 @@ const Rankings = () => {
                         {getRankIcon(buyer.rank)}
                       </div>
                       
-                      <Avatar className="h-12 w-12">
+                                             <Avatar className="h-12 w-12">
                         {buyer.avatar && <AvatarImage src={mediaUrl(buyer.avatar)} alt={buyer.name} />}
                         <AvatarFallback>{buyer.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
