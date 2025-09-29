@@ -763,12 +763,19 @@ def update_nft_owner(request, token_id):
             )
 
             if not verification['verified']:
-                return JsonResponse({
-                    'success': False,
-                    'error': verification.get('error', 'Transaction verification failed')
-                }, status=400)
-
-            new_owner = verification['transaction']['new_owner']
+                # Fallback: trust on-chain owner if it already reflects the new owner
+                from .web3_utils import web3_instance
+                chain_owner = web3_instance.get_nft_owner(token_id)
+                if chain_owner and expected_new_owner and chain_owner.lower() == expected_new_owner.lower():
+                    new_owner = chain_owner
+                    verification = None  # no detailed tx info available
+                else:
+                    return JsonResponse({
+                        'success': False,
+                        'error': verification.get('error', 'Transaction verification failed')
+                    }, status=400)
+            else:
+                new_owner = verification['transaction']['new_owner']
 
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
