@@ -19,6 +19,9 @@ from .web3_utils import web3_instance
 from .ipfs_utils import upload_to_ipfs
 from .auth_utils import get_or_create_web3_user
 from django.utils import timezone
+import os
+
+BASE_URL = os.environ.get('URL', 'http://localhost:8000')
 
 # User Profile Views
 @csrf_exempt
@@ -194,7 +197,7 @@ def update_profile(request, wallet_address):
                 filename = f'profile_{wallet_address}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'profile_images/{filename}', file_data)
-                profile.avatar_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.avatar_url = f"{BASE_URL}{default_storage.url(file_path)}"
         # Handle cover image
         if 'cover_image' in data:
             image_data = data['cover_image']
@@ -204,7 +207,7 @@ def update_profile(request, wallet_address):
                 filename = f'cover_{wallet_address}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'cover_images/{filename}', file_data)
-                profile.banner_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.banner_url = f"{BASE_URL}{default_storage.url(file_path)}"
         # Update other profile fields
         for field in ['username', 'bio', 'website', 'twitter', 'instagram', 'discord']:
             if field in data:
