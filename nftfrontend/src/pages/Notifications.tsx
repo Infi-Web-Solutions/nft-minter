@@ -160,12 +160,12 @@ const Notifications = () => {
           </div>
 
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="follow">Follow</TabsTrigger>
-              <TabsTrigger value="like">Likes</TabsTrigger>
-              <TabsTrigger value="sale">Sales</TabsTrigger>
-              <TabsTrigger value="offer">Offers</TabsTrigger>
+            <TabsList className="flex w-full gap-2 overflow-x-auto whitespace-nowrap">
+              <TabsTrigger className="flex-shrink-0" value="all">All</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="follow">Follow</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="like">Likes</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="sale">Sales</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="offer">Offers</TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="mt-6">

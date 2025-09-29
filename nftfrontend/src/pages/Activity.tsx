@@ -379,13 +379,13 @@ const Activity = () => {
                         
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-8 gap-3 md:gap-4">
-            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="buy">Sales</TabsTrigger>
-              <TabsTrigger value="list">Listings</TabsTrigger>
-              <TabsTrigger value="bid">Offers</TabsTrigger>
-              <TabsTrigger value="transfer">Transfers</TabsTrigger>
-              <TabsTrigger value="mint">Mints</TabsTrigger>
+            <TabsList className="flex w-full gap-2 overflow-x-auto whitespace-nowrap">
+              <TabsTrigger className="flex-shrink-0" value="all">All</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="buy">Sales</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="list">Listings</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="bid">Offers</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="transfer">Transfers</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="mint">Mints</TabsTrigger>
             </TabsList>
             
             <div className="flex gap-2 sm:gap-3 md:gap-4 w-full md:w-auto">
