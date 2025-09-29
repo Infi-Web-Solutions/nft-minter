@@ -102,8 +102,8 @@ class NFTService {
   async toggleNFTLike(nftId: string | number, userAddress: string): Promise<{ success: boolean; liked?: boolean; like_count?: number; error?: string }> {
     try {
       console.log('[nftService] toggleNFTLike called with:', { nftId, nftId_type: typeof nftId, userAddress });
-      // Pass the full combined ID (local_1, local_2, etc.) to the backend
-      const response = await fetch(apiUrl(`/nfts/${nftId}/toggle-like/`), {
+      // Pass the full combined ID (local_1, 123, etc.) to the backend
+      const response = await fetch(apiUrl(`/nfts/${encodeURIComponent(nftId.toString())}/toggle-like/`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_address: userAddress }),

@@ -265,7 +265,7 @@ const UserProfile = () => {
       tokenId: nft.token_id,
       owner_address: nft.owner_address,
       is_listed: nft.is_listed,
-      id: `local_${nft.id}`, // Format ID for NFTDetails navigation
+      id: nft.id?.toString?.() || String(nft.id),
       liked: isLiked(nft.id) || nft.liked || false,
     };
     console.log(`[UserProfile] Mapped NFT:`, { originalId: nft.id, mappedId: mappedNFT.id, title: mappedNFT.title });

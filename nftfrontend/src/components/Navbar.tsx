@@ -12,6 +12,7 @@ import { useWallet } from '@/contexts/WalletContext';
 const Navbar = () => {
   const navigate = useNavigate();
   const { isConnected, address, balance, chainId, disconnectWallet, isLoading } = useWallet();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
 
   const formatAddress = (addr: string) => {
@@ -192,13 +193,37 @@ const Navbar = () => {
                 </Button>
               )}
               
-              <Button variant="ghost" size="sm" className="md:hidden">
+              <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileOpen(v => !v)} aria-expanded={mobileOpen} aria-controls="mobile-menu">
                 <Menu className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </div>
       </nav>
+      {/* Mobile menu */}
+      {mobileOpen && (
+        <div id="mobile-menu" className="md:hidden bg-background border-b border-border/40">
+          <div className="px-4 py-3 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input 
+                placeholder="Search items, collections, and accounts"
+                className="pl-10 bg-muted/50 border-0"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => { navigate('/marketplace'); setMobileOpen(false); }}>Marketplace</Button>
+              <Button variant="outline" onClick={() => { navigate('/collections'); setMobileOpen(false); }}>Collections</Button>
+              <Button variant="outline" onClick={() => { navigate('/rankings'); setMobileOpen(false); }}>Rankings</Button>
+              <Button variant="outline" onClick={() => { navigate('/activity'); setMobileOpen(false); }}>Activity</Button>
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={() => { navigate('/create'); setMobileOpen(false); }}>Create</Button>
+              <Button variant="outline" className="flex-1" onClick={() => { navigate('/profile'); setMobileOpen(false); }}>Profile</Button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <WalletConnectionModal open={showWalletModal} onOpenChange={setShowWalletModal} />
     </>

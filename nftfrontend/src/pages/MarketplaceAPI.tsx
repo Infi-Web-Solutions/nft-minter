@@ -8,6 +8,7 @@ import Footer from '@/components/Footer';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Grid, List, Filter } from 'lucide-react';
 import { nftService, NFT } from '@/services/nftService';
+import { useLikes } from '@/contexts/LikeContext';
 import { toast } from 'sonner';
 
 const MarketplaceAPI = () => {
@@ -24,6 +25,8 @@ const MarketplaceAPI = () => {
     collections: [] as string[],
     blockchain: [] as string[]
   });
+
+  const { isLiked, toggleLike } = useLikes();
 
   // Fetch NFTs from API
   useEffect(() => {
@@ -118,9 +121,8 @@ const MarketplaceAPI = () => {
     });
   };
 
-  const handleLikeToggle = async (nftId: number, newLikedState: boolean) => {
-    // This would need to be implemented with the actual user address
-    console.log('Toggled like for NFT:', nftId, 'new state:', newLikedState);
+  const handleLikeToggle = async (nftId: string | number) => {
+    await toggleLike(nftId);
   };
 
   if (isLoading) {
@@ -225,11 +227,11 @@ const MarketplaceAPI = () => {
                   image={nft.image || nft.image_url}
                   tokenId={nft.token_id}
                   id={nft.id}
-                  liked={nft.liked}
+                  liked={isLiked(nft.id)}
                   isAuction={nft.isAuction || nft.is_auction}
                   timeLeft={nft.timeLeft}
                   views={nft.views}
-                  onLike={(newLikedState) => handleLikeToggle(Number(nft.id), newLikedState)}
+                  onLike={() => handleLikeToggle(nft.id)}
                   owner_address={nft.owner_address}
                   is_listed={nft.is_listed}
                 />

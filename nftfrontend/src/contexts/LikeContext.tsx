@@ -59,8 +59,8 @@ export const LikeProvider = ({ children }: { children: React.ReactNode }) => {
       }
       setLikedNFTs(currentLiked);
 
-      // Update backend
-      await nftService.toggleNFTLike(Number(nftId), address);
+      // Update backend with combined ID (string allowed, e.g., "local_12")
+      await nftService.toggleNFTLike(id, address);
       
       // Re-sync to ensure consistency
       await syncLikes();
