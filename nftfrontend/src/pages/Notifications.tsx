@@ -142,12 +142,12 @@ const Notifications = () => {
       <Navbar />
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
             <div>
               <h1 className="text-3xl font-bold mb-2">Notifications</h1>
               <p className="text-muted-foreground">Stay updated with your NFT activities</p>
             </div>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 sm:self-auto self-start">
               <Button variant="outline" size="sm">
                 <Check className="h-4 w-4 mr-2" />
                 Mark all as read
@@ -160,7 +160,7 @@ const Notifications = () => {
           </div>
 
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-5">
               <TabsTrigger value="all">All</TabsTrigger>
               <TabsTrigger value="follow">Follow</TabsTrigger>
               <TabsTrigger value="like">Likes</TabsTrigger>

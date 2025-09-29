@@ -215,7 +215,8 @@ const Navbar = () => {
               <Button variant="outline" onClick={() => { navigate('/marketplace'); setMobileOpen(false); }}>Marketplace</Button>
               <Button variant="outline" onClick={() => { navigate('/collections'); setMobileOpen(false); }}>Collections</Button>
               <Button variant="outline" onClick={() => { navigate('/rankings'); setMobileOpen(false); }}>Rankings</Button>
-              <Button variant="outline" onClick={() => { navigate('/activity'); setMobileOpen(false); }}>Activity</Button>
+              <Button variant="outline" onClick={() => { navigate('/activity'); setMobileOpen(false); }}>Activity Feed</Button>
+              <Button variant="outline" onClick={() => { navigate('/stats'); setMobileOpen(false); }}>Statistics</Button>
               <Button variant="outline" onClick={() => { navigate('/notifications'); setMobileOpen(false); }}>Notifications</Button>
             </div>
             <div className="flex gap-2">

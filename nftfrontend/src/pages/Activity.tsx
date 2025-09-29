@@ -378,8 +378,8 @@ const Activity = () => {
                         </div>
                         
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-            <TabsList className="grid w-full max-w-2xl grid-cols-6">
+          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-8 gap-3 md:gap-4">
+            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
               <TabsTrigger value="all">All</TabsTrigger>
               <TabsTrigger value="buy">Sales</TabsTrigger>
               <TabsTrigger value="list">Listings</TabsTrigger>
@@ -388,18 +388,18 @@ const Activity = () => {
               <TabsTrigger value="mint">Mints</TabsTrigger>
             </TabsList>
             
-            <div className="flex gap-4">
-              <div className="relative">
+            <div className="flex gap-2 sm:gap-3 md:gap-4 w-full md:w-auto">
+              <div className="relative flex-1 md:flex-initial">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input 
                   placeholder="Search..." 
-                  className="pl-10 w-48"
+                  className="pl-10 w-full md:w-48"
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                 />
                           </div>
               <Select value={timeFilter} onValueChange={handleTimeFilterChange}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-full md:w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -424,7 +424,7 @@ const Activity = () => {
                 <p className="text-muted-foreground">No activities found</p>
             </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {activities.map(renderActivityCard)}
             </div>
             )}
