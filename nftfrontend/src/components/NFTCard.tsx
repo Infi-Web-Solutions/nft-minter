@@ -94,9 +94,20 @@ const NFTCard: React.FC<NFTCardProps> = ({
   const [isBuying, setIsBuying] = useState(false);
   const [isListing, setIsListing] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
+  // Local mirrors to reflect immediate UI after actions
+  const [currentOwner, setCurrentOwner] = useState<string | undefined>(owner_address);
+  const [currentIsListed, setCurrentIsListed] = useState<boolean>(Boolean(is_listed));
+
+  // Keep local mirrors in sync when props change (e.g., after refetch)
+  React.useEffect(() => {
+    setCurrentOwner(owner_address);
+  }, [owner_address]);
+  React.useEffect(() => {
+    setCurrentIsListed(Boolean(is_listed));
+  }, [is_listed]);
 
   // Derived state
-  const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
+  const isOwner = Boolean(address && currentOwner && address.toLowerCase() === currentOwner.toLowerCase());
 
   // Debug: Log props on mount
   React.useEffect(() => {
@@ -210,7 +221,14 @@ const NFTCard: React.FC<NFTCardProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
+        // Ensure listing is cleared in backend
+        try {
+          await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
+        } catch {}
         toast.success('Ownership updated.');
+        // Optimistically update UI
+        setCurrentOwner(address);
+        setCurrentIsListed(false);
         if (afterBuy) afterBuy();
       } catch (backendError) {
         console.error('[NFTCard] Failed to notify backend for activity log:', backendError);
@@ -229,7 +247,12 @@ const NFTCard: React.FC<NFTCardProps> = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
           });
+          try {
+            await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
+          } catch {}
           toast.success('Ownership updated (simulated).');
+          setCurrentOwner(address);
+          setCurrentIsListed(false);
           if (afterBuy) afterBuy();
         } catch (e) {
           toast.error('Simulation failed.');
@@ -319,9 +342,9 @@ const NFTCard: React.FC<NFTCardProps> = ({
     tokenId,
     title,
     address: address?.toLowerCase(),
-    owner_address: owner_address?.toLowerCase(),
+    owner_address: currentOwner?.toLowerCase(),
     isOwner,
-    is_listed,
+    is_listed: currentIsListed,
     price
   });
 
@@ -439,7 +462,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                 </Button>
               ) : (
                 <>
-                  {isOwner && !is_listed && (
+                  {isOwner && !currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
@@ -449,7 +472,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                       Owned
                     </Button>
                   )}
-                  {isOwner && is_listed && (
+                  {isOwner && currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
@@ -459,7 +482,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                       Owned
                     </Button>
                   )}
-                  {!isOwner && !is_listed && (
+                  {!isOwner && !currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-gray-400 to-gray-600 whitespace-nowrap text-xs px-2"
@@ -469,7 +492,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                       Not for Sale
                     </Button>
                   )}
-                  {!isOwner && is_listed && (
+                  {!isOwner && currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
