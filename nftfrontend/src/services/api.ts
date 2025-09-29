@@ -66,6 +66,9 @@ export interface Activity {
     image_url: string;
     collection: string;
     token_id: number;
+    price?: string | number;
+    creator_address?: string;
+    owner_address?: string;
   };
   from: {
     address: string;

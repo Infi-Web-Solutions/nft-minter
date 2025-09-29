@@ -1,6 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Heart, Clock, Eye } from 'lucide-react';
+import { ethers } from 'ethers';
+import { useLikes } from '@/contexts/LikeContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,15 +11,15 @@ import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
 import { nftService } from '@/services/nftService';
-import { apiUrl } from '@/config';
+import { apiUrl, NETWORK_CONFIG } from '@/config';
 
 interface NFTCardProps {
   title: string;
   collection: string | { name: string; slug?: string; image_url?: string };
-  price: string;
+  price: string | number;
   image: string;
   tokenId?: number | string;
-  liked?: boolean;
+  liked?: boolean | undefined;
   isAuction?: boolean;
   timeLeft?: string;
   views?: number;
@@ -26,21 +28,44 @@ interface NFTCardProps {
   id?: string | number;
   owner_address?: string;
   is_listed?: boolean;
-  canLike?: boolean; // <-- add this
-  source?: string; // <-- add this
+  canLike?: boolean;
+  source?: string;
 }
 
 const getImageUrl = (url: string) => {
   if (!url) return url;
+  
   // Strip any extra query params
   const clean = url.split('?')[0];
+  
   if (clean.startsWith('ipfs://')) {
-    return clean.replace('ipfs://', 'https://ipfs.io/ipfs/');
+    // Remove any trailing slashes
+    const ipfsHash = clean.replace('ipfs://', '').replace(/\/+$/, '');
+    // Try multiple IPFS gateways in case one is down
+    // You can also consider using Cloudflare, Pinata, or your own gateway
+    const gateway = 'https://ipfs.io/ipfs/';
+    return `${gateway}${ipfsHash}`;
   }
+
+  // Handle base64 images
+  if (clean.startsWith('data:')) {
+    return clean;
+  }
+
+  // Handle HTTP/HTTPS URLs
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
+  }
+
+  // If it's just a hash, assume it's an IPFS hash
+  if (clean.match(/^Qm[1-9A-HJ-NP-Za-km-z]{44}|b[A-Za-z2-7]{58}|B[A-Z2-7]{58}|z[1-9A-HJ-NP-Za-km-z]{48}|F[0-9A-F]{50}$/i)) {
+    return `https://ipfs.io/ipfs/${clean}`;
+  }
+
   return clean;
 };
 
-const NFTCard = ({ 
+const NFTCard: React.FC<NFTCardProps> = ({ 
   title, 
   collection, 
   price, 
@@ -54,16 +79,23 @@ const NFTCard = ({
   afterBuy,
   id,
   owner_address,
-  is_listed,
-  canLike = true, // <-- default true
+  is_listed = false,
+  canLike = true,
   source,
-}: NFTCardProps) => {
+}) => {
+  // Hooks
+  const navigate = useNavigate();
   const { buyNFT, listNFT } = useWeb3();
   const { address } = useWallet();
-  const [isBuying, setIsBuying] = React.useState(false);
-  const [isListing, setIsListing] = React.useState(false);
-  const [isLiking, setIsLiking] = React.useState(false);
-  const navigate = useNavigate();
+  const { isLiked, toggleLike } = useLikes();
+
+  // State
+  const [isBuying, setIsBuying] = useState(false);
+  const [isListing, setIsListing] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+
+  // Derived state
+  const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
 
   // Debug: Log props on mount
   React.useEffect(() => {
@@ -76,27 +108,22 @@ const NFTCard = ({
       tokenId,
       id,
       id_type: typeof id,
-      liked
+      liked,
+      isOwner
     });
-  }, [title, collection, price, image, tokenId, id, liked]);
+  }, [title, collection, price, image, tokenId, id, liked, isOwner]);
 
   const handleLike = async () => {
-    if (isLiking) {
-      console.log('[NFTCard] Like already in progress, ignoring click');
-      return;
-    }
-    
-    if (!id || !address) {
-      toast.error('NFT ID or wallet address not found');
+    if (isLiking || !id || !address) {
       return;
     }
     
     setIsLiking(true);
-    console.log('[NFTCard] Toggling like for NFT:', id, 'Current liked state:', liked);
     try {
-      // Let parent component handle the API call
+      await toggleLike(id);
+      // Still call onLike for backward compatibility
       if (onLike) {
-        onLike(!liked); // Pass the expected new state (opposite of current)
+        onLike(!isLiked(id));
       }
     } catch (err) {
       console.error('[NFTCard] Like failed:', err);
@@ -108,7 +135,7 @@ const NFTCard = ({
 
   const handleBuy = async () => {
     if (!tokenId || !price) {
-      toast.error('Missing tokenId or price');
+      toast.error('Please try again. NFT information is missing.');
       return;
     }
     if (isOwner) {
@@ -116,30 +143,61 @@ const NFTCard = ({
       return;
     }
     if (!is_listed) {
-      toast.error('This NFT is not listed for sale.');
+      toast.error('This NFT is not currently listed for sale.');
       return;
     }
+    if (!address) {
+      toast.error('Please connect your wallet to make a purchase.');
+      return;
+    }
+    if (!window.ethereum) {
+      toast.error('Please install a Web3 wallet (like MetaMask) to purchase NFTs.');
+      return;
+    }
+
     setIsBuying(true);
     console.log('[NFTCard] Attempting to buy NFT:', { tokenId, price });
+    
+    let simulated = false;
+
     try {
-      // Try on-chain buy if wallet is available; otherwise fall back to simulation
-      let txHash = '';
-      let simulated = false;
-      if (address && window.ethereum) {
-        console.log('[NFTCard] Calling buyNFT...');
-        const result = await buyNFT(Number(tokenId), price.toString());
-        console.log('[NFTCard] buyNFT result:', result);
-        if (result && result.hash) {
-          txHash = result.hash;
-          toast.success('NFT purchased successfully!');
-        } else {
-          toast.message('Proceeding with simulated transfer for testing.');
-          simulated = true;
+      // Ensure we're on Sepolia network
+      const web3Provider = new ethers.BrowserProvider(window.ethereum);
+      const network = await web3Provider.getNetwork();
+      
+      if (network.chainId !== BigInt(NETWORK_CONFIG.chainIdDecimal)) {
+        toast.loading('Switching to Sepolia network...', { id: 'network-switch' });
+        const { switchToSepoliaNetwork } = await import('@/config');
+        const switched = await switchToSepoliaNetwork();
+        if (!switched) {
+          toast.error('Please switch to the Sepolia Test Network to continue.', { id: 'network-switch' });
+          return;
         }
-      } else {
-        toast.message('No wallet detected. Proceeding with simulated transfer for testing.');
-        simulated = true;
+        toast.success('Successfully switched to Sepolia network!', { id: 'network-switch' });
       }
+
+      // Check balance
+      const balance = await web3Provider.getBalance(address);
+      const priceInWei = ethers.parseEther(price.toString());
+      
+      if (balance < priceInWei) {
+        toast.error('Insufficient balance in your wallet to complete this purchase.');
+        return;
+      }
+
+      // Proceed with purchase
+      console.log('[NFTCard] Calling buyNFT...');
+      const result = await buyNFT(Number(tokenId), price.toString());
+      console.log('[NFTCard] buyNFT result:', result);
+      
+      if (!result || !result.hash) {
+        toast.error('Transaction failed to process. Please try again.');
+        return;
+      }
+
+      // Transaction successful
+      const txHash = result.hash;
+      toast.success('Purchase successful! Updating ownership...');
 
       // Notify backend to update owner (supports simulation if new_owner is provided)
       try {
@@ -151,6 +209,7 @@ const NFTCard = ({
           gas_price: 0,
         };
         if (simulated && address) payload.new_owner = address;
+        
         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -158,16 +217,15 @@ const NFTCard = ({
         });
         toast.success('Ownership updated.');
         if (afterBuy) afterBuy();
-      } catch (err) {
-        console.error('[NFTCard] Failed to notify backend for activity log:', err);
+      } catch (backendError) {
+        console.error('[NFTCard] Failed to notify backend for activity log:', backendError);
+        toast.error('Purchase completed but ownership update failed. Please refresh.');
       }
-    } catch (err: any) {
-      console.error('Transaction error:', err);
-      if (err?.reason === 'NFT not listed for sale' || err?.message?.includes('NFT not listed for sale')) {
-        toast.error('This NFT is not listed for sale.');
-      } else if (err?.reason === 'Incorrect price' || err?.message?.includes('Incorrect price')) {
-        toast.error('Incorrect price for this NFT.');
-      } else if (err?.code === 'INSUFFICIENT_FUNDS' || err?.message?.includes('insufficient funds')) {
+
+    } catch (error: any) {
+      console.error('Transaction error:', error);
+      
+      if (error?.message?.includes('insufficient funds') || error?.code === 'INSUFFICIENT_FUNDS') {
         // Allow user to simulate purchase for testing
         try {
           toast.message('Insufficient funds. Proceeding with simulated transfer for testing.');
@@ -181,8 +239,14 @@ const NFTCard = ({
         } catch (e) {
           toast.error('Simulation failed.');
         }
+      } else if (error?.message?.includes('user rejected')) {
+        toast.error('Purchase was cancelled.');
+      } else if (error?.message?.includes('NFT not listed') || error?.reason === 'NFT not listed for sale') {
+        toast.error('This NFT is not listed for sale.');
+      } else if (error?.message?.includes('Incorrect price') || error?.reason === 'Incorrect price') {
+        toast.error('The price of this NFT has changed. Please refresh the page.');
       } else {
-        toast.error('Transaction failed: ' + (err?.message || 'Unknown error'));
+        toast.error('Transaction failed: ' + (error?.message || 'Unknown error'));
       }
     } finally {
       setIsBuying(false);
@@ -255,8 +319,6 @@ const NFTCard = ({
     }
   };
 
-  const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
-
   // Debug logging
   console.log('[NFTCard] Debug values:', {
     tokenId,
@@ -307,8 +369,22 @@ const NFTCard = ({
             alt={title}
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={(e) => {
-              console.error('[NFTCard] Image failed to load:', (e.target as HTMLImageElement).src);
-              (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
+              const img = e.target as HTMLImageElement;
+              const currentSrc = img.src;
+              console.error('[NFTCard] Image failed to load:', currentSrc);
+              
+              // If we're using ipfs.io and it failed, try alternate IPFS gateways
+              if (currentSrc.includes('ipfs.io')) {
+                if (currentSrc.includes('/ipfs/')) {
+                  const hash = currentSrc.split('/ipfs/')[1];
+                  // Try cloudflare-ipfs.com
+                  img.src = `https://cloudflare-ipfs.com/ipfs/${hash}`;
+                  return;
+                }
+              }
+              
+              // If all gateways fail, show placeholder
+              img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
             }}
             onLoad={() => console.log('[NFTCard] Image loaded successfully:', getImageUrl(image))}
           />
@@ -322,7 +398,7 @@ const NFTCard = ({
             disabled={isLiking || !canLike}
             title={canLike ? "Like this NFT" : "Only local NFTs can be liked"}
           >
-            <Heart className={`h-4 w-4 transition-colors ${liked ? 'fill-red-500 text-red-500' : 'hover:text-red-500'}`} />
+            <Heart className={`h-4 w-4 transition-colors ${id && isLiked(id) ? 'fill-red-500 text-red-500' : 'hover:text-red-500'}`} />
           </Button>
           {views && (
             <div className="flex items-center space-x-1 bg-background/80 backdrop-blur rounded-md px-2 py-1">

@@ -25,6 +25,8 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
+import { useLikes } from '@/contexts/LikeContext';
+import { useFollow } from '@/contexts/FollowContext';
 import { nftService } from '@/services/nftService';
 import { apiUrl } from '@/config';
 import { web3Service } from '@/services/web3Service';
@@ -34,14 +36,16 @@ const NFTDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { address } = useWallet();
+  const { isFollowing, toggleFollow } = useFollow();
   const [nft, setNFT] = useState<any>(null);
   const [owner, setOwner] = useState<any>(null);
   const [creator, setCreator] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isLiked, setIsLiked] = useState(false);
+  const { isLiked, toggleLike } = useLikes();
   const [activeTab, setActiveTab] = useState("overview");
   const [imageLoading, setImageLoading] = useState(true);
+  const [isFollowLoading, setIsFollowLoading] = useState(false);
   const [currentGatewayIndex, setCurrentGatewayIndex] = useState(0);
   const [nftStats, setNftStats] = useState({
     views: 0,
@@ -93,8 +97,7 @@ const NFTDetails = () => {
           }
         }
         
-        // Set initial like state from NFT data
-        setIsLiked(nftData.liked || false);
+        // Like state is now managed by LikeContext
         
         // Fetch owner and creator profiles if addresses are available
         if (nftData.owner_address) {
@@ -264,16 +267,16 @@ const NFTDetails = () => {
     if (!nft) return;
 
     try {
-      const result = await nftService.toggleNFTLike(nft.id, address);
-      if (result.success) {
-        setIsLiked(result.liked || false);
+      await toggleLike(nft.id);
+      // Update stats - stats are now managed by the LikeContext
+      // but we'll refetch stats to stay in sync
+      const statsResponse = await fetch(apiUrl(`/nfts/${nft.id}/stats/`));
+      const statsData = await statsResponse.json();
+      if (statsData.success) {
         setNftStats(prev => ({
           ...prev,
-          likes: typeof result.like_count === 'number' ? result.like_count : prev.likes
+          likes: statsData.data.likes || prev.likes
         }));
-        toast.success(result.liked ? 'Added to favorites' : 'Removed from favorites');
-      } else {
-        toast.error(result.error || 'Failed to update favorite status');
       }
     } catch (error) {
       console.error('Error toggling like:', error);
@@ -331,18 +334,46 @@ const NFTDetails = () => {
 
       toast.success('Purchase successful!', { id: 'buy' });
     } catch (err: any) {
-      const message = err?.message || 'Failed to buy NFT';
-      toast.error(message, { id: 'buy' });
       console.error('[NFTDetails] Buy failed:', err);
+      let errorMessage = 'Sorry, there was a problem processing your purchase.';
+      
+      if (err?.message?.includes('insufficient funds')) {
+        errorMessage = 'You do not have enough funds in your wallet to complete this purchase.';
+      } else if (err?.message?.includes('user rejected')) {
+        errorMessage = 'Purchase was cancelled.';
+      } else if (err?.message?.includes('NFT not listed')) {
+        errorMessage = 'This NFT is no longer available for purchase.';
+      } else if (err?.message?.includes('Incorrect price')) {
+        errorMessage = 'The price of this NFT has changed. Please refresh the page.';
+      } else if (err?.message?.includes('Transaction verification failed')) {
+        errorMessage = 'The purchase could not be verified. Please check your wallet for the transaction status.';
+      }
+
+      toast.error(errorMessage, { id: 'buy' });
     }
   };
 
-  const handleMakeOffer = () => {
+  const handleMakeOffer = async () => {
     if (!address) {
       toast.error('Please connect your wallet first');
       return;
     }
-    toast.info('Make offer functionality coming soon!');
+    if (!nft || !nft.owner_address) {
+      toast.error('NFT or owner information not found');
+      return;
+    }
+    if (nft.owner_address.toLowerCase() === address.toLowerCase()) {
+      toast.error('You cannot make an offer on your own NFT');
+      return;
+    }
+
+    try {
+      // Open offer modal or navigate to offer page
+      navigate(`/make-offer/${nft.id}`);
+    } catch (error) {
+      console.error('Error navigating to make offer:', error);
+      toast.error('Failed to start offer process');
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -550,7 +581,7 @@ const NFTDetails = () => {
                     className="bg-background/80 backdrop-blur-md hover:bg-background/90"
                     onClick={handleLikeToggle}
                   >
-                    <Heart className={`h-4 w-4 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                    <Heart className={`h-4 w-4 transition-colors ${nft && isLiked(nft.id) ? 'fill-red-500 text-red-500' : 'hover:text-red-500'}`} />
                   </Button>
                   <Button
                     variant="secondary"
@@ -775,8 +806,30 @@ const NFTDetails = () => {
                   </div>
                 </div>
               </div>
-              <Button variant="outline" className="w-full">
-                Follow Creator
+              <Button 
+                variant="outline" 
+                className="w-full relative"
+                onClick={async () => {
+                  if (nft.creator_address && !isFollowLoading) {
+                    try {
+                      setIsFollowLoading(true);
+                      await toggleFollow(nft.creator_address);
+                    } catch (error) {
+                      toast.error('Failed to update follow status');
+                      console.error('Error toggling follow:', error);
+                    } finally {
+                      setIsFollowLoading(false);
+                    }
+                  }
+                }}
+                disabled={!address || !nft.creator_address || nft.creator_address.toLowerCase() === address.toLowerCase() || isFollowLoading}
+              >
+                {isFollowLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/50">
+                    <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full"></div>
+                  </div>
+                )}
+                {nft.creator_address && isFollowing(nft.creator_address) ? 'Unfollow' : 'Follow Creator'}
               </Button>
         </Card>
 
@@ -819,7 +872,12 @@ const NFTDetails = () => {
                 </div>
               </div>
 
-              <Button variant="outline" className="w-full">
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => nft.owner_address && navigate(`/profile/${nft.owner_address}`)}
+                disabled={!nft.owner_address}
+              >
                 View Collection
               </Button>
             </Card>

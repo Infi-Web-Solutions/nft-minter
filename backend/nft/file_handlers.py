@@ -4,6 +4,8 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
+BASE_URL = os.environ.get('URL', 'http://localhost:8000')
+
 def handle_profile_image(profile, image_data, wallet_address, request):
     """Handle profile image upload"""
     if not image_data.startswith('data:image'):
@@ -21,7 +23,7 @@ def handle_profile_image(profile, image_data, wallet_address, request):
     os.makedirs(os.path.join(settings.MEDIA_ROOT, 'profile_images'), exist_ok=True)
     
     file_path = default_storage.save(f'profile_images/{filename}', file_data)
-    url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
+    url = f"{BASE_URL}{default_storage.url(file_path)}"
     
     # Delete old file if exists
     if old_avatar:
@@ -48,7 +50,7 @@ def handle_cover_image(profile, image_data, wallet_address, request):
     os.makedirs(os.path.join(settings.MEDIA_ROOT, 'cover_images'), exist_ok=True)
     
     file_path = default_storage.save(f'cover_images/{filename}', file_data)
-    url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
+    url = f"{BASE_URL}{default_storage.url(file_path)}"
     
     # Delete old file if exists
     if old_banner:

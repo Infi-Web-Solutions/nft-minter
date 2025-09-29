@@ -146,9 +146,16 @@ const Stats = () => {
           if (!res.pagination) break;
         }
         const colorPalette = ['#8B5CF6', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#6B7280', '#22D3EE', '#A78BFA'];
+        // Calculate total items for percentage calculation
+        const totalItems = Array.from(categoriesCountMap.values()).reduce((sum, count) => sum + count, 0);
+        
         const categoriesForChart = Array.from(categoriesCountMap.entries())
           .sort((a, b) => b[1] - a[1])
-          .map(([name, value], idx) => ({ name, value, color: colorPalette[idx % colorPalette.length] }));
+          .map(([name, count], idx) => ({ 
+            name, 
+            value: Math.round((count / totalItems) * 100), // Convert to percentage
+            color: colorPalette[idx % colorPalette.length]
+          }));
         setCategoryData(categoriesForChart);
       } catch (error) {
         console.error('[Stats] Failed to load market stats:', error);
@@ -355,7 +362,7 @@ const Stats = () => {
                         cy="50%"
                         outerRadius={100}
                         dataKey="value"
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        label={({ name, value }) => `${name} ${value}%`}
                       >
                         {categoryData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />

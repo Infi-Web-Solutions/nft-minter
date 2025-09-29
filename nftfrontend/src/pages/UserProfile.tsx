@@ -21,7 +21,7 @@ import Footer from '@/components/Footer';
 import { useWallet } from '@/contexts/WalletContext';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
-import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { useLikes } from '@/contexts/LikeContext';
 import { apiUrl } from '@/config';
 
 interface UserProfileData {
@@ -53,9 +53,9 @@ const UserProfile = () => {
   const [activeTab, setActiveTab] = useState('collected');
   const [collectedNFTs, setCollectedNFTs] = useState<any[]>([]);
   const [createdNFTs, setCreatedNFTs] = useState<any[]>([]);
-  const [likedNFTs, setLikedNFTs] = useState<any[]>([]);
+  const [likedNFTsList, setLikedNFTsList] = useState<any[]>([]);
   
-  const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const { likedNFTs, syncLikes, isLiked } = useLikes();
 
   const isOwnProfile = address?.toLowerCase() === walletAddress?.toLowerCase();
 
@@ -175,7 +175,7 @@ const UserProfile = () => {
                 console.log(`[UserProfile] Liked NFTs raw data:`, likedData.data);
                 // Map the data to match NFTCard props
                 const mappedNFTs = (likedData.data || []).map(mapNFTData);
-                setLikedNFTs(mappedNFTs);
+                setLikedNFTsList(mappedNFTs);
               } else {
                 console.error(`[UserProfile] Failed to fetch liked NFTs:`, likedData.error);
               }
@@ -266,7 +266,7 @@ const UserProfile = () => {
       owner_address: nft.owner_address,
       is_listed: nft.is_listed,
       id: `local_${nft.id}`, // Format ID for NFTDetails navigation
-      liked: likedNFTIds.has(String(`local_${nft.id}`)) || nft.liked || false,
+      liked: isLiked(nft.id) || nft.liked || false,
     };
     console.log(`[UserProfile] Mapped NFT:`, { originalId: nft.id, mappedId: mappedNFT.id, title: mappedNFT.title });
     return mappedNFT;
@@ -286,8 +286,8 @@ const UserProfile = () => {
         const updater = (list: any[]) => list.map((n) => (n.id === nftId ? { ...n, liked: actualLiked } : n));
         setCollectedNFTs(updater);
         setCreatedNFTs(updater);
-        setLikedNFTs(updater);
-        await refreshLikedNFTs();
+        setLikedNFTsList(updater);
+        await syncLikes();
         toast.success(actualLiked ? 'Added to favorites' : 'Removed from favorites');
       } else {
         toast.error(result.error || 'Failed to update like status');
@@ -518,7 +518,7 @@ const UserProfile = () => {
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
-                          liked={likedNFTIds.has(String(nft.id)) || nft.liked}
+                          liked={isLiked(nft.id) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                         />
                       ))
@@ -537,7 +537,7 @@ const UserProfile = () => {
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
-                          liked={likedNFTIds.has(String(nft.id)) || nft.liked}
+                          liked={isLiked(nft.id) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                         />
                       ))
@@ -548,16 +548,16 @@ const UserProfile = () => {
                 {isOwnProfile && (
                   <TabsContent value="liked" className="p-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {likedNFTs.length === 0 ? (
+                      {likedNFTsList.length === 0 ? (
                         <div className="col-span-full text-center text-muted-foreground py-8">
                           No liked NFTs yet.
                         </div>
                       ) : (
-                        likedNFTs.map((nft: any) => (
+                        likedNFTsList.map((nft: any) => (
                           <NFTCard 
                             key={nft.id} 
                             {...nft} 
-                            liked={likedNFTIds.has(String(nft.id))}
+                            liked={isLiked(nft.id)}
                             onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                           />
                         ))

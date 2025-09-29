@@ -11,12 +11,12 @@ import Footer from '@/components/Footer';
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
-import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { useLikes } from '@/contexts/LikeContext';
 import { useSearchParams } from 'react-router-dom';
 
 const Marketplace = () => {
   const { address } = useWallet();
-  const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const { likedNFTs, syncLikes, isLiked } = useLikes();
   const [searchParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -211,7 +211,7 @@ const Marketplace = () => {
       nftId, 
       nftId_type: typeof nftId, 
       newLikedState,
-      currentLikedState: likedNFTIds.has(String(nftId))
+      currentLikedState: isLiked(nftId)
     });
     
     try {
@@ -230,7 +230,7 @@ const Marketplace = () => {
           )
         );
         toast.success(actualLikedState ? 'Added to favorites' : 'Removed from favorites');
-        await refreshLikedNFTs();
+        await syncLikes();
       } else {
         toast.error(result.error || 'Failed to update like status');
       }
@@ -386,7 +386,7 @@ const Marketplace = () => {
                     image={imageUrl}
                     tokenId={nft.token_id}
                     id={nft.id}
-                    liked={likedNFTIds.has(String(nft.id))}
+                    liked={isLiked(nft.id)}
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}

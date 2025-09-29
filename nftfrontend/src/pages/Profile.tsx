@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
-import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { useLikes } from '@/contexts/LikeContext';
 import { apiUrl } from '@/config';
 
 const Profile = () => {
@@ -47,7 +47,7 @@ const Profile = () => {
   const [ownedNFTs, setOwnedNFTs] = useState([]);
   const [favoriteNFTs, setFavoriteNFTs] = useState([]);
   const [activity, setActivity] = useState([]);
-  const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const { likedNFTs, syncLikes, isLiked } = useLikes();
 
   const [selectedTab, setSelectedTab] = useState('collected');
   const [createdNFTs, setCreatedNFTs] = useState([]);
@@ -317,7 +317,7 @@ const Profile = () => {
   }, [address]);
 
   // Helper to check if NFT is liked
-  const isNFTLiked = (nft: any) => likedNFTIds.has(String(nft.id));
+  const isNFTLiked = (nft: any) => isLiked(nft.id);
   // Helper to update favoriteNFTs after like/unlike
   const handleLikeToggle = async (nft: any, newLikedState: boolean) => {
     if (!address) {
@@ -340,7 +340,7 @@ const Profile = () => {
           )
         );
         // Always refresh favoriteNFTs from backend for accuracy
-        await refreshLikedNFTs();
+        await syncLikes();
         toast.success(actualLikedState ? 'Added to favorites' : 'Removed from favorites');
       } else {
         toast.error(result.error || 'Failed to update like status');
@@ -531,18 +531,18 @@ const Profile = () => {
             <TabsContent value="favorite" className="mt-8">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold">My Favorite NFTs</h3>
-                {Array.from(likedNFTIds).length > 0 && (
+                {likedNFTs && likedNFTs.length > 0 && (
                   <Button 
                     variant="outline" 
                     onClick={() => window.location.href = '/favorites'}
                     className="flex items-center gap-2"
                   >
-                    ❤️ View All Favorites ({Array.from(likedNFTIds).length})
+                    ❤️ View All Favorites ({likedNFTs.length})
                   </Button>
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {Array.from(likedNFTIds).length === 0 ? (
+                {!likedNFTs || likedNFTs.length === 0 ? (
                   <div className="col-span-full text-center text-muted-foreground">
                     <div className="text-4xl mb-4">❤️</div>
                     <p className="mb-4">No favorite NFTs yet.</p>
@@ -556,7 +556,7 @@ const Profile = () => {
                 ) : (
                   // Filter combinedNFTs to show only liked NFTs
                   combinedNFTs
-                    .filter((nft: any) => likedNFTIds.has(String(nft.id)))
+                    .filter((nft: any) => isLiked(nft.id))
                     .map((nft: any) => (
                       <NFTCard
                         key={nft.id}

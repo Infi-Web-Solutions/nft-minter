@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -11,11 +12,53 @@ import { Search, ExternalLink, Loader2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { activityService, ActivityFilters } from '@/services/activityService';
-import { Activity } from '@/services/api';
+import type { Activity } from '@/services/api';
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
 
+// Helper function to get user display info
+const getUserDisplayInfo = (user: { address: string; name: string; avatar: string }) => {
+  return {
+    name: user.name || `${user.address.slice(0, 6)}...${user.address.slice(-4)}`,
+    avatar: user.avatar || '',
+    initials: (user.name || user.address.slice(0, 2)).slice(0, 2).toUpperCase(),
+    address: user.address
+  };
+};
+
+// Helper function to handle IPFS and other image URLs
+const getImageUrl = (url: string) => {
+  if (!url) return '';
+  
+  // Strip any extra query params
+  const clean = url.split('?')[0];
+  
+  if (clean.startsWith('ipfs://')) {
+    // Remove any trailing slashes
+    const ipfsHash = clean.replace('ipfs://', '').replace(/\/+$/, '');
+    return `https://ipfs.io/ipfs/${ipfsHash}`;
+  }
+
+  // Handle base64 images
+  if (clean.startsWith('data:')) {
+    return clean;
+  }
+
+  // Handle HTTP/HTTPS URLs
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    return clean;
+  }
+
+  // If it's just a hash, assume it's an IPFS hash
+  if (clean.match(/^Qm[1-9A-HJ-NP-Za-km-z]{44}|b[A-Za-z2-7]{58}|B[A-Z2-7]{58}|z[1-9A-HJ-NP-Za-km-z]{48}|F[0-9A-F]{50}$/i)) {
+    return `https://ipfs.io/ipfs/${clean}`;
+  }
+
+  return clean;
+};
+
 const Activity = () => {
+  const navigate = useNavigate();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -103,8 +146,11 @@ const Activity = () => {
             return now - created <= ms;
           };
 
-          const toActivity = (nft: NFT, type: 'mint' | 'list'): Activity => ({
-            id: Number(nft.token_id) || Number(nft.id) || Math.floor(Math.random()*1e9),
+          const toActivity = (nft: NFT, type: 'mint' | 'list'): Activity | null => {
+            if (!nft || !nft.id) return null;
+            
+            return {
+              id: Number(nft.token_id) || Number(nft.id) || Math.floor(Math.random()*1e9),
             type,
             nft: {
               id: Number(nft.id) || 0,
@@ -130,7 +176,8 @@ const Activity = () => {
             block_number: 0,
             gas_used: 0,
             gas_price: null,
-          });
+            };
+          };
 
           const minted: Activity[] = (activeTab === 'mint' || activeTab === 'all')
             ? nfts.filter(n => withinWindow((n as any).created_at || (n as any).createdAt)).map(n => toActivity(n, 'mint'))
@@ -205,7 +252,10 @@ const Activity = () => {
   };
 
   // Render activity card
-  const renderActivityCard = (activity: Activity) => {
+  const renderActivityCard = (activity: Activity | null) => {
+    if (!activity) return null;
+    if (!activity.nft) return null;
+
     const badge = getActivityBadge(activity.type);
     
                 return (
@@ -216,41 +266,81 @@ const Activity = () => {
                           {badge.label}
                         </Badge>
                         
-                        <div className="w-12 h-12 rounded-lg overflow-hidden">
-                          <img 
-                src={activity.nft.image_url} 
-                            alt={activity.nft.name}
-                            className="h-full w-full object-cover"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = `https://images.unsplash.com/photo-${1500000000000 + activity.id}?w=60&h=60&fit=crop&crop=center`;
-                }}
+                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted relative">
+                          {activity.nft ? (
+                            <img 
+                              src={getImageUrl(activity.nft.image_url)} 
+                              alt={activity.nft.name}
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              const currentSrc = target.src;
+                              
+                              // If we're using ipfs.io and it failed, try alternate IPFS gateways
+                              if (currentSrc.includes('ipfs.io')) {
+                                if (currentSrc.includes('/ipfs/')) {
+                                  const hash = currentSrc.split('/ipfs/')[1];
+                                  // Try cloudflare-ipfs.com
+                                  target.src = `https://cloudflare-ipfs.com/ipfs/${hash}`;
+                                  return;
+                                }
+                              }
+
+                              // If all else fails, show collection placeholder
+                              target.src = '/placeholder.svg';
+                            }}
                           />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center bg-muted">
+                              <span className="text-xs text-muted-foreground">No Image</span>
+                            </div>
+                          )}
                         </div>
                         
                         <div className="flex-1">
-                          <h3 className="font-semibold">{activity.nft.name}</h3>
-                          <p className="text-sm text-muted-foreground">{activity.nft.collection}</p>
+                          {activity.nft ? (
+                            <>
+                              <h3 className="font-semibold">
+                                {activity.nft.name || `${activity.nft.collection} #${activity.nft.token_id || ''}`}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">{activity.nft.collection}</p>
+                            </>
+                          ) : (
+                            <>
+                              <h3 className="font-semibold text-muted">NFT Not Found</h3>
+                              <p className="text-sm text-muted-foreground">This NFT may have been removed</p>
+                            </>
+                          )}
                         </div>
                         
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={activity.from.avatar} />
-                              <AvatarFallback>{activity.from.name.slice(0, 2)}</AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm">{activity.from.name}</span>
+                            {activity.from ? (
+                              <>
+                                <Avatar className="h-8 w-8 ring-2 ring-offset-2 ring-offset-background ring-border">
+                                  <AvatarImage src={getUserDisplayInfo(activity.from).avatar} />
+                                  <AvatarFallback>{getUserDisplayInfo(activity.from).initials}</AvatarFallback>
+                                </Avatar>
+                                <span className="text-sm font-medium hover:text-primary cursor-pointer" onClick={() => navigate(`/profile/${activity.from.address}`)}>
+                                  {getUserDisplayInfo(activity.from).name}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Unknown User</span>
+                            )}
                           </div>
                           
-              {activity.type !== 'list' && activity.type !== 'bid' && activity.type !== 'mint' && (
+                          {activity.type !== 'list' && activity.type !== 'bid' && activity.type !== 'mint' && activity.to && (
                             <>
                               <span className="text-muted-foreground">→</span>
                               <div className="flex items-center gap-2">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarImage src={activity.to.avatar} />
-                                  <AvatarFallback>{activity.to.name.slice(0, 2)}</AvatarFallback>
+                                <Avatar className="h-8 w-8 ring-2 ring-offset-2 ring-offset-background ring-border">
+                                  <AvatarImage src={getUserDisplayInfo(activity.to).avatar} />
+                                  <AvatarFallback>{getUserDisplayInfo(activity.to).initials}</AvatarFallback>
                                 </Avatar>
-                                <span className="text-sm">{activity.to.name}</span>
+                                <span className="text-sm font-medium hover:text-primary cursor-pointer" onClick={() => navigate(`/profile/${activity.to.address}`)}>
+                                  {getUserDisplayInfo(activity.to).name}
+                                </span>
                               </div>
                             </>
                           )}
