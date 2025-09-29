@@ -4,9 +4,10 @@ import { nftService } from '@/services/nftService';
 
 interface LikeContextType {
   likedNFTs: Set<string>;
-  toggleLike: (nftId: string | number) => Promise<void>;
+  toggleLike: (nftId: string | number) => Promise<{ liked?: boolean; like_count?: number } | void>;
   isLiked: (nftId: string | number) => boolean;
   syncLikes: () => Promise<void>;
+  getLikeCount: (nftId: string | number) => number | undefined;
 }
 
 const LikeContext = createContext<LikeContextType | null>(null);
@@ -21,6 +22,7 @@ export const useLikes = () => {
 
 export const LikeProvider = ({ children }: { children: React.ReactNode }) => {
   const [likedNFTs, setLikedNFTs] = useState<Set<string>>(new Set());
+  const [likeCountsById, setLikeCountsById] = useState<Map<string, number>>(new Map());
   const { address } = useWallet();
 
   const syncLikes = useCallback(async () => {
@@ -60,10 +62,18 @@ export const LikeProvider = ({ children }: { children: React.ReactNode }) => {
       setLikedNFTs(currentLiked);
 
       // Update backend with combined ID (string allowed, e.g., "local_12")
-      await nftService.toggleNFTLike(id, address);
+      const result = await nftService.toggleNFTLike(id, address);
+      if (result && result.like_count !== undefined) {
+        setLikeCountsById(prev => {
+          const next = new Map(prev);
+          next.set(id, result.like_count!);
+          return next;
+        });
+      }
       
       // Re-sync to ensure consistency
       await syncLikes();
+      return { liked: result?.liked, like_count: result?.like_count };
     } catch (error) {
       console.error('Failed to toggle like:', error);
       // Revert on failure
@@ -75,12 +85,15 @@ export const LikeProvider = ({ children }: { children: React.ReactNode }) => {
     return likedNFTs.has(nftId.toString());
   }, [likedNFTs]);
 
+  const getLikeCount = (nftId: string | number) => likeCountsById.get(nftId.toString());
+
   const value = useMemo(() => ({
     likedNFTs,
     toggleLike,
     isLiked,
-    syncLikes
-  }), [likedNFTs, isLiked, syncLikes]);
+    syncLikes,
+    getLikeCount
+  }), [likedNFTs, isLiked, syncLikes, likeCountsById]);
 
   return (
     <LikeContext.Provider value={value}>
