@@ -48,5 +48,4 @@ urlpatterns = [
 
 urlpatterns += [
     path('nfts/<int:token_id>/set_listed/', set_nft_listed, name='set_nft_listed'),
-    path('nfts/<int:token_id>/sync_owner/', views.sync_nft_owner, name='sync_nft_owner'),
 ] 

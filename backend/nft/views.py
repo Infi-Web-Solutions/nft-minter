@@ -401,9 +401,11 @@ def get_collections(request):
 def get_user_nfts(request, wallet_address):
     """Get NFTs collected by a user (owned or created, no duplicates)"""
     try:
-        # Case-insensitive match for Ethereum addresses (checksum vs lowercase)
-        owned_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
-        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
+        wallet_norm = wallet_address.lower()
+        # NFTs where user is owner (case-insensitive)
+        owned_nfts = NFT.objects.filter(owner_address__iexact=wallet_norm)
+        # NFTs where user is creator (case-insensitive)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_norm)
         # Combine and deduplicate by token_id
         nft_dict = {}
         for nft in owned_nfts:
@@ -762,23 +764,20 @@ def update_nft_owner(request, token_id):
             )
 
             if not verification['verified']:
-                # Fallback: trust on-chain owner if it already reflects the new owner
-                from .web3_utils import web3_instance
-                chain_owner = web3_instance.get_nft_owner(token_id)
-                if chain_owner and expected_new_owner and chain_owner.lower() == expected_new_owner.lower():
-                    new_owner = chain_owner
-                    verification = None  # no detailed tx info available
-                else:
-                    return JsonResponse({
-                        'success': False,
-                        'error': verification.get('error', 'Transaction verification failed')
-                    }, status=400)
-            else:
-                new_owner = verification['transaction']['new_owner']
+                return JsonResponse({
+                    'success': False,
+                    'error': verification.get('error', 'Transaction verification failed')
+                }, status=400)
+
+            new_owner = verification['transaction']['new_owner']
+
+        # Normalize addresses to lowercase for reliable comparisons
+        old_owner_norm = (old_owner or '').lower()
+        new_owner_norm = (new_owner or '').lower()
 
         # Only proceed if the owner actually changes
-        if old_owner != new_owner:
-            nft.owner_address = new_owner
+        if old_owner_norm != new_owner_norm:
+            nft.owner_address = new_owner_norm
             # After a successful ownership transfer (buy/transfer), the item should not remain listed
             # Ensure we always clear the listed flag regardless of simulation vs verified path
             nft.is_listed = False
@@ -803,8 +802,8 @@ def update_nft_owner(request, token_id):
             Transaction.objects.create(
                 transaction_hash=tx_hash,
                 nft=nft,
-                from_address=old_owner,
-                to_address=new_owner,
+                from_address=old_owner_norm,
+                to_address=new_owner_norm,
                 transaction_type='buy',
                 price=price,
                 block_number=block_number,
@@ -812,7 +811,7 @@ def update_nft_owner(request, token_id):
                 gas_price=gas_price,
                 timestamp=timezone.now()
             )
-        return JsonResponse({'success': True, 'owner_address': new_owner})
+        return JsonResponse({'success': True, 'owner_address': nft.owner_address})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
@@ -866,54 +865,14 @@ def set_nft_listed(request, token_id):
     from .web3_utils import web3_instance
     try:
         nft = NFT.objects.get(token_id=token_id)
-        # Check on-chain listing status using getListing (struct includes isActive)
+        # Check on-chain listing status
         contract = web3_instance.get_nftmarketplace_contract()
-        listing = contract.functions.getListing(token_id).call()
-        # getListing returns tuple; index 2 corresponds to isActive per contract
-        is_listed = False
-        try:
-            is_listed = bool(listing[2])
-        except Exception:
-            # Fallback: if mapping returns dict-like
-            is_listed = bool(listing.get('isActive', False)) if hasattr(listing, 'get') else False
+        is_listed = contract.functions.isListed(token_id).call()
         # Update DB to reflect on-chain state
         if nft.is_listed != is_listed:
             nft.is_listed = is_listed
             nft.save()
         return JsonResponse({'success': True, 'is_listed': is_listed})
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-@csrf_exempt
-@require_http_methods(["POST"])
-def sync_nft_owner(request, token_id):
-    """
-    Force-sync the NFT owner from on-chain `ownerOf(tokenId)` and align listing flag
-    using `getListing(tokenId).isActive`.
-    """
-    from .models import NFT
-    from .web3_utils import web3_instance
-    try:
-        nft = NFT.objects.get(token_id=token_id)
-        chain_owner = web3_instance.get_nft_owner(token_id)
-        if not chain_owner:
-            return JsonResponse({'success': False, 'error': 'Unable to fetch on-chain owner'}, status=500)
-
-        # Update owner if changed
-        owner_changed = (nft.owner_address or '').lower() != chain_owner.lower()
-        nft.owner_address = chain_owner
-
-        # Sync listing status
-        try:
-            contract = web3_instance.get_nftmarketplace_contract()
-            listing = contract.functions.getListing(token_id).call()
-            is_listed = bool(listing[2])
-        except Exception:
-            is_listed = False
-        nft.is_listed = is_listed
-        nft.save()
-
-        return JsonResponse({'success': True, 'owner_address': chain_owner, 'is_listed': is_listed, 'owner_changed': owner_changed})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 

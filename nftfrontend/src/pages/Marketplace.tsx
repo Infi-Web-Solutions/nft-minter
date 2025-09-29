@@ -45,12 +45,15 @@ const Marketplace = () => {
     }
   }, [searchParams]);
 
-  // Fetch NFTs from API (avoid noisy logs and unnecessary refetch)
+  // Fetch NFTs from API
   useEffect(() => {
     const fetchNFTs = async () => {
       setIsLoading(true);
       try {
         const nfts = await nftService.getCombinedNFTs(address);
+        console.log('[Marketplace] Fetched NFTs:', nfts.length);
+        console.log('[Marketplace] First NFT sample:', nfts[0]);
+        console.log('[Marketplace] All NFTs:', nfts);
         setAllNfts(nfts);
       } catch (error) {
         console.error('[Marketplace] Error fetching NFTs:', error);
@@ -63,15 +66,14 @@ const Marketplace = () => {
     fetchNFTs();
   }, [address]);
 
-  // Skip heavy console logs in production
+  // Debug: Log whenever allNfts changes
   useEffect(() => {
-    if ((import.meta as any).env?.MODE === 'development') {
-      console.log('[Marketplace] allNfts:', allNfts.length);
-    }
+    console.log('[Marketplace] allNfts state changed:', allNfts.length);
   }, [allNfts]);
 
   // Filter and sort NFTs based on current filters
   const filteredNfts = useMemo(() => {
+    console.log('[Marketplace] Starting filter with', allNfts.length, 'NFTs');
 
     const getNumericPrice = (nft: NFT): number => {
       // prefer explicit price, then current_price, then first sell order (wei -> ETH)
@@ -166,6 +168,7 @@ const Marketplace = () => {
         break;
     }
 
+    console.log('[Marketplace] Final filtered result:', filtered.length);
     return filtered;
   }, [activeTab, filters, sortBy, allNfts]);
 

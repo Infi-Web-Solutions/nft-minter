@@ -98,12 +98,21 @@ const NFTCard: React.FC<NFTCardProps> = ({
   // Derived state
   const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
 
-  // Reduce noisy logging in production
+  // Debug: Log props on mount
   React.useEffect(() => {
-    if (import.meta && (import.meta as any).env?.MODE === 'development') {
-      console.log('[NFTCard] Rendered with props:', { title, tokenId, id, liked });
-    }
-  }, [title, tokenId, id, liked]);
+    console.log('[NFTCard] Rendered with props:', {
+      title,
+      collection,
+      price,
+      image,
+      imageUrl: getImageUrl(image),
+      tokenId,
+      id,
+      id_type: typeof id,
+      liked,
+      isOwner
+    });
+  }, [title, collection, price, image, tokenId, id, liked, isOwner]);
 
   const handleLike = async () => {
     if (isLiking || !id || !address) return;
@@ -185,7 +194,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
       const txHash = result.hash;
       toast.success('Purchase successful! Updating ownership...');
 
-      // Notify backend to update owner (always pass expected new owner)
+      // Notify backend to update owner (pass new_owner to avoid race with chain indexing)
       try {
         const payload: any = {
           transaction_hash: txHash,
@@ -193,20 +202,20 @@ const NFTCard: React.FC<NFTCardProps> = ({
           block_number: 0,
           gas_used: 0,
           gas_price: 0,
-          new_owner: address,
         };
+        if (address) payload.new_owner = address;
         
         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        // Sync listing status with chain (should be delisted after sale)
-        try {
-          await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
-        } catch {}
         toast.success('Ownership updated.');
         if (afterBuy) afterBuy();
+        // As a fallback when parent does not pass afterBuy, refresh the page data
+        if (!afterBuy) {
+          try { window.dispatchEvent(new Event('visibilitychange')); } catch {}
+        }
       } catch (backendError) {
         console.error('[NFTCard] Failed to notify backend for activity log:', backendError);
         toast.error('Purchase completed but ownership update failed. Please refresh.');
@@ -358,8 +367,6 @@ const NFTCard: React.FC<NFTCardProps> = ({
             src={getImageUrl(image)} 
             alt={title}
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
-            decoding="async"
             onError={(e) => {
               const img = e.target as HTMLImageElement;
               const currentSrc = img.src;
