@@ -867,14 +867,54 @@ def set_nft_listed(request, token_id):
     from .web3_utils import web3_instance
     try:
         nft = NFT.objects.get(token_id=token_id)
-        # Check on-chain listing status
+        # Check on-chain listing status using getListing (struct includes isActive)
         contract = web3_instance.get_nftmarketplace_contract()
-        is_listed = contract.functions.isListed(token_id).call()
+        listing = contract.functions.getListing(token_id).call()
+        # getListing returns tuple; index 2 corresponds to isActive per contract
+        is_listed = False
+        try:
+            is_listed = bool(listing[2])
+        except Exception:
+            # Fallback: if mapping returns dict-like
+            is_listed = bool(listing.get('isActive', False)) if hasattr(listing, 'get') else False
         # Update DB to reflect on-chain state
         if nft.is_listed != is_listed:
             nft.is_listed = is_listed
             nft.save()
         return JsonResponse({'success': True, 'is_listed': is_listed})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def sync_nft_owner(request, token_id):
+    """
+    Force-sync the NFT owner from on-chain `ownerOf(tokenId)` and align listing flag
+    using `getListing(tokenId).isActive`.
+    """
+    from .models import NFT
+    from .web3_utils import web3_instance
+    try:
+        nft = NFT.objects.get(token_id=token_id)
+        chain_owner = web3_instance.get_nft_owner(token_id)
+        if not chain_owner:
+            return JsonResponse({'success': False, 'error': 'Unable to fetch on-chain owner'}, status=500)
+
+        # Update owner if changed
+        owner_changed = (nft.owner_address or '').lower() != chain_owner.lower()
+        nft.owner_address = chain_owner
+
+        # Sync listing status
+        try:
+            contract = web3_instance.get_nftmarketplace_contract()
+            listing = contract.functions.getListing(token_id).call()
+            is_listed = bool(listing[2])
+        except Exception:
+            is_listed = False
+        nft.is_listed = is_listed
+        nft.save()
+
+        return JsonResponse({'success': True, 'owner_address': chain_owner, 'is_listed': is_listed, 'owner_changed': owner_changed})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
