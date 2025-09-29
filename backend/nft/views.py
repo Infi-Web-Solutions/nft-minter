@@ -22,7 +22,7 @@ from .auth_utils import get_or_create_web3_user
 from django.utils import timezone
 import os
 
-BASE_URL = os.environ.get('URL', 'http://localhost:8000')
+BASE_URL = os.environ.get('URL', 'https://nftminter-api.infiwebsolutions.com')
 
 # User Profile Views
 @csrf_exempt
