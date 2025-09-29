@@ -31,6 +31,19 @@ export function mediaUrl(url?: string | null): string {
 
   const clean = url.split('?')[0];
 
+  // Rewrite localhost media to API base origin
+  try {
+    const base = API_BASE_URL.replace(/\/$/, '');
+    const baseOrigin = new URL(base).origin;
+    if (/^https?:\/\/localhost(?::\d+)?\//i.test(clean) || /^https?:\/\/127\.0\.0\.1(?::\d+)?\//i.test(clean)) {
+      // Replace the origin with API base origin and keep path/query
+      const u = new URL(clean);
+      return `${baseOrigin}${u.pathname}`;
+    }
+  } catch {
+    // ignore URL parsing errors
+  }
+
   // Already absolute (http/https or data URI)
   if (/^(https?:)?\/\//i.test(clean) || clean.startsWith('data:')) {
     return clean;

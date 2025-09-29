@@ -335,7 +335,7 @@ const UserProfile = () => {
       {/* Cover Image */}
       <div className="relative h-64 md:h-80 w-full overflow-hidden">
         <img 
-          src={profile.banner_url || getProfileImageUrl(profile)} 
+          src={mediaUrl(profile.banner_url) || getProfileImageUrl(profile)} 
           alt="Profile Cover" 
           className="w-full h-full object-cover"
           onError={(e) => {

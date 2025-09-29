@@ -590,7 +590,7 @@ const Profile = () => {
                       <CardContent className="p-4">
                         <div className="flex items-center gap-4">
                           <Avatar className="h-10 w-10">
-                            <AvatarImage src={act.avatar_url || ''} />
+                            <AvatarImage src={mediaUrl(act.avatar_url) || ''} />
                             <AvatarFallback>U</AvatarFallback>
                           </Avatar>
                           <div className="flex-1">

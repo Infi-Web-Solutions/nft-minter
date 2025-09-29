@@ -28,7 +28,7 @@ import { useWallet } from '@/contexts/WalletContext';
 import { useLikes } from '@/contexts/LikeContext';
 import { useFollow } from '@/contexts/FollowContext';
 import { nftService } from '@/services/nftService';
-import { apiUrl } from '@/config';
+import { apiUrl, mediaUrl } from '@/config';
 import { web3Service } from '@/services/web3Service';
 import { ethers } from 'ethers';
 
@@ -449,7 +449,7 @@ const NFTDetails = () => {
 
   // Get real profile image URL
   const getProfileImageUrl = (profile: any) => {
-    return profile?.avatar_url || profile?.profile_image || '';
+    return mediaUrl(profile?.avatar_url || profile?.profile_image || '');
   };
 
   // Get profile display name
