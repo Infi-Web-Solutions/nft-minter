@@ -45,25 +45,27 @@ const Marketplace = () => {
     }
   }, [searchParams]);
 
-  // Fetch NFTs from API
+  // Fetch NFTs from API (debounced slight delay to allow wallet/context to stabilize)
   useEffect(() => {
+    let cancelled = false;
     const fetchNFTs = async () => {
       setIsLoading(true);
       try {
         const nfts = await nftService.getCombinedNFTs(address);
-        console.log('[Marketplace] Fetched NFTs:', nfts.length);
-        console.log('[Marketplace] First NFT sample:', nfts[0]);
-        console.log('[Marketplace] All NFTs:', nfts);
-        setAllNfts(nfts);
+        if (import.meta.env.DEV) {
+          console.log('[Marketplace] Fetched NFTs:', nfts.length);
+        }
+        if (!cancelled) setAllNfts(nfts);
       } catch (error) {
         console.error('[Marketplace] Error fetching NFTs:', error);
-        toast.error('Failed to load NFTs');
+        if (!cancelled) toast.error('Failed to load NFTs');
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
-    fetchNFTs();
+    const timer = setTimeout(fetchNFTs, 50);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [address]);
 
   // Debug: Log whenever allNfts changes

@@ -58,123 +58,74 @@ const NFTDetails = () => {
 
   useEffect(() => {
     if (!id) return;
-    
+
     const fetchNFT = async () => {
       setLoading(true);
       try {
-        let nftData;
-        
-        console.log('[NFTDetails] Fetching NFT with combined ID:', id);
-        
+        // 1) Fetch NFT base data
         const res = await fetch(apiUrl(`/nfts/combined/${id}/`));
         const data = await res.json();
-        if (data.success) {
-          nftData = data.data;
-        } else {
+        if (!data.success) {
           toast.error(data.error || 'NFT not found');
           navigate('/');
           return;
         }
-        
+
+        const nftData = data.data;
         setNFT(nftData);
-        setImageLoading(true); // Reset image loading state
-        
-        // Debug image data
-        console.log('[NFTDetails] NFT Data:', {
-          id: nftData.id,
-          name: nftData.name,
-          image_url: nftData.image_url,
-          token_uri: nftData.token_uri
-        });
-        
-        // Test image URL conversion
-        if (nftData.image_url) {
-          const testUrl = nftData.image_url;
-          console.log('[NFTDetails] Original Image URL:', testUrl);
-          if (testUrl.startsWith('ipfs://')) {
-            const convertedUrl = testUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
-            console.log('[NFTDetails] Converted Image URL:', convertedUrl);
-          }
+        setImageLoading(true);
+
+        if (import.meta.env.DEV) {
+          console.log('[NFTDetails] Loaded NFT', { id: nftData.id, image_url: nftData.image_url });
         }
-        
-        // Like state is now managed by LikeContext
-        
-        // Fetch owner and creator profiles if addresses are available
-        if (nftData.owner_address) {
-          try {
-            const ownerRes = await fetch(apiUrl(`/profiles/${nftData.owner_address}/`));
-            if (ownerRes.ok) {
-            const ownerData = await ownerRes.json();
-              if (ownerData.success) {
-                setOwner(ownerData.data || ownerData);
-              } else {
-                console.warn('Owner profile fetch returned success: false');
-                // Set a fallback owner profile
-                setOwner({
-                  username: `User${nftData.owner_address.slice(-4)}`,
-                  avatar_url: null,
-                  verified: false
-                });
-              }
-            } else {
-              console.warn('Owner profile fetch failed with status:', ownerRes.status);
-              // Set a fallback owner profile
-              setOwner({
-                username: `User${nftData.owner_address.slice(-4)}`,
-                avatar_url: null,
-                verified: false
-              });
-            }
-          } catch (e) {
-            console.error('Failed to fetch owner profile:', e);
-            // Set a fallback owner profile
-            setOwner({
-              username: `User${nftData.owner_address.slice(-4)}`,
-              avatar_url: null,
-              verified: false
-            });
-          }
+
+        // 2) Parallel fetches: owner, creator, stats, activity
+        const ownerPromise = nftData.owner_address
+          ? fetch(apiUrl(`/profiles/${nftData.owner_address}/`))
+              .then(r => r.ok ? r.json() : null)
+              .then(j => (j && j.success) ? (j.data || j) : ({ username: `User${nftData.owner_address.slice(-4)}`, avatar_url: null, verified: false }))
+              .catch(() => ({ username: `User${nftData.owner_address.slice(-4)}`, avatar_url: null, verified: false }))
+          : Promise.resolve(null);
+
+        const creatorPromise = nftData.creator_address
+          ? fetch(apiUrl(`/profiles/${nftData.creator_address}/`))
+              .then(r => r.ok ? r.json() : null)
+              .then(j => (j && j.success) ? (j.data || j) : ({ username: `User${nftData.creator_address.slice(-4)}`, avatar_url: null, verified: false }))
+              .catch(() => ({ username: `User${nftData.creator_address.slice(-4)}`, avatar_url: null, verified: false }))
+          : Promise.resolve(null);
+
+        const statsPromise = fetch(apiUrl(`/nfts/${nftData.id}/stats/`))
+          .then(r => r.ok ? r.json() : null)
+          .then(j => j && j.success ? j.data : null)
+          .catch(() => null);
+
+        const activityPromise = (() => {
+          const activityId = String(id).startsWith('local_') ? String(id).replace('local_', '') : id as string;
+          return fetch(apiUrl(`/activities/?nft=${activityId}`))
+            .then(r => r.ok ? r.json() : null)
+            .then(j => j && j.success ? j.data : [])
+            .catch(() => []);
+        })();
+
+        const [ownerData, creatorData, statsData, activityData] = await Promise.all([
+          ownerPromise, creatorPromise, statsPromise, activityPromise
+        ]);
+
+        if (ownerData) setOwner(ownerData);
+        if (creatorData) setCreator(creatorData);
+        if (statsData) {
+          setNftStats(prev => ({
+            ...prev,
+            views: statsData.views || 0,
+            likes: statsData.likes || 0,
+            owners: statsData.owners || 1,
+            lastSale: statsData.last_sale || 'No sales yet',
+            totalVolume: statsData.total_volume || '0 ETH',
+            properties: statsData.properties || []
+          }));
         }
-        
-        if (nftData.creator_address) {
-          try {
-            const creatorRes = await fetch(apiUrl(`/profiles/${nftData.creator_address}/`));
-            if (creatorRes.ok) {
-            const creatorData = await creatorRes.json();
-              if (creatorData.success) {
-                setCreator(creatorData.data || creatorData);
-              } else {
-                console.warn('Creator profile fetch returned success: false');
-                // Set a fallback creator profile
-                setCreator({
-                  username: `User${nftData.creator_address.slice(-4)}`,
-                  avatar_url: null,
-                  verified: false
-                });
-              }
-            } else {
-              console.warn('Creator profile fetch failed with status:', creatorRes.status);
-              // Set a fallback creator profile
-              setCreator({
-                username: `User${nftData.creator_address.slice(-4)}`,
-                avatar_url: null,
-                verified: false
-              });
-            }
-          } catch (e) {
-            console.error('Failed to fetch creator profile:', e);
-            // Set a fallback creator profile
-            setCreator({
-              username: `User${nftData.creator_address.slice(-4)}`,
-              avatar_url: null,
-              verified: false
-            });
-          }
-        }
-        
-        // Fetch NFT statistics and properties
-        await fetchNFTStats(nftData);
-        
+        if (activityData) setActivity(activityData);
+
       } catch (e) {
         console.error('Error fetching NFT:', e);
         toast.error('Failed to load NFT');
@@ -183,7 +134,7 @@ const NFTDetails = () => {
         setLoading(false);
       }
     };
-    
+
     fetchNFT();
   }, [id, navigate]);
 

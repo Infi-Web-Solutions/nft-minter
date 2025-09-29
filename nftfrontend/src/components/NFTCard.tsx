@@ -66,7 +66,7 @@ const getImageUrl = (url: string) => {
   return mediaUrl(clean);
 };
 
-const NFTCard: React.FC<NFTCardProps> = ({ 
+const NFTCardComponent: React.FC<NFTCardProps> = ({ 
   title, 
   collection, 
   price, 
@@ -493,5 +493,17 @@ const NFTCard: React.FC<NFTCardProps> = ({
     </Card>
   );
 };
+
+const NFTCard = React.memo(NFTCardComponent, (prev, next) => {
+  return (
+    prev.id === next.id &&
+    prev.title === next.title &&
+    prev.image === next.image &&
+    prev.price === next.price &&
+    prev.owner_address === next.owner_address &&
+    prev.is_listed === next.is_listed &&
+    prev.liked === next.liked
+  );
+});
 
 export default NFTCard;
