@@ -66,7 +66,7 @@ const getImageUrl = (url: string) => {
   return mediaUrl(clean);
 };
 
-const NFTCardComponent: React.FC<NFTCardProps> = ({ 
+const NFTCard: React.FC<NFTCardProps> = ({ 
   title, 
   collection, 
   price, 
@@ -194,7 +194,7 @@ const NFTCardComponent: React.FC<NFTCardProps> = ({
       const txHash = result.hash;
       toast.success('Purchase successful! Updating ownership...');
 
-      // Notify backend to update owner (pass new_owner to avoid race with chain indexing)
+      // Notify backend to update owner (supports simulation if new_owner is provided)
       try {
         const payload: any = {
           transaction_hash: txHash,
@@ -203,7 +203,7 @@ const NFTCardComponent: React.FC<NFTCardProps> = ({
           gas_used: 0,
           gas_price: 0,
         };
-        if (address) payload.new_owner = address;
+        if (simulated && address) payload.new_owner = address;
         
         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
@@ -212,10 +212,6 @@ const NFTCardComponent: React.FC<NFTCardProps> = ({
         });
         toast.success('Ownership updated.');
         if (afterBuy) afterBuy();
-        // As a fallback when parent does not pass afterBuy, refresh the page data
-        if (!afterBuy) {
-          try { window.dispatchEvent(new Event('visibilitychange')); } catch {}
-        }
       } catch (backendError) {
         console.error('[NFTCard] Failed to notify backend for activity log:', backendError);
         toast.error('Purchase completed but ownership update failed. Please refresh.');
@@ -493,17 +489,5 @@ const NFTCardComponent: React.FC<NFTCardProps> = ({
     </Card>
   );
 };
-
-const NFTCard = React.memo(NFTCardComponent, (prev, next) => {
-  return (
-    prev.id === next.id &&
-    prev.title === next.title &&
-    prev.image === next.image &&
-    prev.price === next.price &&
-    prev.owner_address === next.owner_address &&
-    prev.is_listed === next.is_listed &&
-    prev.liked === next.liked
-  );
-});
 
 export default NFTCard;

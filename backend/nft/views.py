@@ -401,11 +401,10 @@ def get_collections(request):
 def get_user_nfts(request, wallet_address):
     """Get NFTs collected by a user (owned or created, no duplicates)"""
     try:
-        wallet_norm = wallet_address.lower()
-        # NFTs where user is owner (case-insensitive)
-        owned_nfts = NFT.objects.filter(owner_address__iexact=wallet_norm)
-        # NFTs where user is creator (case-insensitive)
-        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_norm)
+        # NFTs where user is owner
+        owned_nfts = NFT.objects.filter(owner_address=wallet_address)
+        # NFTs where user is creator
+        created_nfts = NFT.objects.filter(creator_address=wallet_address)
         # Combine and deduplicate by token_id
         nft_dict = {}
         for nft in owned_nfts:
@@ -771,16 +770,12 @@ def update_nft_owner(request, token_id):
 
             new_owner = verification['transaction']['new_owner']
 
-        # Normalize addresses to lowercase for reliable comparisons
-        old_owner_norm = (old_owner or '').lower()
-        new_owner_norm = (new_owner or '').lower()
-
         # Only proceed if the owner actually changes
-        if old_owner_norm != new_owner_norm:
-            nft.owner_address = new_owner_norm
-            # After a successful ownership transfer (buy/transfer), the item should not remain listed
-            # Ensure we always clear the listed flag regardless of simulation vs verified path
-            nft.is_listed = False
+        if old_owner != new_owner:
+            nft.owner_address = new_owner
+            # If this was a simulated transfer, also mark NFT as not listed
+            if forced_new_owner:
+                nft.is_listed = False
             nft.save()
 
             if verification and 'transaction' in verification:
@@ -802,8 +797,8 @@ def update_nft_owner(request, token_id):
             Transaction.objects.create(
                 transaction_hash=tx_hash,
                 nft=nft,
-                from_address=old_owner_norm,
-                to_address=new_owner_norm,
+                from_address=old_owner,
+                to_address=new_owner,
                 transaction_type='buy',
                 price=price,
                 block_number=block_number,
@@ -811,7 +806,7 @@ def update_nft_owner(request, token_id):
                 gas_price=gas_price,
                 timestamp=timezone.now()
             )
-        return JsonResponse({'success': True, 'owner_address': nft.owner_address})
+        return JsonResponse({'success': True, 'owner_address': new_owner})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
@@ -857,10 +852,7 @@ def toggle_nft_like(request, nft_id):
 @csrf_exempt
 @require_http_methods(["POST"])
 def set_nft_listed(request, token_id):
-    """
-    Sync the DB `is_listed` flag to the on-chain status.
-    Always returns success with the current status instead of 400.
-    """
+    """Set is_listed to true for an NFT, but only if it is listed on-chain."""
     from .models import NFT
     from .web3_utils import web3_instance
     try:
@@ -868,11 +860,12 @@ def set_nft_listed(request, token_id):
         # Check on-chain listing status
         contract = web3_instance.get_nftmarketplace_contract()
         is_listed = contract.functions.isListed(token_id).call()
-        # Update DB to reflect on-chain state
-        if nft.is_listed != is_listed:
-            nft.is_listed = is_listed
+        if is_listed:
+            nft.is_listed = True
             nft.save()
-        return JsonResponse({'success': True, 'is_listed': is_listed})
+            return JsonResponse({'success': True, 'is_listed': True})
+        else:
+            return JsonResponse({'success': False, 'error': 'NFT is not listed on-chain'}, status=400)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
