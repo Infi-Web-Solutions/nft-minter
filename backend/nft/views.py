@@ -1,3 +1,4 @@
+import traceback
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -180,12 +181,17 @@ def get_user_profile(request, wallet_address):
             }
         })
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def update_profile(request, wallet_address):
     """Update user profile including profile and cover images"""
     try:
-        data = json.loads(request.body)
+        body = request.body.decode('utf-8') if request.body else '{}'
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
         # Get or create user profile
         profile, created = UserProfile.objects.get_or_create(wallet_address=wallet_address)
         # Handle profile image
@@ -232,7 +238,9 @@ def update_profile(request, wallet_address):
             }
         })
     except Exception as e:
+        traceback.print_exc()
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
