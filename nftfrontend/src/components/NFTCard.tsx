@@ -115,17 +115,11 @@ const NFTCard: React.FC<NFTCardProps> = ({
   }, [title, collection, price, image, tokenId, id, liked, isOwner]);
 
   const handleLike = async () => {
-    if (isLiking || !id || !address) {
-      return;
-    }
-    
+    if (isLiking || !id || !address) return;
     setIsLiking(true);
     try {
+      // Single source of truth: update via LikeContext only
       await toggleLike(id);
-      // Still call onLike for backward compatibility
-      if (onLike) {
-        onLike(!isLiked(id));
-      }
     } catch (err) {
       console.error('[NFTCard] Like failed:', err);
       toast.error('Failed to update like');
