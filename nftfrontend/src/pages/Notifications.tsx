@@ -147,12 +147,12 @@ const Notifications = () => {
               <h1 className="text-3xl font-bold mb-2">Notifications</h1>
               <p className="text-muted-foreground">Stay updated with your NFT activities</p>
             </div>
-            <div className="flex space-x-2 sm:self-auto self-start">
-              <Button variant="outline" size="sm">
+            <div className="flex flex-wrap gap-2 sm:space-x-2 sm:self-auto self-start">
+              <Button variant="outline" size="sm" className="w-full sm:w-auto">
                 <Check className="h-4 w-4 mr-2" />
                 Mark all as read
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="w-full sm:w-auto">
                 <X className="h-4 w-4 mr-2" />
                 Clear all
               </Button>
@@ -174,21 +174,21 @@ const Notifications = () => {
                   const IconComponent = notification.icon;
                   return (
                     <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
-                      <CardContent className="flex items-start space-x-4 p-4">
+                      <CardContent className="flex flex-col sm:flex-row items-start sm:items-center sm:space-x-4 space-y-3 sm:space-y-0 p-4">
                         <div className={`p-2 rounded-full bg-background ${getIconColor(notification.type, notification.read)}`}>
                           <IconComponent className="h-5 w-5" />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''}`}>
+                        <div className="flex-1 min-w-0 w-full">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''} truncate`}>
                               {notification.title}
                             </h3>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 shrink-0">
                               {!notification.read && <Badge variant="secondary" className="text-xs">New</Badge>}
                               <span className="text-sm text-muted-foreground">{notification.time}</span>
                             </div>
                           </div>
-                          <p className="text-muted-foreground text-sm mt-1">{notification.message}</p>
+                          <p className="text-muted-foreground text-sm mt-1 line-clamp-2 sm:line-clamp-none break-words">{notification.message}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -204,21 +204,21 @@ const Notifications = () => {
                     const IconComponent = notification.icon;
                     return (
                       <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
-                        <CardContent className="flex items-start space-x-4 p-4">
+                        <CardContent className="flex flex-col sm:flex-row items-start sm:items-center sm:space-x-4 space-y-3 sm:space-y-0 p-4">
                           <div className={`p-2 rounded-full bg-background ${getIconColor(notification.type, notification.read)}`}>
                             <IconComponent className="h-5 w-5" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''}`}>
+                          <div className="flex-1 min-w-0 w-full">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                              <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''} truncate`}>
                                 {notification.title}
                               </h3>
-                              <div className="flex items-center space-x-2">
+                              <div className="flex items-center space-x-2 shrink-0">
                                 {!notification.read && <Badge variant="secondary" className="text-xs">New</Badge>}
                                 <span className="text-sm text-muted-foreground">{notification.time}</span>
                               </div>
                             </div>
-                            <p className="text-muted-foreground text-sm mt-1">{notification.message}</p>
+                            <p className="text-muted-foreground text-sm mt-1 line-clamp-2 sm:line-clamp-none break-words">{notification.message}</p>
                           </div>
                         </CardContent>
                       </Card>
