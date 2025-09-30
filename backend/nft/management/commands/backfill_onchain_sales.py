@@ -15,18 +15,47 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--from-block', type=int, default=None, help='Start block (optional)')
         parser.add_argument('--to-block', type=int, default=None, help='End block (optional)')
+        parser.add_argument('--from-deploy', action='store_true', help='Auto-detect contract deployment block for start')
+        parser.add_argument('--to-head', action='store_true', help='Use current head block for end')
         parser.add_argument('--dry-run', action='store_true', help='Simulate without DB writes')
 
     def handle(self, *args, **options):
         dry_run = options['dry_run']
         from_block = options['from_block']
         to_block = options['to_block']
+        from_deploy = options.get('from_deploy')
+        to_head = options.get('to_head')
 
         w3 = web3_instance.w3
         contract = web3_instance.contract
 
-        if to_block is None:
+        if to_head or to_block is None:
             to_block = w3.eth.block_number
+        if from_deploy:
+            def has_code_at(block_number: int) -> bool:
+                try:
+                    code = w3.eth.get_code(web3_instance.contract_address, block_identifier=block_number)
+                    return code and code.hex() != '0x'
+                except Exception:
+                    return False
+
+            # Binary search for first block where code appears
+            lo = 0
+            hi = to_block
+            first = None
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                if has_code_at(mid):
+                    first = mid
+                    hi = mid - 1
+                else:
+                    lo = mid + 1
+            if first is not None:
+                from_block = first
+                self.stdout.write(f"Detected deployment block: {from_block}")
+            else:
+                self.stdout.write("Could not detect deployment block; falling back to default range")
+
         if from_block is None:
             # Default to last 250k blocks (~1-2 months on Sepolia); adjust as needed
             from_block = max(0, to_block - 250000)
