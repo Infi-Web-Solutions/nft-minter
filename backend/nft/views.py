@@ -35,8 +35,10 @@ def get_user_profile(request, wallet_address):
         
         print(f"[DEBUG] get_user_profile called with wallet_address: {wallet_address}")
         
-        # Create a safe username using hash of wallet address
-        username_hash = hashlib.md5(wallet_address.encode()).hexdigest()[:12]
+        # Normalize address to lowercase for storage; keep lookup case-insensitive
+        normalized_wallet = (wallet_address or '').lower()
+        # Create a safe username using hash of wallet address (case-insensitive)
+        username_hash = hashlib.md5(normalized_wallet.encode()).hexdigest()[:12]
         username = f"user_{username_hash}"
         
         try:
@@ -55,18 +57,18 @@ def get_user_profile(request, wallet_address):
                 print(f"[DEBUG] User created: {user_created}")
             except Exception as user_error:
                 print(f"[ERROR] Failed to create user: {str(user_error)}")
-                # If user creation fails, try to get or create profile without user
+                # If user creation fails, try to get or create profile without user (case-insensitive)
                 try:
-                    profile = UserProfile.objects.get(wallet_address=wallet_address)
+                    profile = UserProfile.objects.get(wallet_address__iexact=wallet_address)
                 except UserProfile.DoesNotExist:
                     profile = UserProfile.objects.create(
-                        wallet_address=wallet_address,
-                        username=f"User{wallet_address[-4:]}"
+                        wallet_address=normalized_wallet,
+                        username=f"User{normalized_wallet[-4:]}"
                     )
                 
                 # Get user's NFTs
-                user_nfts = NFT.objects.filter(owner_address=wallet_address)
-                created_nfts = NFT.objects.filter(creator_address=wallet_address)
+                user_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+                created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
                 
                 profile_data = {
                     'id': profile.id,
@@ -93,14 +95,22 @@ def get_user_profile(request, wallet_address):
                 })
         
         # Get or create profile
+        # Case-insensitive lookup first
         try:
-            profile, created = UserProfile.objects.get_or_create(
-                wallet_address=wallet_address,
-                defaults={
-                    'user': user,
-                    'username': f"User{wallet_address[-4:]}"
-                }
+            profile = UserProfile.objects.get(wallet_address__iexact=wallet_address)
+            created = False
+            # Normalize stored address to lowercase for consistency
+            if profile.wallet_address != normalized_wallet:
+                profile.wallet_address = normalized_wallet
+                profile.save(update_fields=["wallet_address"])
+        except UserProfile.DoesNotExist:
+            # Create with normalized address
+            profile = UserProfile.objects.create(
+                wallet_address=normalized_wallet,
+                user=user,
+                username=f"User{normalized_wallet[-4:]}"
             )
+            created = True
             print(f"[DEBUG] Profile created: {profile.id} {created}")
         except Exception as profile_error:
             print(f"[ERROR] Profile creation failed: {str(profile_error)}")
