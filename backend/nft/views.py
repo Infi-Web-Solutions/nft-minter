@@ -1266,22 +1266,28 @@ def get_activity_stats(request):
 def follow_user(request, wallet_address):
     try:
         data = json.loads(request.body)
-        follower_address = data.get('follower_address')
+        follower_address = (data.get('follower_address') or '').lower()
+        target_address = (wallet_address or '').lower()
         if not follower_address:
             return JsonResponse({'success': False, 'error': 'Missing follower_address'}, status=400)
         
-        # Get or create user profiles
-        user, user_created = UserProfile.objects.get_or_create(
-            wallet_address=wallet_address,
-            defaults={'username': f"User{wallet_address[-4:]}"}
-        )
-        follower, follower_created = UserProfile.objects.get_or_create(
-            wallet_address=follower_address,
-            defaults={'username': f"User{follower_address[-4:]}"}
-        )
+        # Get or create user profiles (case-insensitive, normalized)
+        user = UserProfile.objects.filter(wallet_address__iexact=target_address).first()
+        if not user:
+            user = UserProfile.objects.create(wallet_address=target_address, username=f"User{target_address[-4:]}")
+        elif user.wallet_address != target_address:
+            user.wallet_address = target_address
+            user.save(update_fields=["wallet_address"]) 
+
+        follower = UserProfile.objects.filter(wallet_address__iexact=follower_address).first()
+        if not follower:
+            follower = UserProfile.objects.create(wallet_address=follower_address, username=f"User{follower_address[-4:]}")
+        elif follower.wallet_address != follower_address:
+            follower.wallet_address = follower_address
+            follower.save(update_fields=["wallet_address"]) 
         
         # Check if already following
-        if user.followers.filter(wallet_address=follower_address).exists():
+        if user.followers.filter(wallet_address__iexact=follower_address).exists():
             return JsonResponse({'success': False, 'error': 'Already following this user'}, status=400)
         
         # Add follower
@@ -1291,10 +1297,10 @@ def follow_user(request, wallet_address):
         try:
             from .models import Transaction
             Transaction.objects.create(
-                transaction_hash=f"follow_{follower_address}_{wallet_address}_{int(time.time())}",
+                transaction_hash=f"follow_{follower_address}_{target_address}_{int(time.time())}",
                 nft=None,  # No NFT involved in follow action
                 from_address=follower_address,
-                to_address=wallet_address,
+                to_address=target_address,
                 transaction_type='follow',
                 price=None,
                 block_number=0,
@@ -1319,16 +1325,19 @@ def follow_user(request, wallet_address):
 def unfollow_user(request, wallet_address):
     try:
         data = json.loads(request.body)
-        follower_address = data.get('follower_address')
+        follower_address = (data.get('follower_address') or '').lower()
+        target_address = (wallet_address or '').lower()
         if not follower_address:
             return JsonResponse({'success': False, 'error': 'Missing follower_address'}, status=400)
         
         # Get user profiles
-        user = UserProfile.objects.get(wallet_address=wallet_address)
-        follower = UserProfile.objects.get(wallet_address=follower_address)
+        user = UserProfile.objects.filter(wallet_address__iexact=target_address).first()
+        follower = UserProfile.objects.filter(wallet_address__iexact=follower_address).first()
+        if not user or not follower:
+            return JsonResponse({'success': False, 'error': 'User not found'}, status=404)
         
         # Check if not following
-        if not user.followers.filter(wallet_address=follower_address).exists():
+        if not user.followers.filter(wallet_address__iexact=follower_address).exists():
             return JsonResponse({'success': False, 'error': 'Not following this user'}, status=400)
         
         # Remove follower
@@ -1338,10 +1347,10 @@ def unfollow_user(request, wallet_address):
         try:
             from .models import Transaction
             Transaction.objects.create(
-                transaction_hash=f"unfollow_{follower_address}_{wallet_address}_{int(time.time())}",
+                transaction_hash=f"unfollow_{follower_address}_{target_address}_{int(time.time())}",
                 nft=None,  # No NFT involved in unfollow action
                 from_address=follower_address,
-                to_address=wallet_address,
+                to_address=target_address,
                 transaction_type='unfollow',
                 price=None,
                 block_number=0,
@@ -1365,7 +1374,9 @@ def unfollow_user(request, wallet_address):
 @require_http_methods(["GET"])
 def get_followers(request, wallet_address):
     try:
-        user = UserProfile.objects.get(wallet_address=wallet_address)
+        user = UserProfile.objects.filter(wallet_address__iexact=wallet_address).first()
+        if not user:
+            return JsonResponse({'success': True, 'followers': [], 'count': 0})
         followers = list(user.followers.values('wallet_address', 'username', 'avatar_url'))
         return JsonResponse({'success': True, 'followers': followers, 'count': len(followers)})
     except Exception as e:
@@ -1375,7 +1386,9 @@ def get_followers(request, wallet_address):
 @require_http_methods(["GET"])
 def get_following(request, wallet_address):
     try:
-        user = UserProfile.objects.get(wallet_address=wallet_address)
+        user = UserProfile.objects.filter(wallet_address__iexact=wallet_address).first()
+        if not user:
+            return JsonResponse({'success': True, 'following': [], 'count': 0})
         following = list(user.following.values('wallet_address', 'username', 'avatar_url'))
         return JsonResponse({'success': True, 'following': following, 'count': len(following)})
     except Exception as e:
