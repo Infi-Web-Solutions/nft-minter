@@ -45,11 +45,13 @@ class Command(BaseCommand):
         if csv_path:
             try:
                 with open(csv_path, newline='') as f:
-                    reader = csv.DictReader(f)
+                    reader = csv.DictReader(f, skipinitialspace=True)
                     for row in reader:
-                        method = (row.get('Method') or '').strip()
+                        # Normalize keys to be resilient to stray spaces/casing
+                        norm = { (k or '').strip(): (v or '').strip() for k, v in row.items() }
+                        method = norm.get('Method', '')
                         if method.lower().startswith('buy'):
-                            h = (row.get('Transaction Hash') or '').strip()
+                            h = norm.get('Transaction Hash', '')
                             if h:
                                 tx_hashes.append(h)
             except Exception as e:
