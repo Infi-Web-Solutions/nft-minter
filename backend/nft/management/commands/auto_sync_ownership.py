@@ -81,7 +81,7 @@ class Command(BaseCommand):
     def update_user_profiles(self, old_owner, new_owner):
         """Update user profiles for ownership changes"""
         try:
-            from .models import UserProfile
+            from nft.models import UserProfile
             
             # Update old owner's profile
             if old_owner and old_owner != '0x0000000000000000000000000000000000000000':
