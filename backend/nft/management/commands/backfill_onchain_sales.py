@@ -18,6 +18,7 @@ class Command(BaseCommand):
         parser.add_argument('--to-block', type=int, default=None, help='End block (optional)')
         parser.add_argument('--from-deploy', action='store_true', help='Auto-detect contract deployment block for start')
         parser.add_argument('--to-head', action='store_true', help='Use current head block for end')
+        parser.add_argument('--token-ids', type=str, default=None, help='Comma-separated token IDs to include (optional)')
         parser.add_argument('--dry-run', action='store_true', help='Simulate without DB writes')
 
     def handle(self, *args, **options):
@@ -26,6 +27,14 @@ class Command(BaseCommand):
         to_block = options['to_block']
         from_deploy = options.get('from_deploy')
         to_head = options.get('to_head')
+        token_ids_arg = options.get('token_ids')
+        token_id_filter = None
+        if token_ids_arg:
+            try:
+                token_id_filter = set(int(t.strip()) for t in token_ids_arg.split(',') if t.strip())
+            except Exception:
+                self.stderr.write(self.style.ERROR('Invalid --token-ids format. Use comma-separated integers.'))
+                return
 
         w3 = web3_instance.w3
         contract = web3_instance.contract
@@ -86,6 +95,19 @@ class Command(BaseCommand):
             }
             try:
                 entries = w3.eth.get_logs(params)
+                if token_id_filter:
+                    # Decode minimal data to filter by tokenId using ABI event topic[1]
+                    # tokenId is indexed, so it is topics[1]
+                    filtered = []
+                    for e in entries:
+                        try:
+                            if len(e['topics']) >= 2:
+                                tok = int(Web3.to_int(hexstr=e['topics'][1].hex()))
+                                if tok in token_id_filter:
+                                    filtered.append(e)
+                        except Exception:
+                            continue
+                    entries = filtered
                 logs.extend(entries)
                 self.stdout.write(f"Fetched {len(entries)} events for range {start_block}-{end_block}")
             except Exception as e:
