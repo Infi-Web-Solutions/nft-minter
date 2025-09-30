@@ -43,6 +43,9 @@ urlpatterns = [
     path('activities/', views.get_activities, name='get_activities'),
     path('activities/stats/', views.get_activity_stats, name='get_activity_stats'),
 
+    # Ownership sync trigger (rate-limited background run)
+    path('ownership/trigger-sync/', views.trigger_ownership_sync, name='trigger_ownership_sync'),
+
 
 ]
 

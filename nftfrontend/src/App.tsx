@@ -4,6 +4,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useEffect } from 'react';
+import { apiUrl } from '@/config';
 import ThemeProvider from "@/components/ThemeProvider";
 import { WalletProvider } from "@/contexts/WalletContext";
 import Index from "./pages/Index";
@@ -40,6 +42,13 @@ const App = () => (
               <Toaster />
               <Sonner />
               <BrowserRouter>
+                { /* Trigger a background ownership sync once on app load */ }
+                { (() => {
+                  try {
+                    fetch(apiUrl('/ownership/trigger-sync/'), { method: 'POST' }).catch(() => {});
+                  } catch {}
+                  return null;
+                })() }
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/marketplace" element={<Marketplace />} />

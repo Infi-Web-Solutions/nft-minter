@@ -10,6 +10,7 @@ from django.utils import timezone
 import json
 import time
 from datetime import datetime, timedelta
+from threading import Thread, Lock
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 import base64
@@ -23,6 +24,38 @@ from django.utils import timezone
 import os
 
 BASE_URL = os.environ.get('URL', 'https://nftminter-api.infiwebsolutions.com')
+
+# Lightweight, rate-limited ownership sync trigger
+_last_sync_ts = 0
+_sync_lock = Lock()
+_SYNC_MIN_INTERVAL_SEC = 300  # 5 minutes
+
+def _run_auto_sync_background():
+    try:
+        from nft.management.commands.auto_sync_ownership import Command as AutoSyncCommand
+        cmd = AutoSyncCommand()
+        cmd.sync_ownership()
+        print('[SYNC] Background ownership sync completed')
+    except Exception as e:
+        print(f"[SYNC] Background ownership sync failed: {e}")
+
+@csrf_exempt
+@require_http_methods(["POST"])  # Explicit POST to avoid accidental crawlers
+def trigger_ownership_sync(request):
+    global _last_sync_ts
+    now = time.time()
+    with _sync_lock:
+        elapsed = now - _last_sync_ts
+        if elapsed < _SYNC_MIN_INTERVAL_SEC:
+            return JsonResponse({
+                'success': True,
+                'status': 'skipped_rate_limited',
+                'next_allowed_in_sec': int(_SYNC_MIN_INTERVAL_SEC - elapsed)
+            })
+        _last_sync_ts = now
+        t = Thread(target=_run_auto_sync_background, daemon=True)
+        t.start()
+        return JsonResponse({'success': True, 'status': 'started'})
 
 # User Profile Views
 @csrf_exempt

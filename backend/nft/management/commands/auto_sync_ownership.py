@@ -63,6 +63,25 @@ class Command(BaseCommand):
                     
                     # Update user profiles for both old and new owners
                     self.update_user_profiles((old_owner or '').lower(), blockchain_owner.lower())
+
+                    # Record a transfer transaction for stats/history
+                    try:
+                        from nft.models import Transaction
+                        simulated_hash = f"autosync_transfer_{nft.token_id}_{int(time.time())}"
+                        Transaction.objects.create(
+                            transaction_hash=simulated_hash,
+                            nft=nft,
+                            from_address=(old_owner or ''),
+                            to_address=blockchain_owner.lower(),
+                            transaction_type='transfer',
+                            price=None,
+                            block_number=0,
+                            gas_used=0,
+                            gas_price=0,
+                            timestamp=timezone.now()
+                        )
+                    except Exception as tx_err:
+                        self.stdout.write(self.style.WARNING(f'  ⚠️ Failed to record transfer tx: {tx_err}'))
                     profile_updates += 1
                     
                     updated_count += 1
