@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 import requests
 import json
+import time
 
 class Command(BaseCommand):
     help = 'Test the ownership transfer API endpoint'
@@ -17,7 +18,7 @@ class Command(BaseCommand):
         
         payload = {
             "new_owner": "0x8b22aD6DEA087968844f9FB001285A1dFaBa9Fcc",
-            "transaction_hash": "test_hash_123",
+            "transaction_hash": f"simulated_{token_id}_{int(time.time())}",
             "price": "0.02"
         }
         
