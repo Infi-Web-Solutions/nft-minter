@@ -29,40 +29,38 @@ export function apiUrl(path: string): string {
 export function mediaUrl(url?: string | null): string {
   if (!url) return '';
 
-  const clean = url.split('?')[0];
-
-  // Rewrite localhost media to API base origin
-  try {
-    const base = API_BASE_URL.replace(/\/$/, '');
-    const baseOrigin = new URL(base).origin;
-    if (/^https?:\/\/localhost(?::\d+)?\//i.test(clean) || /^https?:\/\/127\.0\.0\.1(?::\d+)?\//i.test(clean)) {
-      // Replace the origin with API base origin and keep path/query
-      const u = new URL(clean);
-      return `${baseOrigin}${u.pathname}`;
-    }
-  } catch {
-    // ignore URL parsing errors
-  }
-
-  // Already absolute (http/https or data URI)
-  if (/^(https?:)?\/\//i.test(clean) || clean.startsWith('data:')) {
-    return clean;
-  }
+  const original = url; // preserve query strings if any
 
   // IPFS
-  if (clean.startsWith('ipfs://')) {
-    const ipfsHash = clean.replace('ipfs://', '').replace(/\/+$/, '');
+  if (original.startsWith('ipfs://')) {
+    const ipfsHash = original.replace('ipfs://', '').replace(/\/+$/, '');
     return `https://ipfs.io/ipfs/${ipfsHash}`;
   }
 
+  // Already absolute (http/https or data URI)
+  if (/^(https?:)?\/\//i.test(original) || original.startsWith('data:')) {
+    // Rewrite localhost to API base origin but keep path and query
+    try {
+      const base = API_BASE_URL.replace(/\/$/, '');
+      const baseOrigin = new URL(base).origin;
+      const u = new URL(original);
+      if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+        return `${baseOrigin}${u.pathname}${u.search}`;
+      }
+    } catch {
+      // ignore URL parsing errors
+    }
+    return original;
+  }
+
   // Handle typical Django media relative paths like /media/.... or media/...
-  if (clean.startsWith('/media/') || clean.startsWith('media/')) {
-    const path = clean.startsWith('/') ? clean : `/${clean}`;
+  if (original.startsWith('/media/') || original.startsWith('media/')) {
+    const path = original.startsWith('/') ? original : `/${original}`;
     return apiUrl(path);
   }
 
   // Fallback: treat as relative path under API
-  return apiUrl(clean.startsWith('/') ? clean : `/${clean}`);
+  return apiUrl(original.startsWith('/') ? original : `/${original}`);
 }
 
 // Helper to add Sepolia network to MetaMask
