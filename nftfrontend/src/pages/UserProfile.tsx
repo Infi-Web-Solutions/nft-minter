@@ -246,8 +246,11 @@ const UserProfile = () => {
     }
   };
 
-  const getProfileImageUrl = (profile: UserProfileData | null) => {
-    return mediaUrl(profile?.avatar_url || '');
+  const getProfileImageUrl = (profile: UserProfileData | null, addr: string) => {
+    const resolved = mediaUrl(profile?.avatar_url || '');
+    if (resolved && resolved.length > 0) return resolved;
+    const seed = (addr || '').toLowerCase();
+    return `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
   };
 
   const getProfileDisplayName = (profile: UserProfileData | null, address: string) => {
@@ -352,7 +355,7 @@ const UserProfile = () => {
             <Card className="glass-card p-6">
               <div className="text-center mb-6">
                 <Avatar className="h-24 w-24 mx-auto mb-4">
-                  <AvatarImage src={getProfileImageUrl(profile)} />
+                  <AvatarImage src={getProfileImageUrl(profile, walletAddress!)} />
                   <AvatarFallback className="text-2xl">
                     {getProfileDisplayName(profile, walletAddress!).slice(0, 2).toUpperCase()}
                   </AvatarFallback>

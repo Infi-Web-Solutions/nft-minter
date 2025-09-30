@@ -581,9 +581,13 @@ const NFTDetails = () => {
     return imageUrl;
   };
 
-  // Get real profile image URL
-  const getProfileImageUrl = (profile: any) => {
-    return mediaUrl(profile?.avatar_url || profile?.profile_image || '');
+  // Get real profile image URL with deterministic fallback
+  const getProfileImageUrl = (profile: any, addr: string) => {
+    const url = profile?.avatar_url || profile?.profile_image || '';
+    const resolved = mediaUrl(url);
+    if (resolved && resolved.length > 0) return resolved;
+    const seed = (addr || '').toLowerCase();
+    return `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
   };
 
   // Get profile display name
@@ -921,7 +925,7 @@ const NFTDetails = () => {
                 onClick={() => navigate(`/profile/${nft.creator_address}`)}
               >
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={getProfileImageUrl(creator)} />
+                  <AvatarImage src={getProfileImageUrl(creator, nft.creator_address)} />
                   <AvatarFallback>
                     {getProfileDisplayName(creator, nft.creator_address).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -975,7 +979,7 @@ const NFTDetails = () => {
                 onClick={() => navigate(`/profile/${nft.owner_address}`)}
               >
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={getProfileImageUrl(owner)} />
+                  <AvatarImage src={getProfileImageUrl(owner, nft.owner_address)} />
                   <AvatarFallback>
                     {getProfileDisplayName(owner, nft.owner_address).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
