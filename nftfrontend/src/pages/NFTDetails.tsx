@@ -382,7 +382,14 @@ const NFTDetails = () => {
         console.log('[DEBUG] Transfer response status:', transferResponse.status);
         console.log('[DEBUG] Transfer response headers:', Object.fromEntries(transferResponse.headers.entries()));
         
-        const transferData = await transferResponse.json();
+        let transferData: any;
+        try {
+          transferData = await transferResponse.json();
+        } catch (parseErr) {
+          const fallbackText = await transferResponse.text();
+          console.warn('[DEBUG] Transfer response was not JSON. Raw text:', fallbackText);
+          transferData = { success: false, error: 'non-json-response', raw: fallbackText };
+        }
         console.log('[DEBUG] Backend transfer response:', transferData);
         
         if (transferData.success) {
@@ -448,12 +455,28 @@ const NFTDetails = () => {
           if (data.success) {
             console.log('[DEBUG] Refreshed NFT data from backend:', data.data);
             setNFT(data.data);
+            // Also refresh stats immediately so Last Sale and Volume update
+            try {
+              await fetchNFTStats({ id: nft.id });
+            } catch (statsErr) {
+              console.warn('[DEBUG] Failed to refresh stats after purchase:', statsErr);
+            }
           }
         } else {
           console.log('[DEBUG] Failed to refresh NFT data - response not ok:', response.status);
         }
       } catch (refreshError) {
         console.warn('[DEBUG] Failed to refresh NFT data:', refreshError);
+      }
+
+      // Refresh recent activity panel
+      try {
+        const activityId = (nft.id as string).startsWith('local_') ? (nft.id as string).replace('local_', '') : nft.id;
+        const activityRes = await fetch(apiUrl(`/activities/?nft=${activityId}`));
+        const activityJson = await activityRes.json();
+        if (activityJson.success) setActivity(activityJson.data);
+      } catch (activityErr) {
+        console.warn('[DEBUG] Failed to refresh activity after purchase:', activityErr);
       }
 
       // Trigger a global refresh of user data and NFT lists
