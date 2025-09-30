@@ -7,7 +7,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--token-id', type=int, default=50, help='Token ID to test')
-        parser.add_argument('--base-url', type=str, default='http://localhost:8000', help='Base URL for API')
+        parser.add_argument('--base-url', type=str, default='https://nftminter-api.infiwebsolutions.com', help='Base URL for API')
 
     def handle(self, *args, **options):
         token_id = options['token_id']
