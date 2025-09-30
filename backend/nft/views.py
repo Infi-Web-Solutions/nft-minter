@@ -715,6 +715,8 @@ def update_nft_owner(request, token_id):
     Verifies transaction completion and validates ownership transfer before updating the database.
     Supports simulation mode for testing without blockchain interaction.
     """
+    print(f"[DEBUG] update_nft_owner called for token_id: {token_id}")
+    print(f"[DEBUG] Request body: {request.body}")
     # Create an internal async function
     async def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
         from .transaction_verifier import TransactionVerifier
@@ -772,10 +774,21 @@ def update_nft_owner(request, token_id):
 
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
+            print(f"[DEBUG] Ownership transfer detected for token {token_id}:")
+            print(f"[DEBUG] Old owner: {old_owner}")
+            print(f"[DEBUG] New owner: {new_owner}")
+            print(f"[DEBUG] Previous is_listed status: {nft.is_listed}")
+            
             nft.owner_address = new_owner
             # Mark NFT as not listed after any ownership transfer (sale, transfer, etc.)
             nft.is_listed = False
             nft.save()
+            
+            print(f"[DEBUG] Updated NFT {token_id}:")
+            print(f"[DEBUG] New owner_address: {nft.owner_address}")
+            print(f"[DEBUG] New is_listed status: {nft.is_listed}")
+        else:
+            print(f"[DEBUG] No ownership change for token {token_id} - owner is still {old_owner}")
 
             if verification and 'transaction' in verification:
                 tx_info = verification['transaction']
@@ -1283,6 +1296,8 @@ def get_nft_by_combined_id(request, combined_id):
                 # Get blockchain data
                 blockchain_data = web3_instance.get_nft_metadata(nft.token_id)
                 
+                print(f"[DEBUG] Found NFT in database: token_id={nft.token_id}, owner={nft.owner_address}, is_listed={nft.is_listed}")
+                
                 nft_data = {
                     'id': f"local_{nft.id}",
                     'token_id': nft.token_id,
@@ -1305,6 +1320,8 @@ def get_nft_by_combined_id(request, combined_id):
                     'blockchain_data': blockchain_data,
                     'source': 'local'
                 }
+                
+                print(f"[DEBUG] Returning NFT data: owner_address={nft_data['owner_address']}, is_listed={nft_data['is_listed']}")
                 
                 return JsonResponse({
                     'success': True,

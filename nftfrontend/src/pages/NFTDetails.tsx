@@ -64,13 +64,24 @@ const NFTDetails = () => {
       try {
         let nftData;
         
-        console.log('[NFTDetails] Fetching NFT with combined ID:', id);
+        console.log('[DEBUG] Fetching NFT with combined ID:', id);
         
         const res = await fetch(apiUrl(`/nfts/combined/${id}/`));
         const data = await res.json();
+        console.log('[DEBUG] NFT fetch response:', data);
+        
         if (data.success) {
           nftData = data.data;
+          console.log('[DEBUG] NFT data loaded:', {
+            id: nftData.id,
+            token_id: nftData.token_id,
+            owner_address: nftData.owner_address,
+            is_listed: nftData.is_listed,
+            price: nftData.price,
+            name: nftData.name
+          });
         } else {
+          console.error('[DEBUG] Failed to fetch NFT:', data.error);
           toast.error(data.error || 'NFT not found');
           navigate('/');
           return;
@@ -286,37 +297,54 @@ const NFTDetails = () => {
 
   const handleBuyNow = async () => {
     try {
+      console.log('[DEBUG] handleBuyNow called with NFT data:', {
+        nft_id: nft?.id,
+        token_id: nft?.token_id,
+        owner_address: nft?.owner_address,
+        is_listed: nft?.is_listed,
+        price: nft?.price,
+        user_address: address
+      });
+
       if (!address) {
         toast.error('Please connect your wallet first');
         return;
       }
       if (!nft) return;
       if (!nft.is_listed || !nft.price || nft.price === '0') {
+        console.log('[DEBUG] NFT not for sale - is_listed:', nft.is_listed, 'price:', nft.price);
         toast.error('This NFT is not for sale');
         return;
       }
       if (nft.owner_address && nft.owner_address.toLowerCase() === address.toLowerCase()) {
+        console.log('[DEBUG] User already owns this NFT');
         toast.error('You already own this NFT');
         return;
       }
 
       // Double-check listing status on-chain before attempting purchase
       try {
+        console.log('[DEBUG] Checking on-chain listing status for token:', nft.token_id);
         const listing = await web3Service.getListing(Number(nft.token_id));
+        console.log('[DEBUG] On-chain listing data:', listing);
+        
         if (!listing || !listing.price || listing.price === '0') {
+          console.log('[DEBUG] On-chain validation failed - NFT not listed');
           toast.error('This NFT is no longer available for purchase. Please refresh the page.');
           // Refresh the NFT data
           const response = await fetch(apiUrl(`/nfts/${nft.id}/`));
           if (response.ok) {
             const data = await response.json();
             if (data.success) {
+              console.log('[DEBUG] Refreshed NFT data:', data.data);
               setNFT(data.data);
             }
           }
           return;
         }
+        console.log('[DEBUG] On-chain validation passed - proceeding with purchase');
       } catch (listingError) {
-        console.warn('Could not verify listing status:', listingError);
+        console.warn('[DEBUG] Could not verify listing status:', listingError);
         // Continue with purchase attempt - let the contract handle the validation
       }
 
@@ -331,7 +359,14 @@ const NFTDetails = () => {
 
       // 2) Update backend owner and mark as not listed
       try {
-        await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
+        console.log('[DEBUG] Updating backend with ownership transfer:', {
+          tokenId,
+          new_owner: address,
+          transaction_hash: receipt?.hash || tx.hash,
+          price: priceStr
+        });
+        
+        const transferResponse = await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -340,8 +375,12 @@ const NFTDetails = () => {
             price: priceStr
           })
         });
+        
+        const transferData = await transferResponse.json();
+        console.log('[DEBUG] Backend transfer response:', transferData);
+        
       } catch (e) {
-        console.warn('Backend ownership update failed (continuing):', e);
+        console.warn('[DEBUG] Backend ownership update failed (continuing):', e);
       }
 
       // 3) Update UI and refresh data
@@ -353,15 +392,19 @@ const NFTDetails = () => {
 
       // Refresh NFT data from backend to ensure consistency
       try {
+        console.log('[DEBUG] Refreshing NFT data from backend...');
         const response = await fetch(apiUrl(`/nfts/${nft.id}/`));
         if (response.ok) {
           const data = await response.json();
           if (data.success) {
+            console.log('[DEBUG] Refreshed NFT data from backend:', data.data);
             setNFT(data.data);
           }
+        } else {
+          console.log('[DEBUG] Failed to refresh NFT data - response not ok:', response.status);
         }
       } catch (refreshError) {
-        console.warn('Failed to refresh NFT data:', refreshError);
+        console.warn('[DEBUG] Failed to refresh NFT data:', refreshError);
       }
 
       toast.success('Purchase successful!', { id: 'buy' });
