@@ -92,11 +92,8 @@ class Command(BaseCommand):
                     self.stdout.write(f"ℹ️  Skipping token {token_id}: not in local DB")
                     continue
 
-                has_sale = Transaction.objects.filter(
-                    nft=nft,
-                    transaction_type__in=['buy', 'sale'],
-                ).exists()
-                if has_sale:
+                # Skip only if this exact transaction already exists locally
+                if Transaction.objects.filter(transaction_hash=tx_hash).exists():
                     continue
 
                 if dry_run:
