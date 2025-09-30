@@ -208,14 +208,30 @@ def update_profile(request, wallet_address):
             return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
         # Normalize and get or create user profile (case-insensitive lookup)
         normalized_wallet = (wallet_address or '').lower()
-        try:
-            profile = UserProfile.objects.get(wallet_address__iexact=wallet_address)
+        # Case-insensitive lookup; deduplicate if multiple exist from legacy data
+        profiles_qs = UserProfile.objects.filter(wallet_address__iexact=wallet_address)
+        if profiles_qs.exists():
+            primary = profiles_qs.order_by('id').first()
+            # Merge duplicate profiles if any
+            duplicates = profiles_qs.exclude(id=primary.id)
+            if duplicates.exists():
+                for dup in duplicates:
+                    # Prefer non-empty fields from duplicates if primary is empty
+                    if not primary.avatar_url and dup.avatar_url:
+                        primary.avatar_url = dup.avatar_url
+                    if not primary.banner_url and dup.banner_url:
+                        primary.banner_url = dup.banner_url
+                    if not primary.username and dup.username:
+                        primary.username = dup.username
+                    dup.delete()
+                primary.save()
+            profile = primary
             # Normalize stored value
             if profile.wallet_address != normalized_wallet:
                 profile.wallet_address = normalized_wallet
                 profile.save(update_fields=["wallet_address"])
             created = False
-        except UserProfile.DoesNotExist:
+        else:
             profile = UserProfile.objects.create(
                 wallet_address=normalized_wallet,
                 username=f"User{normalized_wallet[-4:]}"
