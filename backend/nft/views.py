@@ -867,6 +867,25 @@ def update_nft_owner(request, token_id):
             # Update user profiles immediately
             update_user_profiles_after_transfer(old_owner, new_owner)
             
+            # Record a transaction for stats (buy/sale)
+            try:
+                from .models import Transaction
+                tx_hash_to_store = data.get('transaction_hash') or (verification and verification.get('transaction', {}).get('hash')) or f"simulated_{token_id}_{int(time.time())}"
+                Transaction.objects.create(
+                    transaction_hash=tx_hash_to_store,
+                    nft=nft,
+                    from_address=old_owner,
+                    to_address=new_owner,
+                    transaction_type='buy',
+                    price=data.get('price'),
+                    block_number=data.get('block_number', 0),
+                    gas_used=data.get('gas_used', 0),
+                    gas_price=data.get('gas_price', 0),
+                    timestamp=timezone.now()
+                )
+            except Exception as tx_error:
+                print(f"[WARNING] Failed to record Transaction: {tx_error}")
+            
         else:
             print(f"[DEBUG] No ownership change for token {token_id} - owner is still {old_owner}")
 
