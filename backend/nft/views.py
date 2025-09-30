@@ -705,7 +705,6 @@ def register_nft(request):
         print("[ERROR] register_nft:", str(e))
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-from asgiref.sync import async_to_sync
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -719,11 +718,11 @@ def update_nft_owner(request, token_id):
     print(f"[DEBUG] Token ID: {token_id}")
     print(f"[DEBUG] Request body: {request.body}")
     print(f"[DEBUG] Request headers: {dict(request.headers)}")
-    # Create an internal async function
-    async def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
+    # Create an internal function (not async)
+    def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
         from .transaction_verifier import TransactionVerifier
         verifier = TransactionVerifier()
-        return await verifier.verify_transaction(tx_hash, token_id, expected_new_owner)
+        return verifier.verify_transaction(tx_hash, token_id, expected_new_owner)
     try:
         from .models import NFT, Transaction
         data = json.loads(request.body) if request.body else {}
@@ -759,8 +758,8 @@ def update_nft_owner(request, token_id):
                         'error': 'Could not verify new owner from blockchain'
                     }, status=400)
 
-            # Verify the transaction using the async function
-            verification = async_to_sync(verify_ownership_transfer)(
+            # Verify the transaction
+            verification = verify_ownership_transfer(
                 tx_hash, 
                 int(token_id), 
                 expected_new_owner
