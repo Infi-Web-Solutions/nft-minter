@@ -28,9 +28,8 @@ import { useWallet } from '@/contexts/WalletContext';
 import { useLikes } from '@/contexts/LikeContext';
 import { useFollow } from '@/contexts/FollowContext';
 import { nftService } from '@/services/nftService';
-import { apiUrl, mediaUrl } from '@/config';
+import { apiUrl, mediaUrl, CONTRACT_ADDRESS } from '@/config';
 import { web3Service } from '@/services/web3Service';
-import { ethers } from 'ethers';
 
 const NFTDetails = () => {
   const { id } = useParams();
