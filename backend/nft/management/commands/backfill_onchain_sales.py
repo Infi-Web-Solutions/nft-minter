@@ -40,11 +40,23 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR('Contract does not expose NFTSold event in ABI.'))
             return
 
+        # Fetch logs, supporting both web3.py v5 (camelCase) and v6 (snake_case),
+        # and falling back to filters when direct get_logs is unavailable.
         try:
-            logs = event().get_logs(fromBlock=from_block, toBlock=to_block)
-        except Exception as e:
-            self.stderr.write(self.style.ERROR(f'Failed to fetch logs: {e}'))
-            return
+            # web3.py v6
+            logs = event().get_logs(from_block=from_block, to_block=to_block)
+        except TypeError:
+            try:
+                # web3.py v5
+                logs = event().get_logs(fromBlock=from_block, toBlock=to_block)
+            except Exception:
+                try:
+                    # Fallback: use a filter
+                    evt_filter = event().create_filter(fromBlock=from_block, toBlock=to_block)
+                    logs = evt_filter.get_all_entries()
+                except Exception as e:
+                    self.stderr.write(self.style.ERROR(f'Failed to fetch logs: {e}'))
+                    return
 
         self.stdout.write(f"Found {len(logs)} NFTSold events in range")
 
