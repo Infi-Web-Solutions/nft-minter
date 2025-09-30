@@ -4,6 +4,7 @@ from django.db import transaction as db_transaction
 
 from nft.models import NFT, Transaction
 from nft.web3_utils import web3_instance
+from web3 import Web3
 
 
 class Command(BaseCommand):
@@ -69,37 +70,34 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR('Contract does not expose NFTSold event in ABI.'))
             return
 
-        # Fetch logs in batches to avoid provider limits
-        batch_size = 5000
-        logs = []
-        start = from_block
-        while start <= to_block:
-            end = min(start + batch_size - 1, to_block)
-            try:
-                # web3.py v6
-                part = event().get_logs(from_block=start, to_block=end)
-            except TypeError:
-                try:
-                    # web3.py v5
-                    part = event().get_logs(fromBlock=start, toBlock=end)
-                except Exception:
-                    # Fallback: filter API
-                    evt_filter = event().create_filter(fromBlock=start, toBlock=end)
-                    part = evt_filter.get_all_entries()
-            except Exception as e:
-                # If provider complains (e.g., 400), reduce batch and retry
-                if batch_size > 500:
-                    batch_size = batch_size // 2
-                    self.stdout.write(f"Provider error ({e}). Reducing batch_size to {batch_size} and retrying from {start}.")
-                    continue
-                else:
-                    self.stderr.write(self.style.ERROR(f"Failed to fetch logs for range {start}-{end}: {e}"))
-                    start = end + 1
-                    continue
+        # Provider-friendly recursive log fetcher with explicit address/topic filtering
+        topic0 = Web3.keccak(text="NFTSold(uint256,address,address,uint256)").hex()
 
-            logs.extend(part)
-            self.stdout.write(f"Fetched {len(part)} events for range {start}-{end}")
-            start = end + 1
+        logs = []
+
+        def fetch_logs_range(start_block: int, end_block: int):
+            if start_block > end_block:
+                return
+            params = {
+                'address': web3_instance.contract_address,
+                'fromBlock': start_block,
+                'toBlock': end_block,
+                'topics': [topic0],
+            }
+            try:
+                entries = w3.eth.get_logs(params)
+                logs.extend(entries)
+                self.stdout.write(f"Fetched {len(entries)} events for range {start_block}-{end_block}")
+            except Exception as e:
+                # On provider range limitation (often 400), split range and retry
+                if end_block - start_block > 64:
+                    mid = (start_block + end_block) // 2
+                    fetch_logs_range(start_block, mid)
+                    fetch_logs_range(mid + 1, end_block)
+                else:
+                    self.stderr.write(self.style.ERROR(f"Failed to fetch logs for small range {start_block}-{end_block}: {e}"))
+
+        fetch_logs_range(from_block, to_block)
 
         self.stdout.write(f"Found {len(logs)} NFTSold events in range")
 
