@@ -456,6 +456,16 @@ const NFTDetails = () => {
         console.warn('[DEBUG] Failed to refresh NFT data:', refreshError);
       }
 
+      // Trigger a global refresh of user data and NFT lists
+      console.log('[DEBUG] Triggering global data refresh...');
+      window.dispatchEvent(new CustomEvent('nftOwnershipChanged', {
+        detail: { 
+          tokenId: tokenId, 
+          newOwner: address,
+          oldOwner: nft.owner_address 
+        }
+      }));
+
       toast.success('Purchase successful!', { id: 'buy' });
     } catch (err: any) {
       console.error('[NFTDetails] Buy failed:', err);

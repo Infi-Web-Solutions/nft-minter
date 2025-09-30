@@ -36,14 +36,15 @@ class Command(BaseCommand):
                 time.sleep(60)  # Wait 1 minute before retrying
 
     def sync_ownership(self):
-        """Sync ownership for all listed NFTs"""
+        """Sync ownership for all NFTs and update user profiles"""
         web3 = web3_instance
         updated_count = 0
+        profile_updates = 0
         
-        # Get NFTs that are listed (more likely to have ownership changes)
-        nfts = NFT.objects.filter(is_listed=True)
+        # Get all NFTs (not just listed ones, in case some were delisted)
+        nfts = NFT.objects.all()
         
-        self.stdout.write(f'Checking {nfts.count()} listed NFTs...')
+        self.stdout.write(f'Checking {nfts.count()} total NFTs...')
         
         for nft in nfts:
             try:
@@ -51,15 +52,20 @@ class Command(BaseCommand):
                 blockchain_owner = web3.get_nft_owner(nft.token_id)
                 
                 if blockchain_owner and blockchain_owner.lower() != nft.owner_address.lower():
-                    self.stdout.write(f'🔄 Syncing NFT {nft.token_id}: {nft.owner_address} → {blockchain_owner}')
+                    old_owner = nft.owner_address
+                    self.stdout.write(f'🔄 Syncing NFT {nft.token_id}: {old_owner} → {blockchain_owner}')
                     
                     # Update database
                     nft.owner_address = blockchain_owner
                     nft.is_listed = False  # Mark as not listed after transfer
                     nft.save()
                     
+                    # Update user profiles for both old and new owners
+                    self.update_user_profiles(old_owner, blockchain_owner)
+                    profile_updates += 1
+                    
                     updated_count += 1
-                    self.stdout.write(self.style.SUCCESS(f'  ✅ Updated'))
+                    self.stdout.write(self.style.SUCCESS(f'  ✅ Updated NFT and profiles'))
                     
                 # Small delay to avoid rate limiting
                 time.sleep(0.1)
@@ -68,6 +74,34 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f'  ❌ Error syncing NFT {nft.token_id}: {e}'))
         
         if updated_count > 0:
-            self.stdout.write(self.style.SUCCESS(f'✅ Sync completed. Updated {updated_count} NFTs'))
+            self.stdout.write(self.style.SUCCESS(f'✅ Sync completed. Updated {updated_count} NFTs and {profile_updates} profile pairs'))
         else:
             self.stdout.write('✅ No updates needed')
+
+    def update_user_profiles(self, old_owner, new_owner):
+        """Update user profiles for ownership changes"""
+        try:
+            from .models import UserProfile
+            
+            # Update old owner's profile
+            if old_owner and old_owner != '0x0000000000000000000000000000000000000000':
+                try:
+                    old_profile = UserProfile.objects.get(wallet_address=old_owner)
+                    old_profile.nfts_owned = NFT.objects.filter(owner_address=old_owner).count()
+                    old_profile.save()
+                    self.stdout.write(f'  📊 Updated old owner profile: {old_owner}')
+                except UserProfile.DoesNotExist:
+                    pass
+            
+            # Update new owner's profile
+            if new_owner and new_owner != '0x0000000000000000000000000000000000000000':
+                try:
+                    new_profile = UserProfile.objects.get(wallet_address=new_owner)
+                    new_profile.nfts_owned = NFT.objects.filter(owner_address=new_owner).count()
+                    new_profile.save()
+                    self.stdout.write(f'  📊 Updated new owner profile: {new_owner}')
+                except UserProfile.DoesNotExist:
+                    pass
+                    
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'  ❌ Error updating profiles: {e}'))

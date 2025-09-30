@@ -25,6 +25,7 @@ import Favorites from "./pages/Favorites";
 import Contact from "./pages/Contact";
 import { LikeProvider } from '@/contexts/LikeContext';
 import { FollowProvider } from '@/contexts/FollowContext';
+import { OwnershipProvider } from '@/contexts/OwnershipContext';
 
 const queryClient = new QueryClient();
 
@@ -34,7 +35,8 @@ const App = () => (
       <WalletProvider>
         <LikeProvider>
           <FollowProvider>
-            <TooltipProvider>
+            <OwnershipProvider>
+              <TooltipProvider>
               <Toaster />
               <Sonner />
               <BrowserRouter>
@@ -60,6 +62,7 @@ const App = () => (
                 </Routes>
               </BrowserRouter>
             </TooltipProvider>
+            </OwnershipProvider>
           </FollowProvider>
         </LikeProvider>
       </WalletProvider>

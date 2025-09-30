@@ -793,6 +793,10 @@ def update_nft_owner(request, token_id):
             print(f"[DEBUG] Updated NFT {token_id}:")
             print(f"[DEBUG] New owner_address: {nft.owner_address}")
             print(f"[DEBUG] New is_listed status: {nft.is_listed}")
+            
+            # Update user profiles immediately
+            update_user_profiles_after_transfer(old_owner, new_owner)
+            
         else:
             print(f"[DEBUG] No ownership change for token {token_id} - owner is still {old_owner}")
 
@@ -827,6 +831,34 @@ def update_nft_owner(request, token_id):
         return JsonResponse({'success': True, 'owner_address': new_owner})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+def update_user_profiles_after_transfer(old_owner, new_owner):
+    """Update user profiles after ownership transfer"""
+    try:
+        from .models import UserProfile
+        
+        # Update old owner's profile
+        if old_owner and old_owner != '0x0000000000000000000000000000000000000000':
+            try:
+                old_profile = UserProfile.objects.get(wallet_address=old_owner)
+                old_profile.nfts_owned = NFT.objects.filter(owner_address=old_owner).count()
+                old_profile.save()
+                print(f"[DEBUG] Updated old owner profile: {old_owner} (owned: {old_profile.nfts_owned})")
+            except UserProfile.DoesNotExist:
+                print(f"[DEBUG] Old owner profile not found: {old_owner}")
+        
+        # Update new owner's profile
+        if new_owner and new_owner != '0x0000000000000000000000000000000000000000':
+            try:
+                new_profile = UserProfile.objects.get(wallet_address=new_owner)
+                new_profile.nfts_owned = NFT.objects.filter(owner_address=new_owner).count()
+                new_profile.save()
+                print(f"[DEBUG] Updated new owner profile: {new_owner} (owned: {new_profile.nfts_owned})")
+            except UserProfile.DoesNotExist:
+                print(f"[DEBUG] New owner profile not found: {new_owner}")
+                
+    except Exception as e:
+        print(f"[DEBUG] Error updating profiles: {e}")
 
 @csrf_exempt
 @require_http_methods(["POST"])

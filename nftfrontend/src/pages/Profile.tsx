@@ -16,12 +16,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikes } from '@/contexts/LikeContext';
+import { useOwnership } from '@/contexts/OwnershipContext';
 import { apiUrl, mediaUrl } from '@/config';
 
 const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const { address } = useWallet();
+  const { refreshTrigger } = useOwnership();
   const profileImageRef = useRef<HTMLInputElement>(null);
   const coverImageRef = useRef<HTMLInputElement>(null);
 
@@ -275,7 +277,7 @@ const Profile = () => {
     };
 
     fetchProfile();
-  }, [address]);
+  }, [address, refreshTrigger]); // Add refreshTrigger dependency
 
   // Fetch created NFTs
   useEffect(() => {
@@ -288,7 +290,7 @@ const Profile = () => {
       } catch (e) { /* ignore */ }
     };
     fetchCreatedNFTs();
-  }, [address]);
+  }, [address, refreshTrigger]); // Add refreshTrigger dependency
 
   // Fetch owned NFTs
   useEffect(() => {
@@ -301,7 +303,7 @@ const Profile = () => {
       } catch (e) { /* ignore */ }
     };
     fetchOwnedNFTs();
-  }, [address]);
+  }, [address, refreshTrigger]); // Add refreshTrigger dependency
 
   // Fetch activity
   useEffect(() => {
