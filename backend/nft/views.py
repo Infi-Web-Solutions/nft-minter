@@ -128,8 +128,12 @@ def get_user_profile(request, wallet_address):
             })
         
         # Get user's NFTs
-        user_nfts = NFT.objects.filter(owner_address=wallet_address)
-        created_nfts = NFT.objects.filter(creator_address=wallet_address)
+        # Case-insensitive match to avoid checksum/case issues
+        user_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
+        # Case-insensitive match
+        user_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
         print(f"[DEBUG] NFTs found: {user_nfts.count()} {created_nfts.count()}")
         
         profile_data = {
@@ -402,9 +406,9 @@ def get_user_nfts(request, wallet_address):
     """Get NFTs collected by a user (owned or created, no duplicates)"""
     try:
         # NFTs where user is owner
-        owned_nfts = NFT.objects.filter(owner_address=wallet_address)
+        owned_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
         # NFTs where user is creator
-        created_nfts = NFT.objects.filter(creator_address=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
         # Combine and deduplicate by token_id
         nft_dict = {}
         for nft in owned_nfts:
@@ -1474,7 +1478,7 @@ def get_user_liked_nfts(request, wallet_address):
         print(f"[DEBUG] get_user_liked_nfts called for user: {wallet_address}")
         
         # Get local NFT favorites
-        favorites = Favorite.objects.filter(user_address=wallet_address)
+        favorites = Favorite.objects.filter(user_address__iexact=wallet_address)
         print(f"[DEBUG] Found {favorites.count()} local favorites for user")
         
 

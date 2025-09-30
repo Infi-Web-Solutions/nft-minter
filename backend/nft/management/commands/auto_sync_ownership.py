@@ -51,17 +51,18 @@ class Command(BaseCommand):
                 # Get current owner from blockchain
                 blockchain_owner = web3.get_nft_owner(nft.token_id)
                 
-                if blockchain_owner and blockchain_owner.lower() != nft.owner_address.lower():
+                if blockchain_owner and blockchain_owner.lower() != (nft.owner_address or '').lower():
                     old_owner = nft.owner_address
                     self.stdout.write(f'🔄 Syncing NFT {nft.token_id}: {old_owner} → {blockchain_owner}')
                     
                     # Update database
-                    nft.owner_address = blockchain_owner
+                    # Normalize to lowercase for consistent storage
+                    nft.owner_address = blockchain_owner.lower()
                     nft.is_listed = False  # Mark as not listed after transfer
                     nft.save()
                     
                     # Update user profiles for both old and new owners
-                    self.update_user_profiles(old_owner, blockchain_owner)
+                    self.update_user_profiles((old_owner or '').lower(), blockchain_owner.lower())
                     profile_updates += 1
                     
                     updated_count += 1
