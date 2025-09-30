@@ -831,6 +831,8 @@ def update_nft_owner(request, token_id):
         import time
         data = json.loads(request.body) if request.body else {}
         forced_new_owner = data.get('new_owner')
+        incoming_price = data.get('price')
+        print(f"[DEBUG] Incoming update_nft_owner price for token {token_id}: {incoming_price}")
 
         nft = NFT.objects.get(token_id=token_id)
         old_owner = nft.owner_address
@@ -904,7 +906,7 @@ def update_nft_owner(request, token_id):
             try:
                 from .models import Transaction
                 tx_hash_to_store = data.get('transaction_hash') or (verification and verification.get('transaction', {}).get('hash')) or f"simulated_{token_id}_{int(time.time())}"
-                Transaction.objects.create(
+                created_tx = Transaction.objects.create(
                     transaction_hash=tx_hash_to_store,
                     nft=nft,
                     from_address=old_owner,
@@ -916,6 +918,7 @@ def update_nft_owner(request, token_id):
                     gas_price=data.get('gas_price', 0),
                     timestamp=timezone.now()
                 )
+                print(f"[DEBUG] Created Transaction(id={created_tx.id}) for token {token_id} with price={created_tx.price}")
             except Exception as tx_error:
                 print(f"[WARNING] Failed to record Transaction: {tx_error}")
             
@@ -938,7 +941,7 @@ def update_nft_owner(request, token_id):
             price = data.get('price', None)
 
             # Create Transaction record
-            Transaction.objects.create(
+            created_tx = Transaction.objects.create(
                 transaction_hash=tx_hash,
                 nft=nft,
                 from_address=old_owner,
@@ -950,6 +953,7 @@ def update_nft_owner(request, token_id):
                 gas_price=gas_price,
                 timestamp=timezone.now()
             )
+            print(f"[DEBUG] Created Transaction(id={created_tx.id}) for token {token_id} with price={created_tx.price} (no ownership change path)")
         return JsonResponse({'success': True, 'owner_address': new_owner})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
