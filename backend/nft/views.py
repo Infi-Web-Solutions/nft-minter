@@ -1470,6 +1470,11 @@ def get_nft_by_combined_id(request, combined_id):
                 blockchain_data = web3_instance.get_nft_metadata(nft.token_id)
                 
                 print(f"[DEBUG] Found NFT in database: token_id={nft.token_id}, owner={nft.owner_address}, is_listed={nft.is_listed}")
+                try:
+                    tx_count = Transaction.objects.filter(nft=nft).count()
+                except Exception as _:
+                    tx_count = -1
+                print(f"[DEBUG] TX count for NFT {nft.token_id}: {tx_count}")
                 
                 nft_data = {
                     'id': f"local_{nft.id}",
@@ -1544,15 +1549,18 @@ def get_nft_stats(request, nft_id):
         
         # Get likes count
         likes_count = Favorite.objects.filter(nft=nft).count()
+        print(f"[DEBUG] stats: likes_count for token {nft.token_id}: {likes_count}")
         
         # Get owners count (for now, just 1 since we don't track ownership history)
         owners_count = 1
         
         # Get last sale info
-        last_sale = Transaction.objects.filter(
+        last_sale_qs = Transaction.objects.filter(
             nft=nft, 
             transaction_type__in=['buy', 'sale']
-        ).order_by('-timestamp').first()
+        ).order_by('-timestamp')
+        last_sale = last_sale_qs.first()
+        print(f"[DEBUG] stats: sales_count for token {nft.token_id}: {last_sale_qs.count()}")
         
         last_sale_info = 'No sales yet'
         if last_sale and last_sale.price:
@@ -1564,6 +1572,7 @@ def get_nft_stats(request, nft_id):
             transaction_type__in=['buy', 'sale'],
             price__isnull=False
         ).aggregate(total=Sum('price'))['total'] or 0
+        print(f"[DEBUG] stats: total_volume raw for token {nft.token_id}: {total_volume}")
         
         total_volume_str = f"Ξ{float(total_volume)}" if total_volume > 0 else "0 ETH"
         
@@ -1579,6 +1588,7 @@ def get_nft_stats(request, nft_id):
         
         # Get real views count
         views_count = nft.views.count()
+        print(f"[DEBUG] stats: views_count for token {nft.token_id}: {views_count}")
         
         stats_data = {
             'views': views_count,
