@@ -520,6 +520,10 @@ const UserProfile = () => {
                           {...nft} 
                           liked={isLiked(nft.id) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                          afterBuy={() => {
+                            // Refresh collected NFTs after successful purchase
+                            fetchNFTs();
+                          }}
                         />
                       ))
                     )}
@@ -539,6 +543,10 @@ const UserProfile = () => {
                           {...nft} 
                           liked={isLiked(nft.id) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                          afterBuy={() => {
+                            // Refresh collected NFTs after successful purchase
+                            fetchNFTs();
+                          }}
                         />
                       ))
                     )}

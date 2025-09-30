@@ -487,6 +487,10 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        afterBuy={() => {
+                          // Refresh combined NFTs after successful purchase
+                          fetchCombinedNFTs();
+                        }}
                       />
                     );
                   })
@@ -518,6 +522,10 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        afterBuy={() => {
+                          // Refresh combined NFTs after successful purchase
+                          fetchCombinedNFTs();
+                        }}
                       />
                     );
                   })
@@ -571,6 +579,10 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
                         canLike={true}
                         source="local"
+                        afterBuy={() => {
+                          // Refresh combined NFTs after successful purchase
+                          fetchCombinedNFTs();
+                        }}
                       />
                     ))
                 )}

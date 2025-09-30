@@ -303,6 +303,10 @@ const Collections = () => {
                     onLike={async () => { await toggleLike(nft.id); }}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    afterBuy={() => {
+                      // Refresh top liked NFTs after successful purchase
+                      fetchTopLikedNFTs();
+                    }}
                   />
                 ))}
               </div>

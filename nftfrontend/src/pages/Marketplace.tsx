@@ -390,12 +390,16 @@ const Marketplace = () => {
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}
-                                         onLike={(newLikedState) => {
+                    onLike={(newLikedState) => {
                        // Pass the full NFT ID and new liked state to the like handler
                        handleLikeToggle(nft.id, newLikedState);
                      }}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    afterBuy={() => {
+                      // Refresh NFT data after successful purchase
+                      fetchNFTs();
+                    }}
                   />
                 );
               })}
