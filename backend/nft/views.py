@@ -245,8 +245,18 @@ def update_profile(request, wallet_address):
                     format, imgstr = image_data.split(';base64,')
                     ext = format.split('/')[-1]
                     filename = f'profile_{normalized_wallet}.{ext}'
+                    file_rel_path = f'profile_images/{filename}'
+                    # Ensure directory exists and overwrite old file for stable URL
+                    try:
+                        import os
+                        from django.conf import settings
+                        os.makedirs(os.path.join(settings.MEDIA_ROOT, 'profile_images'), exist_ok=True)
+                    except Exception:
+                        pass
+                    if default_storage.exists(file_rel_path):
+                        default_storage.delete(file_rel_path)
                     file_data = ContentFile(base64.b64decode(imgstr))
-                    file_path = default_storage.save(f'profile_images/{filename}', file_data)
+                    file_path = default_storage.save(file_rel_path, file_data)
                     profile.avatar_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}?v={int(time.time())}"
             except Exception as img_error:
                 traceback.print_exc()
@@ -259,8 +269,17 @@ def update_profile(request, wallet_address):
                     format, imgstr = image_data.split(';base64,')
                     ext = format.split('/')[-1]
                     filename = f'cover_{normalized_wallet}.{ext}'
+                    file_rel_path = f'cover_images/{filename}'
+                    try:
+                        import os
+                        from django.conf import settings
+                        os.makedirs(os.path.join(settings.MEDIA_ROOT, 'cover_images'), exist_ok=True)
+                    except Exception:
+                        pass
+                    if default_storage.exists(file_rel_path):
+                        default_storage.delete(file_rel_path)
                     file_data = ContentFile(base64.b64decode(imgstr))
-                    file_path = default_storage.save(f'cover_images/{filename}', file_data)
+                    file_path = default_storage.save(file_rel_path, file_data)
                     profile.banner_url =  f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}?v={int(time.time())}"
             except Exception as img_error:
                 traceback.print_exc()
