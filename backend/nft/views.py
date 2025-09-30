@@ -715,8 +715,10 @@ def update_nft_owner(request, token_id):
     Verifies transaction completion and validates ownership transfer before updating the database.
     Supports simulation mode for testing without blockchain interaction.
     """
-    print(f"[DEBUG] update_nft_owner called for token_id: {token_id}")
+    print(f"[DEBUG] ===== update_nft_owner called =====")
+    print(f"[DEBUG] Token ID: {token_id}")
     print(f"[DEBUG] Request body: {request.body}")
+    print(f"[DEBUG] Request headers: {dict(request.headers)}")
     # Create an internal async function
     async def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
         from .transaction_verifier import TransactionVerifier

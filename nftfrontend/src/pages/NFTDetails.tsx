@@ -354,34 +354,83 @@ const NFTDetails = () => {
       toast.loading('Confirm the purchase in your wallet...', { id: 'buy' });
 
       // 1) On-chain buy
+      console.log('[DEBUG] Starting on-chain purchase...');
       const tx = await web3Service.buyNFT(tokenId, priceStr);
+      console.log('[DEBUG] Transaction sent:', tx.hash);
+      
       const receipt = await web3Service.waitForTransaction(tx);
+      console.log('[DEBUG] Transaction confirmed:', receipt);
 
       // 2) Update backend owner and mark as not listed
+      console.log('[DEBUG] ===== STARTING BACKEND UPDATE =====');
       try {
-        console.log('[DEBUG] Updating backend with ownership transfer:', {
-          tokenId,
+        const updatePayload = {
           new_owner: address,
           transaction_hash: receipt?.hash || tx.hash,
           price: priceStr
-        });
+        };
+        
+        console.log('[DEBUG] Updating backend with ownership transfer:', updatePayload);
+        console.log('[DEBUG] API URL:', apiUrl(`/nfts/${tokenId}/transfer/`));
         
         const transferResponse = await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            new_owner: address,
-            transaction_hash: receipt?.hash || tx.hash,
-            price: priceStr
-          })
+          body: JSON.stringify(updatePayload)
         });
+        
+        console.log('[DEBUG] Transfer response status:', transferResponse.status);
+        console.log('[DEBUG] Transfer response headers:', Object.fromEntries(transferResponse.headers.entries()));
         
         const transferData = await transferResponse.json();
         console.log('[DEBUG] Backend transfer response:', transferData);
         
+        if (transferData.success) {
+          console.log('[DEBUG] ✅ Backend update successful');
+        } else {
+          console.error('[DEBUG] ❌ Backend update failed:', transferData.error);
+        }
+        
       } catch (e) {
-        console.warn('[DEBUG] Backend ownership update failed (continuing):', e);
+        console.error('[DEBUG] ❌ Backend ownership update failed:', e);
+        console.error('[DEBUG] Error details:', {
+          name: e.name,
+          message: e.message,
+          stack: e.stack
+        });
+        
+        // Fallback: Try to sync with blockchain directly
+        console.log('[DEBUG] ===== ATTEMPTING FALLBACK SYNC =====');
+        try {
+          console.log('[DEBUG] Getting blockchain owner...');
+          const blockchainOwner = await web3Service.getContract().ownerOf(tokenId);
+          console.log('[DEBUG] Blockchain owner:', blockchainOwner);
+          
+          console.log('[DEBUG] Updating backend with blockchain data...');
+          const fallbackResponse = await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              new_owner: blockchainOwner,
+              transaction_hash: receipt?.hash || tx.hash,
+              price: priceStr
+            })
+          });
+          
+          const fallbackData = await fallbackResponse.json();
+          console.log('[DEBUG] Fallback response:', fallbackData);
+          
+          if (fallbackData.success) {
+            console.log('[DEBUG] ✅ Fallback sync successful');
+          } else {
+            console.error('[DEBUG] ❌ Fallback sync failed:', fallbackData.error);
+          }
+          
+        } catch (fallbackError) {
+          console.error('[DEBUG] ❌ Fallback sync also failed:', fallbackError);
+        }
       }
+      console.log('[DEBUG] ===== BACKEND UPDATE COMPLETED =====');
 
       // 3) Update UI and refresh data
       setNFT((prev: any) => prev ? {
