@@ -206,28 +206,42 @@ def update_profile(request, wallet_address):
             data = json.loads(body)
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
-        # Get or create user profile
-        profile, created = UserProfile.objects.get_or_create(wallet_address=wallet_address)
+        # Normalize and get or create user profile (case-insensitive lookup)
+        normalized_wallet = (wallet_address or '').lower()
+        try:
+            profile = UserProfile.objects.get(wallet_address__iexact=wallet_address)
+            # Normalize stored value
+            if profile.wallet_address != normalized_wallet:
+                profile.wallet_address = normalized_wallet
+                profile.save(update_fields=["wallet_address"])
+            created = False
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(
+                wallet_address=normalized_wallet,
+                username=f"User{normalized_wallet[-4:]}"
+            )
+            created = True
         # Handle profile image
         if 'profile_image' in data:
             image_data = data['profile_image']
             if image_data.startswith('data:image'):
                 format, imgstr = image_data.split(';base64,')
                 ext = format.split('/')[-1]
-                filename = f'profile_{wallet_address}.{ext}'
+                # Keep stable path optional, but add cache-busting query to URL
+                filename = f'profile_{normalized_wallet}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'profile_images/{filename}', file_data)
-                profile.avatar_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
+                profile.avatar_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}?v={int(time.time())}"
         # Handle cover image
         if 'cover_image' in data:
             image_data = data['cover_image']
             if image_data.startswith('data:image'):
                 format, imgstr = image_data.split(';base64,')
                 ext = format.split('/')[-1]
-                filename = f'cover_{wallet_address}.{ext}'
+                filename = f'cover_{normalized_wallet}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'cover_images/{filename}', file_data)
-                profile.banner_url =  f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
+                profile.banner_url =  f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}?v={int(time.time())}"
         # Update other profile fields
         for field in ['username', 'bio', 'website', 'twitter', 'instagram', 'discord']:
             if field in data:
