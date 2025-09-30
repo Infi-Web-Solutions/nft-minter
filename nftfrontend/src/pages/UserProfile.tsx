@@ -247,10 +247,20 @@ const UserProfile = () => {
   };
 
   const getProfileImageUrl = (profile: UserProfileData | null, addr: string) => {
-    const resolved = mediaUrl(profile?.avatar_url || '');
-    if (resolved && resolved.length > 0) return resolved;
+    const raw = profile?.avatar_url || '';
+    const resolved = mediaUrl(raw);
+    const useFallback = !resolved || resolved.length === 0;
     const seed = (addr || '').toLowerCase();
-    return `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+    const fallback = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+    try {
+      console.debug('[UserProfile] getProfileImageUrl', {
+        addr,
+        rawUrl: raw,
+        resolvedUrl: resolved,
+        usingFallback: useFallback
+      });
+    } catch {}
+    return useFallback ? fallback : resolved;
   };
 
   const getProfileDisplayName = (profile: UserProfileData | null, address: string) => {
@@ -285,12 +295,9 @@ const UserProfile = () => {
     try {
       const result = await nftService.toggleNFTLike(nftId, address);
       if (result.success) {
-        const actualLiked = result.liked !== undefined ? result.liked : newLikedState;
-        const updater = (list: any[]) => list.map((n) => (n.id === nftId ? { ...n, liked: actualLiked } : n));
-        setCollectedNFTs(updater);
-        setCreatedNFTs(updater);
-        setLikedNFTsList(updater);
+        // Re-sync likes and rely solely on isLiked() for UI state to avoid flicker
         await syncLikes();
+        const actualLiked = result.liked !== undefined ? result.liked : newLikedState;
         toast.success(actualLiked ? 'Added to favorites' : 'Removed from favorites');
       } else {
         toast.error(result.error || 'Failed to update like status');
@@ -355,7 +362,15 @@ const UserProfile = () => {
             <Card className="glass-card p-6">
               <div className="text-center mb-6">
                 <Avatar className="h-24 w-24 mx-auto mb-4">
-                  <AvatarImage src={getProfileImageUrl(profile, walletAddress!)} />
+                  <AvatarImage 
+                    src={getProfileImageUrl(profile, walletAddress!)} 
+                    onError={(e) => {
+                      console.warn('[UserProfile] Avatar failed to load', {
+                        addr: walletAddress,
+                        src: e.currentTarget.src
+                      });
+                    }}
+                  />
                   <AvatarFallback className="text-2xl">
                     {getProfileDisplayName(profile, walletAddress!).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -521,7 +536,7 @@ const UserProfile = () => {
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
-                          liked={isLiked(nft.id) || nft.liked}
+                          liked={isLiked(nft.id)}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                           afterBuy={() => {
                             // Refresh collected NFTs after successful purchase
@@ -544,7 +559,7 @@ const UserProfile = () => {
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
-                          liked={isLiked(nft.id) || nft.liked}
+                          liked={isLiked(nft.id)}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                           afterBuy={() => {
                             // Refresh collected NFTs after successful purchase

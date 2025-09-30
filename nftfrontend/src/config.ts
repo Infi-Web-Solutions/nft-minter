@@ -56,11 +56,14 @@ export function mediaUrl(url?: string | null): string {
   // Handle typical Django media relative paths like /media/.... or media/...
   if (original.startsWith('/media/') || original.startsWith('media/')) {
     const path = original.startsWith('/') ? original : `/${original}`;
+    try { console.debug('[mediaUrl] Resolving relative media path', { original, resolved: apiUrl(path) }); } catch {}
     return apiUrl(path);
   }
 
   // Fallback: treat as relative path under API
-  return apiUrl(original.startsWith('/') ? original : `/${original}`);
+  const fallback = apiUrl(original.startsWith('/') ? original : `/${original}`);
+  try { console.debug('[mediaUrl] Fallback URL resolution', { original, resolved: fallback }); } catch {}
+  return fallback;
 }
 
 // Helper to add Sepolia network to MetaMask

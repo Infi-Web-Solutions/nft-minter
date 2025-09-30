@@ -585,9 +585,18 @@ const NFTDetails = () => {
   const getProfileImageUrl = (profile: any, addr: string) => {
     const url = profile?.avatar_url || profile?.profile_image || '';
     const resolved = mediaUrl(url);
-    if (resolved && resolved.length > 0) return resolved;
+    const useFallback = !resolved || resolved.length === 0;
     const seed = (addr || '').toLowerCase();
-    return `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+    const fallback = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+    try {
+      console.debug('[NFTDetails] getProfileImageUrl', {
+        addr,
+        rawUrl: url,
+        resolvedUrl: resolved,
+        usingFallback: useFallback
+      });
+    } catch {}
+    return useFallback ? fallback : resolved;
   };
 
   // Get profile display name
@@ -925,7 +934,15 @@ const NFTDetails = () => {
                 onClick={() => navigate(`/profile/${nft.creator_address}`)}
               >
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={getProfileImageUrl(creator, nft.creator_address)} />
+                  <AvatarImage 
+                    src={getProfileImageUrl(creator, nft.creator_address)} 
+                    onError={(e) => {
+                      console.warn('[NFTDetails] Creator avatar failed to load', {
+                        addr: nft.creator_address,
+                        src: e.currentTarget.src
+                      });
+                    }}
+                  />
                   <AvatarFallback>
                     {getProfileDisplayName(creator, nft.creator_address).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -979,7 +996,15 @@ const NFTDetails = () => {
                 onClick={() => navigate(`/profile/${nft.owner_address}`)}
               >
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={getProfileImageUrl(owner, nft.owner_address)} />
+                  <AvatarImage 
+                    src={getProfileImageUrl(owner, nft.owner_address)} 
+                    onError={(e) => {
+                      console.warn('[NFTDetails] Owner avatar failed to load', {
+                        addr: nft.owner_address,
+                        src: e.currentTarget.src
+                      });
+                    }}
+                  />
                   <AvatarFallback>
                     {getProfileDisplayName(owner, nft.owner_address).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
