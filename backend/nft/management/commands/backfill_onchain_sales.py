@@ -40,23 +40,37 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR('Contract does not expose NFTSold event in ABI.'))
             return
 
-        # Fetch logs, supporting both web3.py v5 (camelCase) and v6 (snake_case),
-        # and falling back to filters when direct get_logs is unavailable.
-        try:
-            # web3.py v6
-            logs = event().get_logs(from_block=from_block, to_block=to_block)
-        except TypeError:
+        # Fetch logs in batches to avoid provider limits
+        batch_size = 5000
+        logs = []
+        start = from_block
+        while start <= to_block:
+            end = min(start + batch_size - 1, to_block)
             try:
-                # web3.py v5
-                logs = event().get_logs(fromBlock=from_block, toBlock=to_block)
-            except Exception:
+                # web3.py v6
+                part = event().get_logs(from_block=start, to_block=end)
+            except TypeError:
                 try:
-                    # Fallback: use a filter
-                    evt_filter = event().create_filter(fromBlock=from_block, toBlock=to_block)
-                    logs = evt_filter.get_all_entries()
-                except Exception as e:
-                    self.stderr.write(self.style.ERROR(f'Failed to fetch logs: {e}'))
-                    return
+                    # web3.py v5
+                    part = event().get_logs(fromBlock=start, toBlock=end)
+                except Exception:
+                    # Fallback: filter API
+                    evt_filter = event().create_filter(fromBlock=start, toBlock=end)
+                    part = evt_filter.get_all_entries()
+            except Exception as e:
+                # If provider complains (e.g., 400), reduce batch and retry
+                if batch_size > 500:
+                    batch_size = batch_size // 2
+                    self.stdout.write(f"Provider error ({e}). Reducing batch_size to {batch_size} and retrying from {start}.")
+                    continue
+                else:
+                    self.stderr.write(self.style.ERROR(f"Failed to fetch logs for range {start}-{end}: {e}"))
+                    start = end + 1
+                    continue
+
+            logs.extend(part)
+            self.stdout.write(f"Fetched {len(part)} events for range {start}-{end}")
+            start = end + 1
 
         self.stdout.write(f"Found {len(logs)} NFTSold events in range")
 
