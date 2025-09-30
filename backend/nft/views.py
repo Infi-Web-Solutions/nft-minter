@@ -725,6 +725,7 @@ def update_nft_owner(request, token_id):
         return verifier.verify_transaction(tx_hash, token_id, expected_new_owner)
     try:
         from .models import NFT, Transaction
+        import time
         data = json.loads(request.body) if request.body else {}
         forced_new_owner = data.get('new_owner')
 
@@ -733,9 +734,12 @@ def update_nft_owner(request, token_id):
 
         tx_hash = data.get('transaction_hash')
         
+        verification = None  # Initialize verification variable
+        
         if forced_new_owner and 'simulated' in str(tx_hash):
             # Simulation mode
             new_owner = forced_new_owner
+            print(f"[DEBUG] Simulation mode - using forced new owner: {new_owner}")
         else:
             # Production mode - verify transaction
             if not tx_hash:
@@ -772,6 +776,7 @@ def update_nft_owner(request, token_id):
                 }, status=400)
 
             new_owner = verification['transaction']['new_owner']
+            print(f"[DEBUG] Production mode - verified new owner: {new_owner}")
 
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
@@ -798,7 +803,7 @@ def update_nft_owner(request, token_id):
                 gas_used = tx_info['gas_used']
                 gas_price = tx_info['gas_price']
             else:
-                # For simulation
+                # For simulation or when verification is None
                 tx_hash = data.get('transaction_hash', '') or (f"simulated_{token_id}_{int(time.time())}")
                 block_number = data.get('block_number', 0)
                 gas_used = data.get('gas_used', 0)
