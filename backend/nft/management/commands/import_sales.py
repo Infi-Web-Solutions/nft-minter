@@ -85,11 +85,16 @@ class Command(BaseCommand):
                 for lg in logs:
                     if lg.get('address', '').lower() == web3_instance.contract_address.lower() and lg['topics']:
                         if lg['topics'][0].hex().lower() == topic_sold.lower():
-                            token_id = int(Web3.to_int(hexstr=lg['topics'][1].hex()))
+                            token_id = Web3.to_int(lg['topics'][1])
                             seller = Web3.to_checksum_address('0x' + lg['topics'][2].hex()[-40:])
                             buyer = Web3.to_checksum_address('0x' + lg['topics'][3].hex()[-40:])
-                            # price is in data (uint256)
-                            price_wei = Web3.to_int(hexstr=lg.get('data', '0x0'))
+                            # price is in data (uint256) as bytes/HexBytes
+                            data_field = lg.get('data', b'')
+                            if isinstance(data_field, bytes):
+                                price_wei = Web3.to_int(data_field)
+                            else:
+                                # hex string
+                                price_wei = Web3.to_int(hexstr=str(data_field))
                             price_eth = w3.from_wei(price_wei, 'ether')
                             break
 
@@ -101,7 +106,7 @@ class Command(BaseCommand):
                             if len(lg['topics']) >= 4:
                                 seller = Web3.to_checksum_address('0x' + lg['topics'][1].hex()[-40:])
                                 buyer = Web3.to_checksum_address('0x' + lg['topics'][2].hex()[-40:])
-                                token_id = int(Web3.to_int(hexstr=lg['topics'][3].hex()))
+                                token_id = Web3.to_int(lg['topics'][3])
                                 try:
                                     tx = w3.eth.get_transaction(h)
                                     price_eth = w3.from_wei(tx.get('value', 0), 'ether')
