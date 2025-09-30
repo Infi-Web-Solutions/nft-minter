@@ -773,9 +773,8 @@ def update_nft_owner(request, token_id):
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
             nft.owner_address = new_owner
-            # If this was a simulated transfer, also mark NFT as not listed
-            if forced_new_owner:
-                nft.is_listed = False
+            # Mark NFT as not listed after any ownership transfer (sale, transfer, etc.)
+            nft.is_listed = False
             nft.save()
 
             if verification and 'transaction' in verification:

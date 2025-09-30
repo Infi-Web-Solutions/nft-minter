@@ -161,6 +161,20 @@ const NFTCard: React.FC<NFTCardProps> = ({
       return;
     }
 
+    // Double-check listing status on-chain before attempting purchase
+    try {
+      const { getListing } = useWeb3();
+      const listing = await getListing(tokenId);
+      if (!listing || !listing.price || listing.price === '0') {
+        toast.error('This NFT is no longer available for purchase. Please refresh the page.');
+        if (afterBuy) afterBuy(); // Trigger refresh
+        return;
+      }
+    } catch (listingError) {
+      console.warn('Could not verify listing status:', listingError);
+      // Continue with purchase attempt - let the contract handle the validation
+    }
+
     setIsBuying(true);
     console.log('[NFTCard] Attempting to buy NFT:', { tokenId, price });
     
@@ -221,10 +235,6 @@ const NFTCard: React.FC<NFTCardProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        // Ensure listing is cleared in backend
-        try {
-          await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
-        } catch {}
         toast.success('Ownership updated.');
         // Optimistically update UI
         setCurrentOwner(address);
@@ -247,9 +257,6 @@ const NFTCard: React.FC<NFTCardProps> = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
           });
-          try {
-            await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
-          } catch {}
           toast.success('Ownership updated (simulated).');
           setCurrentOwner(address);
           setCurrentIsListed(false);

@@ -300,6 +300,26 @@ const NFTDetails = () => {
         return;
       }
 
+      // Double-check listing status on-chain before attempting purchase
+      try {
+        const listing = await web3Service.getListing(Number(nft.token_id));
+        if (!listing || !listing.price || listing.price === '0') {
+          toast.error('This NFT is no longer available for purchase. Please refresh the page.');
+          // Refresh the NFT data
+          const response = await fetch(apiUrl(`/nfts/${nft.id}/`));
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              setNFT(data.data);
+            }
+          }
+          return;
+        }
+      } catch (listingError) {
+        console.warn('Could not verify listing status:', listingError);
+        // Continue with purchase attempt - let the contract handle the validation
+      }
+
       const tokenId: number = Number(nft.token_id);
       const priceStr: string = typeof nft.price === 'string' ? nft.price : nft.price.toString();
 
@@ -320,17 +340,29 @@ const NFTDetails = () => {
             price: priceStr
           })
         });
-        await fetch(apiUrl(`/nfts/${tokenId}/set_listed/`), { method: 'POST' });
       } catch (e) {
         console.warn('Backend ownership update failed (continuing):', e);
       }
 
-      // 3) Update UI
+      // 3) Update UI and refresh data
       setNFT((prev: any) => prev ? {
         ...prev,
         owner_address: address,
         is_listed: false
       } : prev);
+
+      // Refresh NFT data from backend to ensure consistency
+      try {
+        const response = await fetch(apiUrl(`/nfts/${nft.id}/`));
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setNFT(data.data);
+          }
+        }
+      } catch (refreshError) {
+        console.warn('Failed to refresh NFT data:', refreshError);
+      }
 
       toast.success('Purchase successful!', { id: 'buy' });
     } catch (err: any) {
