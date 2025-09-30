@@ -834,16 +834,20 @@ const NFTDetails = () => {
                     <h3 className="text-lg font-semibold mb-3">Contract Address</h3>
                     <div className="flex items-center gap-2 p-3 bg-card/50 rounded-lg">
                       <code className="text-sm text-muted-foreground flex-1">
-                        {nft.owner_address || '0x0000000000000000000000000000000000000000'}
+                        {CONTRACT_ADDRESS}
                       </code>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => copyToClipboard(nft.owner_address || '0x0000000000000000000000000000000000000000')}
+                        onClick={() => copyToClipboard(CONTRACT_ADDRESS)}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, '_blank')}
+                      >
                         <ExternalLink className="h-4 w-4" />
                       </Button>
                     </div>
