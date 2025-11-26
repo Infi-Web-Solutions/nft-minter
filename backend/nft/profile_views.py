@@ -31,11 +31,11 @@ def update_profile(request, wallet_address):
                 filename = f'profile_{wallet_address}.{ext}'
                 
                 # Save the file
-                data = ContentFile(base64.b64decode(imgstr))
-                file_path = default_storage.save(f'profile_images/{filename}', data)
+                file_data = ContentFile(base64.b64decode(imgstr))
+                file_path = default_storage.save(f'profile_images/{filename}',file_data)
                 
                 # Update profile
-                profile.avatar_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.avatar_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
 
         # Handle cover image
         if 'cover_image' in data:
@@ -44,9 +44,9 @@ def update_profile(request, wallet_address):
                 format, imgstr = image_data.split(';base64,')
                 ext = format.split('/')[-1]
                 filename = f'cover_{wallet_address}.{ext}'
-                data = ContentFile(base64.b64decode(imgstr))
-                file_path = default_storage.save(f'cover_images/{filename}', data)
-                profile.banner_url = request.build_absolute_uri(default_storage.url(file_path))
+                file_data = ContentFile(base64.b64decode(imgstr))
+                file_path = default_storage.save(f'cover_images/{filename}',file_data)
+                profile.banner_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}"
 
         # Update other profile fields
         for field in ['username', 'bio', 'website', 'twitter', 'instagram', 'discord']:

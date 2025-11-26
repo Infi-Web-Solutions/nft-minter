@@ -92,7 +92,7 @@ const Profile = () => {
       const data = await res.json();
       if (data.success) {
         setIsFollowing(true);
-        setFollowersCount(data.followers_count);
+        setFollowingCount(data.following_count);
         toast.success('Followed!');
       } else {
         toast.error(data.error || 'Failed to follow');
@@ -111,7 +111,7 @@ const Profile = () => {
       const data = await res.json();
       if (data.success) {
         setIsFollowing(false);
-        setFollowersCount(data.followers_count);
+        setFollowingCount(data.following_count);
         toast.success('Unfollowed!');
       } else {
         toast.error(data.error || 'Failed to unfollow');
@@ -445,21 +445,22 @@ const Profile = () => {
 
         {/* Profile Content */}
         <div className="container mx-auto px-4 py-8">
-          <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full mt-8">
-            <TabsList className="grid w-full grid-cols-4">
+            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full mt-8">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="collected">Collected</TabsTrigger>
               <TabsTrigger value="items">Items</TabsTrigger>
               <TabsTrigger value="favorite">Favorite</TabsTrigger>
+              <TabsTrigger value="followers">Followers</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
             </TabsList>
 
-            {/* Collected Tab: unique NFTs from created + owned */}
+            {/* Collected Tab: combined NFTs */}
             <TabsContent value="collected" className="mt-8">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {collections === 0 ? (
+                {combinedNFTs.length === 0 ? (
                   <div className="col-span-full text-center text-muted-foreground">No collected NFTs yet.</div>
                 ) : (
-                  Array.from(new Map([...createdNFTs, ...ownedNFTs].map(nft => [nft.id, nft])).values()).map((nft: any) => {
+                  combinedNFTs.map((nft: any) => {
                     // Convert numeric ID to local_ format for consistency
                     const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
                     console.log('[Profile] Rendering NFT in collected tab:', {
@@ -488,6 +489,9 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        onClick={() => {
+                          window.location.href = `/nft/${nftId}`;
+                        }}
                       />
                     );
                   })
@@ -520,6 +524,9 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        onClick={() => {
+                          window.location.href = `/nft/${nftId}`;
+                        }}
                       />
                     );
                   })
@@ -557,24 +564,56 @@ const Profile = () => {
                   // Filter combinedNFTs to show only liked NFTs
                   combinedNFTs
                     .filter((nft: any) => likedNFTIds.has(String(nft.id)))
-                    .map((nft: any) => (
-                      <NFTCard
-                        key={nft.id}
-                        {...nft}
-                        image={nft.image_url}
-                        tokenId={nft.token_id}
-                        id={nft.id}
-                        price={nft.price ? nft.price.toString() : '0'}
-                        title={nft.name}
-                        collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
-                        owner_address={nft.owner_address}
-                        is_listed={nft.is_listed}
-                        liked={true}
-                        onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
-                        canLike={true}
-                        source="local"
-                      />
-                    ))
+                    .map((nft: any) => {
+                      const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                      return (
+                        <NFTCard
+                          key={nftId}
+                          {...nft}
+                          image={nft.image_url}
+                          tokenId={nft.token_id}
+                          id={nftId}
+                          price={nft.price ? nft.price.toString() : '0'}
+                          title={nft.name}
+                          collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
+                          owner_address={nft.owner_address}
+                          is_listed={nft.is_listed}
+                          liked={true}
+                          onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
+                          canLike={true}
+                          source="local"
+                          onClick={() => {
+                            window.location.href = `/nft/${nftId}`;
+                          }}
+                        />
+                      );
+                    })
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Followers Tab: user followers */}
+            <TabsContent value="followers" className="mt-8">
+              <div className="space-y-4">
+                {followers.length === 0 ? (
+                  <div className="text-center text-muted-foreground">No followers yet.</div>
+                ) : (
+                  followers.map((follower: any, i: number) => (
+                    <Card key={i}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-4">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage src={follower.avatar_url || ''} />
+                            <AvatarFallback>{follower.username ? follower.username.slice(0, 2).toUpperCase() : 'U'}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold">{follower.username || 'Anonymous'}</p>
+                            <p className="text-xs text-muted-foreground">{follower.wallet_address}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
                 )}
               </div>
             </TabsContent>

@@ -66,39 +66,44 @@ const Rankings = () => {
       try {
         setLoading(true);
         setError(null);
-        
+
         console.log('[Rankings] Fetching trending collections...');
         let response = await apiService.getTrendingCollections();
-        
+
+        let collectionsData: any[] = [];
         if (response.success && response.data && response.data.length > 0) {
-          console.log('[Rankings] Fetched collections:', response.data);
+          // console.log('[Rankings] Fetched collections:', response.data);
+          collectionsData = response.data;
           setCollections(response.data);
           setHasMore(response.data.length === limit);
         } else {
-          // Fallback: try collections by likes
           console.warn('[Rankings] Trending empty, falling back to collections by likes');
           const byLikes = await apiService.getCollectionsByLikes();
           if (byLikes.success && byLikes.data && byLikes.data.length > 0) {
+            collectionsData = byLikes.data as any;
             setCollections(byLikes.data as any);
             setHasMore((byLikes.data as any).length === limit);
           } else {
-            // Final fallback: all collections
             console.warn('[Rankings] Collections by likes empty, falling back to all collections');
             const all = await apiService.getCollections();
             if (all.success) {
+              collectionsData = all.data;
               setCollections(all.data);
               setHasMore(all.data.length === limit);
             } else {
               console.error('[Rankings] API Error:', (all as any).error);
               setError((all as any).error || 'Failed to load collections');
-          toast.error('Failed to load collections');
+              toast.error('Failed to load collections');
             }
           }
         }
 
-        // Compute accurate stats from NFTs and override
-        console.log('[Rankings] Computing collection stats from NFTs');
+        // Fetch all NFTs
+        console.log('[Rankings] Fetching all NFTs...');
         const nfts: NFT[] = await nftService.getCombinedNFTs();
+        // console.log('[Rankings] Fetched NFTs:', nfts);
+
+        // Group NFTs by collection
         const byCollection = new Map<string, NFT[]>();
         for (const n of nfts) {
           const name = typeof n.collection === 'string' ? n.collection : n.collection?.name;
@@ -107,7 +112,7 @@ const Rankings = () => {
           byCollection.get(name)!.push(n);
         }
 
-        // Fetch avatars for unique creator addresses
+        // Fetch avatars for unique creators
         const uniqueCreators = Array.from(new Set(
           Array.from(byCollection.values())
             .map(arr => arr[0]?.creator_address || arr[0]?.owner_address)
@@ -127,37 +132,47 @@ const Rankings = () => {
           }
         }));
 
+        // Compute collection base stats
         const computedBase = Array.from(byCollection.entries()).map(([name, items]) => {
           const itemsCount = items.length;
+
+          // Use first NFT image as collection image
+          let image_url = items[0]?.image_url || '';
+          if (image_url.startsWith('ipfs://')) {
+            image_url = image_url.replace('ipfs://', 'https://ipfs.io/ipfs/');
+          }
+
           const sumPrice = items.reduce((acc, it) => {
             const p: any = (it as any).price ?? 0;
             const num = typeof p === 'string' ? parseFloat(p) : (typeof p === 'number' ? p : 0);
             return acc + (isFinite(num) ? num : 0);
           }, 0);
+
           const floorPrice = itemsCount > 0 ? sumPrice / itemsCount : 0;
-          // Per user request: make volume equal to items count
           const volume = itemsCount;
           const creatorAddr = items[0]?.creator_address || items[0]?.owner_address || '';
           const avatar = (creatorAddr && addressToAvatar.get(creatorAddr)) || '';
+
           return {
             name,
             description: '',
-            image_url: avatar || items[0]?.image_url || '',
+            image_url,
             banner_url: null,
             floor_price: floorPrice,
             total_volume: volume,
             total_items: itemsCount,
             created_at: '',
-            // extra fields (not in API interface)
             sales_24h: 0,
             change_24h: 0,
             volume_24h: 0,
           } as unknown as Collection & { sales_24h?: number; change_24h?: number; volume_24h?: number };
         }).sort((a, b) => (b.total_items || 0) - (a.total_items || 0));
 
-        // Fetch 24h and previous 24h buy activities for per-collection stats
+        // Fetch 24h and previous 24h activities
         const fetchPaged = async (tf?: '1h' | '24h' | '7d' | '30d') => {
-          let page = 1; const limitPerPage = 100; let all: any[] = [];
+          let page = 1;
+          const limitPerPage = 100;
+          let all: any[] = [];
           while (true) {
             try {
               const res = await apiService.getActivities({ type: 'buy', page, limit: limitPerPage, ...(tf ? { time_filter: tf } : {}) });
@@ -173,6 +188,7 @@ const Rankings = () => {
 
         const activities24h = await fetchPaged('24h');
         const activities7d = await fetchPaged('7d');
+
         const now = Date.now();
         const prevStart = now - 48 * 60 * 60 * 1000;
         const prevEnd = now - 24 * 60 * 60 * 1000;
@@ -212,6 +228,7 @@ const Rankings = () => {
         });
 
         if (computed.length > 0) {
+          // console.log('[Rankings] Final computed collections:', computed);
           setCollections(computed as any);
           setHasMore(false);
         }
@@ -227,9 +244,11 @@ const Rankings = () => {
     fetchTrendingCollections();
   }, []);
 
+
   // Fetch top sellers and buyers data from activities (real data)
   useEffect(() => {
     const mapTimeRange = (range: string): '1h' | '24h' | '7d' | '30d' | undefined => {
+
       switch (range) {
         case '24h':
           return '24h';
@@ -299,12 +318,86 @@ const Rankings = () => {
       return allActivities;
     };
 
-    const aggregateSellersAndBuyers = (activities: any[]) => {
+    // const aggregateSellersAndBuyers = (activities: any[]) => {
+    //   type SellerAgg = { address: string; name: string; avatar: string; volume: number; sales: number };
+    //   type BuyerAgg = { address: string; name: string; avatar: string; volume: number; purchases: number };
+    //   const sellersMap = new Map<string, SellerAgg>();
+    //   const buyersMap = new Map<string, BuyerAgg>();
+
+    //   for (const act of activities) {
+    //     const price = typeof act.price === 'number' ? act.price : 0;
+    //     const fromAddr: string = act.from?.address || 'unknown';
+    //     const toAddr: string = act.to?.address || 'unknown';
+
+    //     if (fromAddr && fromAddr !== 'unknown') {
+    //       const prev = sellersMap.get(fromAddr) || {
+    //         address: fromAddr,
+    //         name: act.from?.name || fromAddr,
+    //         avatar: act.from?.avatar || '',
+    //         volume: 0,
+    //         sales: 0,
+    //       };
+    //       prev.volume += price || 0;
+    //       prev.sales += 1;
+    //       sellersMap.set(fromAddr, prev);
+    //     }
+
+    //     if (toAddr && toAddr !== 'unknown') {
+    //       const prev = buyersMap.get(toAddr) || {
+    //         address: toAddr,
+    //         name: act.to?.name || toAddr,
+    //         avatar: act.to?.avatar || '',
+    //         volume: 0,
+    //         purchases: 0,
+    //       };
+    //       prev.volume += price || 0;
+    //       prev.purchases += 1;
+    //       buyersMap.set(toAddr, prev);
+    //     }
+    //   }
+
+    //   const sellerList: TopSeller[] = Array.from(sellersMap.values())
+    //     .sort((a, b) => b.sales - a.sales || b.volume - a.volume)
+    //     .map((s, idx) => {
+    //       const seller = {
+    //         id: idx + 1,
+    //         rank: idx + 1,
+    //         name: s.name,
+    //         avatar: s.avatar,
+    //         volume: s.volume,
+    //         sales: s.sales,
+    //         change: 0,
+    //         address: s.address,
+    //       };
+
+    //       console.log('Mapped Seller:', seller); // <-- log each seller
+    //       return seller;
+    //     });
+
+
+    //   const buyerList: TopBuyer[] = Array.from(buyersMap.values())
+    //     .sort((a, b) => b.purchases - a.purchases || b.volume - a.volume)
+    //     .map((b, idx) => ({
+    //       id: idx + 1,
+    //       rank: idx + 1,
+    //       name: b.name,
+    //       avatar: b.avatar,
+    //       volume: b.volume,
+    //       purchases: b.purchases,
+    //       change: 0,
+    //       address: b.address,
+    //     }));
+
+    //   return { sellerList, buyerList };
+    // };
+
+    const aggregateSellersAndBuyers = async (activities: any[]) => {
       type SellerAgg = { address: string; name: string; avatar: string; volume: number; sales: number };
       type BuyerAgg = { address: string; name: string; avatar: string; volume: number; purchases: number };
       const sellersMap = new Map<string, SellerAgg>();
       const buyersMap = new Map<string, BuyerAgg>();
 
+      // Step 1: Aggregate volume and counts
       for (const act of activities) {
         const price = typeof act.price === 'number' ? act.price : 0;
         const fromAddr: string = act.from?.address || 'unknown';
@@ -318,7 +411,7 @@ const Rankings = () => {
             volume: 0,
             sales: 0,
           };
-          prev.volume += price || 0;
+          prev.volume += price;
           prev.sales += 1;
           sellersMap.set(fromAddr, prev);
         }
@@ -331,53 +424,92 @@ const Rankings = () => {
             volume: 0,
             purchases: 0,
           };
-          prev.volume += price || 0;
+          prev.volume += price;
           prev.purchases += 1;
           buyersMap.set(toAddr, prev);
         }
       }
 
-      const sellerList: TopSeller[] = Array.from(sellersMap.values())
-        .sort((a, b) => b.sales - a.sales || b.volume - a.volume)
-        .map((s, idx) => ({
-          id: idx + 1,
-          rank: idx + 1,
-          name: s.name,
-          avatar: s.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face',
-          volume: s.volume,
-          sales: s.sales,
-          change: 0,
-          address: s.address,
-        }));
+      // Helper: fetch profiles in batches
+      const fetchProfilesBatch = async <T extends { address: string; name: string; avatar: string }>(
+        arr: T[],
+        batchSize = 20
+      ): Promise<T[]> => {
+        const result: T[] = [];
+        for (let i = 0; i < arr.length; i += batchSize) {
+          const batch = arr.slice(i, i + batchSize);
+          const fetched = await Promise.all(
+            batch.map(async (user) => {
+              try {
+                const res = await apiService.getUserProfile(user.address);
+                if (res.success && res.data) {
+                  user.name = res.data.username || user.name;
+                  user.avatar = res.data.avatar_url || user.avatar;
+                }
+              } catch (e) {
+                console.warn('[Rankings] Failed to fetch profile for', user.address);
+              }
+              return user;
+            })
+          );
+          result.push(...fetched);
+        }
+        return result;
+      };
 
-      const buyerList: TopBuyer[] = Array.from(buyersMap.values())
-        .sort((a, b) => b.purchases - a.purchases || b.volume - a.volume)
-        .map((b, idx) => ({
-          id: idx + 1,
-          rank: idx + 1,
-          name: b.name,
-          avatar: b.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face',
-          volume: b.volume,
-          purchases: b.purchases,
-          change: 0,
-          address: b.address,
-        }));
+      // Step 2: Prepare arrays and fetch profiles
+      const sellersArray = Array.from(sellersMap.values()).sort((a, b) => b.sales - a.sales || b.volume - a.volume);
+      const buyersArray = Array.from(buyersMap.values()).sort((a, b) => b.purchases - a.purchases || b.volume - a.volume);
+
+      const sellersWithProfile = await fetchProfilesBatch(sellersArray);
+      const buyersWithProfile = await fetchProfilesBatch(buyersArray);
+
+      // Step 3: Map to TopSeller / TopBuyer with rank
+      const sellerList: TopSeller[] = sellersWithProfile.map((s, idx) => ({
+        id: idx + 1,
+        rank: idx + 1,
+        name: s.name,
+        avatar: s.avatar,
+        volume: s.volume,
+        sales: s.sales,
+        change: 0,
+        address: s.address,
+      }));
+
+      const buyerList: TopBuyer[] = buyersWithProfile.map((b, idx) => ({
+        id: idx + 1,
+        rank: idx + 1,
+        name: b.name,
+        avatar: b.avatar,
+        volume: b.volume,
+        purchases: b.purchases,
+        change: 0,
+        address: b.address,
+      }));
+
+      // console.log('[Rankings] Total sellers:', sellerList.length, 'Total buyers:', buyerList.length);
 
       return { sellerList, buyerList };
     };
+
+
 
     const run = async () => {
       try {
         setLoadingSellers(true);
         setLoadingBuyers(true);
         const activities = await fetchAllBuyActivities();
-        const { sellerList, buyerList } = aggregateSellersAndBuyers(activities);
+        // console.log('activitiesactivitiesactivitiesactivitiesactivities', activities);
+        const { sellerList, buyerList } = await aggregateSellersAndBuyers(activities);
         setTopSellers(sellerList);
         setTopBuyers(buyerList);
+        // console.log('[Rankings] Seller List:', sellerList);
+        // console.log('[Rankings] Buyer List:', buyerList);
       } catch (err) {
         console.error('[Rankings] Error computing rankings:', err);
         toast.error('Failed to load rankings');
       } finally {
+
         setLoadingSellers(false);
         setLoadingBuyers(false);
       }
@@ -390,7 +522,7 @@ const Rankings = () => {
     try {
       setLoading(true);
       const response = await apiService.getTrendingCollections();
-      
+
       if (response.success) {
         const newCollections = response.data;
         setCollections(prev => [...prev, ...newCollections]);
@@ -434,7 +566,7 @@ const Rankings = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-4">Top Rankings</h1>
@@ -448,7 +580,7 @@ const Rankings = () => {
               <TabsTrigger value="sellers">Top Sellers</TabsTrigger>
               <TabsTrigger value="buyers">Top Buyers</TabsTrigger>
             </TabsList>
-            
+
             <div className="flex gap-4">
               <Select value={timeRange} onValueChange={setTimeRange}>
                 <SelectTrigger className="w-32">
@@ -486,62 +618,69 @@ const Rankings = () => {
                 {collections.length === 0 ? (
                   <div className="text-center py-16 text-muted-foreground">No collections found.</div>
                 ) : (
-                <div className="space-y-4">
-                  {collections.map((collection, index) => (
-                <Card key={collection.name} className="hover:shadow-lg transition-shadow cursor-pointer">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-12">
-                        {getRankIcon(index + 1)}
-                      </div>
-                      
-                      <div className="w-16 h-16 rounded-lg overflow-hidden">
-                        <img 
-                          src={collection.image_url} 
-                          alt={collection.name}
-                          className="h-full w-full object-cover"
-                                                     onError={(e) => {
-                             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop';
-                           }}
-                        />
-                      </div>
-                      
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold">{collection.name}</h3>
-                          <Badge variant="secondary" className="text-xs">✓</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{collection.total_items.toLocaleString()} items</p>
-                      </div>
-                      
-                      <div className="grid grid-cols-4 gap-8 text-sm">
-                        <div>
-                          <p className="text-muted-foreground mb-1">Floor Price</p>
-                          <p className="font-medium">Ξ {formatPrice((collection as any).floor_price || 0)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">24h Volume</p>
-                          <p className="font-medium">Ξ {formatVolume(((collection as any).volume_24h ?? (collection as any).total_volume) || 0)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">24h Change</p>
-                          <p className={`font-medium flex items-center gap-1 ${((collection as any).change_24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {((collection as any).change_24h || 0) >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                            {formatChange(Math.abs((collection as any).change_24h || 0))}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">24h Sales</p>
-                          <p className="font-medium">{(collection as any).sales_24h || 0}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  <div className="space-y-4">
+                    {collections.map((collection, index) => (
+                      <Card key={collection.name} className="hover:shadow-lg transition-shadow cursor-pointer">
+                        <CardContent className="p-6">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center justify-center w-12">
+                              {getRankIcon(index + 1)}
+                            </div>
+
+                            <div className="w-16 h-16 rounded-lg overflow-hidden flex items-center justify-center bg-gray-100">
+                              {collection.image_url ? (
+                                <img
+                                  src={collection.image_url}
+                                  alt={collection.name}
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.onerror = null; // Prevent infinite loop
+                                    target.src = 'https://via.placeholder.com/80x80?text=Not+Found';
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-gray-400 text-sm">No Image</span>
+                              )}
+                            </div>
+
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="font-semibold">{collection.name}</h3>
+                                <Badge variant="secondary" className="text-xs">✓</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">{collection.total_items.toLocaleString()} items</p>
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-8 text-sm">
+                              <div>
+                                <p className="text-muted-foreground mb-1">Floor Price</p>
+                                <p className="font-medium">Ξ {formatPrice((collection as any).floor_price || 0)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">24h Volume</p>
+                                <p className="font-medium">Ξ {formatVolume(((collection as any).volume_24h ?? (collection as any).total_volume) || 0)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">24h Change</p>
+                                <p className="font-medium flex items-center gap-1 text-green-500">
+                                  <TrendingUp className="h-3 w-3" />
+                                  0.0
+                                </p>
+
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">24h Sales</p>
+                                <p className="font-medium">{(collection as any).sales_24h || 0}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
-          </TabsContent>
+              </TabsContent>
 
               <TabsContent value="sellers">
                 {loadingSellers ? (
@@ -556,55 +695,57 @@ const Rankings = () => {
                     {topSellers.length === 0 ? (
                       <div className="text-center py-16 text-muted-foreground">No seller activity found.</div>
                     ) : topSellers.map((seller) => (
-                <Card key={seller.id} className="hover:shadow-lg transition-shadow cursor-pointer">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-12">
-                        {getRankIcon(seller.rank)}
-                      </div>
-                      
-                                             <div className="w-12 h-12 rounded-full overflow-hidden">
-                         <img 
-                           src={seller.avatar} 
-                           alt={seller.name}
-                           className="h-full w-full object-cover"
-                           onError={(e) => {
-                             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face';
-                           }}
-                         />
-                       </div>
-                      
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{seller.name}</h3>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-8 text-sm">
-                        <div>
-                          <p className="text-muted-foreground mb-1">Volume</p>
-                          <p className="font-medium">Ξ {formatVolume(seller.volume)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">Sales</p>
-                          <p className="font-medium">{seller.sales}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">Change</p>
-                          <p className={`font-medium flex items-center gap-1 ${
-                            seller.change >= 0 ? 'text-green-500' : 'text-red-500'
-                          }`}>
-                            {seller.change >= 0 ? 
-                              <TrendingUp className="h-3 w-3" /> : 
-                              <TrendingDown className="h-3 w-3" />
-                            }
-                            {formatChange(Math.abs(seller.change))}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                      <Card key={seller.id} className="hover:shadow-lg transition-shadow cursor-pointer">
+                        <CardContent className="p-6">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center justify-center w-12">
+                              {getRankIcon(seller.rank)}
+                            </div>
+
+                            {seller.avatar ? (
+                              <div className="w-12 h-12 rounded-full overflow-hidden">
+                                <img
+                                  src={seller.avatar}
+                                  alt={seller.name}
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            ) : null}
+
+
+                            <div className="flex-1">
+                              <h3 className="font-semibold">{seller.name}</h3>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-8 text-sm">
+                              <div>
+                                <p className="text-muted-foreground mb-1">Volume</p>
+                                <p className="font-medium">Ξ {formatVolume(seller.volume)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">Sales</p>
+                                <p className="font-medium">{seller.sales}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">Change</p>
+                                <p className={`font-medium flex items-center gap-1 ${seller.change >= 0 ? 'text-green-500' : 'text-red-500'
+                                  }`}>
+                                  {seller.change >= 0 ?
+                                    <TrendingUp className="h-3 w-3" /> :
+                                    <TrendingDown className="h-3 w-3" />
+                                  }
+                                  {formatChange(Math.abs(seller.change))}%
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
               </TabsContent>
 
@@ -621,55 +762,56 @@ const Rankings = () => {
                     {topBuyers.length === 0 ? (
                       <div className="text-center py-16 text-muted-foreground">No buyer activity found.</div>
                     ) : topBuyers.map((buyer) => (
-                <Card key={buyer.id} className="hover:shadow-lg transition-shadow cursor-pointer">
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-12">
-                        {getRankIcon(buyer.rank)}
-                      </div>
-                      
-                                             <div className="w-12 h-12 rounded-full overflow-hidden">
-                         <img 
-                           src={buyer.avatar} 
-                           alt={buyer.name}
-                           className="h-full w-full object-cover"
-                           onError={(e) => {
-                             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face';
-                           }}
-                         />
-                       </div>
-                      
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{buyer.name}</h3>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-8 text-sm">
-                        <div>
-                          <p className="text-muted-foreground mb-1">Volume</p>
-                          <p className="font-medium">Ξ {formatVolume(buyer.volume)}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">Purchases</p>
-                          <p className="font-medium">{buyer.purchases}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground mb-1">Change</p>
-                          <p className={`font-medium flex items-center gap-1 ${
-                            buyer.change >= 0 ? 'text-green-500' : 'text-red-500'
-                          }`}>
-                            {buyer.change >= 0 ? 
-                              <TrendingUp className="h-3 w-3" /> : 
-                              <TrendingDown className="h-3 w-3" />
-                            }
-                            {formatChange(Math.abs(buyer.change))}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                      <Card key={buyer.id} className="hover:shadow-lg transition-shadow cursor-pointer">
+                        <CardContent className="p-6">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center justify-center w-12">
+                              {getRankIcon(buyer.rank)}
+                            </div>
+                            {buyer.avatar ? (
+                              <div className="w-12 h-12 rounded-full overflow-hidden">
+                                <img
+                                  src={buyer.avatar}
+                                  alt={buyer.name}
+                                  className="h-full w-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            ) : null}
+
+
+                            <div className="flex-1">
+                              <h3 className="font-semibold">{buyer.name}</h3>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-8 text-sm">
+                              <div>
+                                <p className="text-muted-foreground mb-1">Volume</p>
+                                <p className="font-medium">Ξ {formatVolume(buyer.volume)}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">Purchases</p>
+                                <p className="font-medium">{buyer.purchases}</p>
+                              </div>
+                              <div>
+                                <p className="text-muted-foreground mb-1">Change</p>
+                                <p className={`font-medium flex items-center gap-1 ${buyer.change >= 0 ? 'text-green-500' : 'text-red-500'
+                                  }`}>
+                                  {buyer.change >= 0 ?
+                                    <TrendingUp className="h-3 w-3" /> :
+                                    <TrendingDown className="h-3 w-3" />
+                                  }
+                                  {formatChange(Math.abs(buyer.change))}%
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 )}
               </TabsContent>
             </>
@@ -678,9 +820,9 @@ const Rankings = () => {
 
         {!loading && !error && activeTab === 'collections' && hasMore && (
           <div className="flex justify-center mt-12">
-            <Button 
-              variant="outline" 
-              size="lg" 
+            <Button
+              variant="outline"
+              size="lg"
               onClick={loadMoreCollections}
               disabled={loading}
             >

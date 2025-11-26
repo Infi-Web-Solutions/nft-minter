@@ -47,20 +47,37 @@ const navigationMenuTriggerStyle = cva(
 const NavigationMenuTrigger = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof NavigationMenuPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
-  <NavigationMenuPrimitive.Trigger
-    ref={ref}
-    className={cn(navigationMenuTriggerStyle(), "group", className)}
-    {...props}
-  >
-    {children}{" "}
-    <ChevronDown
-      className="relative top-[1px] ml-1 h-3 w-3 transition duration-200 group-data-[state=open]:rotate-180"
-      aria-hidden="true"
-    />
-  </NavigationMenuPrimitive.Trigger>
-))
-NavigationMenuTrigger.displayName = NavigationMenuPrimitive.Trigger.displayName
+>(({ className, children, ...props }, ref) => {
+  // State to control open/close manually
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <NavigationMenuPrimitive.Trigger
+      ref={ref}
+      // Prevent hover/focus from opening
+      onPointerEnter={(e) => e.preventDefault()}
+      onPointerLeave={(e) => e.preventDefault()}
+      onClick={() => setOpen(!open)} // toggle on click
+      data-state={open ? "open" : "closed"} // for styling like rotating chevron
+      className={cn(navigationMenuTriggerStyle(), "group", className)}
+      {...props}
+    >
+      {children}
+      <ChevronDown
+        className={cn(
+          "relative top-[1px] ml-1 h-3 w-3 transition duration-200",
+          open ? "rotate-180" : "rotate-0"
+        )}
+        aria-hidden="true"
+      />
+    </NavigationMenuPrimitive.Trigger>
+  );
+});
+
+NavigationMenuTrigger.displayName =
+  NavigationMenuPrimitive.Trigger.displayName;
+
+
 
 const NavigationMenuContent = React.forwardRef<
   React.ElementRef<typeof NavigationMenuPrimitive.Content>,

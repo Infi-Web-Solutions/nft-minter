@@ -206,6 +206,22 @@ class ApiService {
     return this.request<ApiResponse<NFT[]>>(`/users/${walletAddress}/nfts/`);
   }
 
+  // Follow user
+  async followUser(walletAddress: string, followerAddress: string): Promise<ApiResponse<any>> {
+    return this.request<ApiResponse<any>>(`/users/${walletAddress}/follow/`, {
+      method: 'POST',
+      body: JSON.stringify({ follower_address: followerAddress }),
+    });
+  }
+
+  // Unfollow user
+  async unfollowUser(walletAddress: string, followerAddress: string): Promise<ApiResponse<any>> {
+    return this.request<ApiResponse<any>>(`/users/${walletAddress}/unfollow/`, {
+      method: 'POST',
+      body: JSON.stringify({ follower_address: followerAddress }),
+    });
+  }
+
   // Contract endpoints
   async getContractInfo(): Promise<ApiResponse<ContractInfo>> {
     return this.request<ApiResponse<ContractInfo>>('/contract/info/');
@@ -233,6 +249,10 @@ class ApiService {
 
   async getActivityStats(): Promise<ApiResponse<ActivityStats>> {
     return this.request<ApiResponse<ActivityStats>>('/activities/stats/');
+  }
+
+  async getNotifications(walletAddress: string, page = 1, limit = 20): Promise<PaginatedResponse<any>> {
+    return this.request<PaginatedResponse<any>>(`/activities/notifications/${walletAddress}?page=${page}&limit=${limit}`);
   }
 }
 

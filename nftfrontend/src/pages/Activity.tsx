@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
@@ -11,7 +11,7 @@ import { Search, ExternalLink, Loader2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { activityService, ActivityFilters } from '@/services/activityService';
-import { Activity } from '@/services/api';
+import type { Activity } from '@/services/api';
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
 
@@ -25,11 +25,10 @@ const Activity = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [totalItems, setTotalItems] = useState(0);
 
-  // Fetch activities
-  const fetchActivities = async (page: number = 1, reset: boolean = false) => {
+  const fetchActivities = useCallback(async (page: number = 1, reset: boolean = false) => {
     try {
       setIsLoading(true);
-      
+
       const baseFilters: ActivityFilters = {
         page,
         limit: 20,
@@ -85,8 +84,10 @@ const Activity = () => {
         aggregatedHasNext = successful.some(r => r.pagination.has_next) || merged.length > (baseFilters.limit || 20);
         aggregatedTotal = successful.reduce((sum, r) => sum + (r.pagination.total_items || 0), 0);
       }
-      
+
       let finalData = aggregatedData;
+
+      // Note: Filtering is now handled in the backend for 'all' activities
 
       // Fallback synthesis from NFTs for Mints/Listings/All when nothing returned
       if ((finalData.length === 0 || (reset && aggregatedTotal === 0)) && (activeTab === 'mint' || activeTab === 'list' || activeTab === 'all')) {
@@ -98,13 +99,13 @@ const Activity = () => {
             if (timeFilter === 'all') return true;
             const created = new Date(dateStr).getTime();
             const now = Date.now();
-            const ranges: Record<string, number> = { '1h': 3600000, '24h': 86400000, '7d': 7*86400000, '30d': 30*86400000 };
+            const ranges: Record<string, number> = { '1h': 3600000, '24h': 86400000, '7d': 7 * 86400000, '30d': 30 * 86400000 };
             const ms = ranges[timeFilter as '1h' | '24h' | '7d' | '30d'];
             return now - created <= ms;
           };
 
           const toActivity = (nft: NFT, type: 'mint' | 'list'): Activity => ({
-            id: Number(nft.token_id) || Number(nft.id) || Math.floor(Math.random()*1e9),
+            id: Number(nft.token_id) || Number(nft.id) || Math.floor(Math.random() * 1e9),
             type,
             nft: {
               id: Number(nft.id) || 0,
@@ -165,7 +166,7 @@ const Activity = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeTab, timeFilter, searchQuery]);
 
   // Initial load
   useEffect(() => {
@@ -207,86 +208,87 @@ const Activity = () => {
   // Render activity card
   const renderActivityCard = (activity: Activity) => {
     const badge = getActivityBadge(activity.type);
-    
-                return (
-                  <Card key={activity.id} className="hover:shadow-lg transition-shadow">
-                    <CardContent className="p-6">
-                      <div className="flex items-center gap-4">
-                        <Badge variant={badge.variant} className="min-w-fit">
-                          {badge.label}
-                        </Badge>
-                        
-                        <div className="w-12 h-12 rounded-lg overflow-hidden">
-                          <img 
-                src={activity.nft.image_url} 
-                            alt={activity.nft.name}
-                            className="h-full w-full object-cover"
+
+    return (
+      <Card key={activity.id} className="hover:shadow-lg transition-shadow">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-4">
+            <Badge variant={badge.variant} className="min-w-fit">
+              {badge.label}
+            </Badge>
+
+            {/* <div className="w-12 h-12 rounded-lg overflow-hidden">
+              <img
+                src={activity.nft.image_url}
+                alt={activity.nft.name}
+                className="h-full w-full object-cover"
                 onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = `https://images.unsplash.com/photo-${1500000000000 + activity.id}?w=60&h=60&fit=crop&crop=center`;
+                  (e.target as HTMLImageElement).src =
+                    "https://via.placeholder.com/60?text=NFT";
                 }}
-                          />
-                        </div>
-                        
-                        <div className="flex-1">
-                          <h3 className="font-semibold">{activity.nft.name}</h3>
-                          <p className="text-sm text-muted-foreground">{activity.nft.collection}</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={activity.from.avatar} />
-                              <AvatarFallback>{activity.from.name.slice(0, 2)}</AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm">{activity.from.name}</span>
-                          </div>
-                          
+              />
+
+            </div> */}
+
+            <div className="flex-1">
+              <h3 className="font-semibold">{activity.nft.name}</h3>
+              <p className="text-sm text-muted-foreground">{activity.nft.collection}</p>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={activity.from.avatar} />
+                  <AvatarFallback>{activity.from.name.slice(0, 2)}</AvatarFallback>
+                </Avatar>
+                <span className="text-sm">{activity.from.name}</span>
+              </div>
+
               {activity.type !== 'list' && activity.type !== 'bid' && activity.type !== 'mint' && (
-                            <>
-                              <span className="text-muted-foreground">→</span>
-                              <div className="flex items-center gap-2">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarImage src={activity.to.avatar} />
-                                  <AvatarFallback>{activity.to.name.slice(0, 2)}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-sm">{activity.to.name}</span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        
-                        <div className="text-right">
+                <>
+                  <span className="text-muted-foreground">→</span>
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={activity.to.avatar} />
+                      <AvatarFallback>{activity.to.name.slice(0, 2)}</AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm">{activity.to.name}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="text-right">
               {activity.price && (
                 <p className="font-medium">Ξ {activity.price.toFixed(2)}</p>
               )}
               <p className="text-sm text-muted-foreground">{activity.time_ago}</p>
-                        </div>
-                        
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
               className="p-2"
               onClick={() => window.open(`https://sepolia.etherscan.io/tx/${activity.transaction_hash}`, '_blank')}
             >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
+              <ExternalLink className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
   };
 
-                return (
+  return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-4">Activity</h1>
           <p className="text-muted-foreground">Track all NFT marketplace activities in real-time</p>
-                        </div>
-                        
+        </div>
+
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
             <TabsList className="grid w-full max-w-2xl grid-cols-6">
@@ -297,17 +299,17 @@ const Activity = () => {
               <TabsTrigger value="transfer">Transfers</TabsTrigger>
               <TabsTrigger value="mint">Mints</TabsTrigger>
             </TabsList>
-            
+
             <div className="flex gap-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                <Input 
-                  placeholder="Search..." 
+                <Input
+                  placeholder="Search..."
                   className="pl-10 w-48"
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                 />
-                          </div>
+              </div>
               <Select value={timeFilter} onValueChange={handleTimeFilterChange}>
                 <SelectTrigger className="w-32">
                   <SelectValue />
@@ -321,31 +323,31 @@ const Activity = () => {
                 </SelectContent>
               </Select>
             </div>
-            </div>
+          </div>
 
           <TabsContent value={activeTab}>
             {isLoading && activities.length === 0 ? (
-            <div className="text-center py-12">
+              <div className="text-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
                 <p className="text-muted-foreground">Loading activities...</p>
-            </div>
+              </div>
             ) : activities.length === 0 ? (
-            <div className="text-center py-12">
+              <div className="text-center py-12">
                 <p className="text-muted-foreground">No activities found</p>
-            </div>
+              </div>
             ) : (
               <div className="space-y-4">
                 {activities.map(renderActivityCard)}
-            </div>
+              </div>
             )}
           </TabsContent>
         </Tabs>
 
         {hasMore && (
-        <div className="flex justify-center mt-12">
-            <Button 
-              variant="outline" 
-              size="lg" 
+          <div className="flex justify-center mt-12">
+            <Button
+              variant="outline"
+              size="lg"
               onClick={loadMore}
               disabled={isLoading}
             >
@@ -357,8 +359,8 @@ const Activity = () => {
               ) : (
                 'Load More Activities'
               )}
-          </Button>
-        </div>
+            </Button>
+          </div>
         )}
 
         {totalItems > 0 && (

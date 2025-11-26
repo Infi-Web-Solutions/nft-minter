@@ -12,6 +12,7 @@ class ActivityService {
   async getActivities(filters: ActivityFilters = {}) {
     try {
       const response = await apiService.getActivities(filters);
+      console.log('Fetched activities:', response);
       return response;
     } catch (error) {
       console.error('Error fetching activities:', error);
@@ -41,6 +42,26 @@ class ActivityService {
           last_24h: { total: 0, sales: 0, listings: 0, mints: 0, transfers: 0, offers: 0 },
           last_7d: { total: 0, sales: 0, listings: 0, mints: 0, transfers: 0, offers: 0 },
           last_30d: { total: 0, sales: 0, listings: 0, mints: 0, transfers: 0, offers: 0 }
+        }
+      };
+    }
+  }
+
+  async getNotifications(walletAddress: string, page = 1, limit = 20) {
+    try {
+      const response = await apiService.getNotifications(walletAddress, page, limit);
+      return response;
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      return {
+        success: false,
+        data: [],
+        pagination: {
+          page: 1,
+          total_pages: 1,
+          total_items: 0,
+          has_next: false,
+          has_previous: false,
         }
       };
     }

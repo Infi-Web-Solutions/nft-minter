@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+
 import { toast } from 'sonner';
 import { 
   Heart, 
@@ -29,6 +30,8 @@ import { nftService } from '@/services/nftService';
 import { apiUrl } from '@/config';
 import { web3Service } from '@/services/web3Service';
 import { ethers } from 'ethers';
+import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { apiService } from '@/services/api';
 
 const NFTDetails = () => {
   const { id } = useParams();
@@ -39,10 +42,10 @@ const NFTDetails = () => {
   const [creator, setCreator] = useState<any>(null);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isLiked, setIsLiked] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [imageLoading, setImageLoading] = useState(true);
   const [currentGatewayIndex, setCurrentGatewayIndex] = useState(0);
+  const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
   const [nftStats, setNftStats] = useState({
     views: 0,
     likes: 0,
@@ -52,21 +55,53 @@ const NFTDetails = () => {
     properties: []
   });
 
+  const [following, setFollowing] = useState<any[]>([]);
+
+// 3️⃣ Fetch following list for the current user
+useEffect(() => {
+  if (!address) {
+    setFollowing([]);
+    return;
+  }
+
+  const fetchFollowing = async () => {
+    try {
+      console.log('[NFTDetails] Fetching following for user:', address);
+      const res = await fetch(apiUrl(`/users/${address}/following/`));
+      const data = await res.json();
+      if (data.success) {
+        setFollowing(data.following || []);
+      } else {
+        setFollowing([]);
+      }
+    } catch (error) {
+      console.error('[NFTDetails] Error fetching following:', error);
+      setFollowing([]);
+    }
+  };
+
+  fetchFollowing();
+}, [address]);
+
   useEffect(() => {
     if (!id) return;
-    
+
     const fetchNFT = async () => {
       setLoading(true);
       try {
         let nftData;
-        
+
         console.log('[NFTDetails] Fetching NFT with combined ID:', id);
-        
+
         const res = await fetch(apiUrl(`/nfts/combined/${id}/`));
         const data = await res.json();
+        console.log("[NFTDetails] API Response:", data);
+
         if (data.success) {
           nftData = data.data;
+          console.log('[NFTDetails] NFT data loaded successfully:', nftData.id);
         } else {
+          console.error('[NFTDetails] NFT fetch failed:', data.error);
           toast.error(data.error || 'NFT not found');
           navigate('/');
           return;
@@ -80,7 +115,8 @@ const NFTDetails = () => {
           id: nftData.id,
           name: nftData.name,
           image_url: nftData.image_url,
-          token_uri: nftData.token_uri
+          token_uri: nftData.token_uri,
+          liked: nftData.liked
         });
         
         // Test image URL conversion
@@ -93,8 +129,7 @@ const NFTDetails = () => {
           }
         }
         
-        // Set initial like state from NFT data
-        setIsLiked(nftData.liked || false);
+
         
         // Fetch owner and creator profiles if addresses are available
         if (nftData.owner_address) {
@@ -263,21 +298,31 @@ const NFTDetails = () => {
 
     if (!nft) return;
 
+    console.log('[NFTDetails] handleLikeToggle called with:', {
+      nftId: nft.id,
+      currentLiked: likedNFTIds.has(String(nft.id))
+    });
+
     try {
       const result = await nftService.toggleNFTLike(nft.id, address);
+      console.log('[NFTDetails] toggleNFTLike result:', result);
       if (result.success) {
-        setIsLiked(result.liked || false);
+        // Use the actual liked state from the backend
+        const actualLikedState = result.liked !== undefined ? result.liked : !likedNFTIds.has(String(nft.id));
+        console.log('[NFTDetails] Setting actual liked state:', actualLikedState);
+        // Update the local stats
         setNftStats(prev => ({
           ...prev,
           likes: typeof result.like_count === 'number' ? result.like_count : prev.likes
         }));
-        toast.success(result.liked ? 'Added to favorites' : 'Removed from favorites');
+        toast.success(actualLikedState ? 'Added to favorites' : 'Removed from favorites');
+        await refreshLikedNFTs();
       } else {
-        toast.error(result.error || 'Failed to update favorite status');
+        toast.error(result.error || 'Failed to update like status');
       }
     } catch (error) {
       console.error('Error toggling like:', error);
-      toast.error('Failed to update favorite status');
+      toast.error('Failed to update like status');
     }
   };
 
@@ -299,6 +344,24 @@ const NFTDetails = () => {
 
       const tokenId: number = Number(nft.token_id);
       const priceStr: string = typeof nft.price === 'string' ? nft.price : nft.price.toString();
+      const priceInWei = ethers.parseEther(priceStr);
+
+      // Check user's balance before proceeding (including gas estimation)
+      const signer = web3Service.getSigner();
+      const balance = await signer.provider.getBalance(address);
+
+      // Estimate gas for the transaction
+      const contract = web3Service.getContract();
+      const gasEstimate = await contract.buyNFT.estimateGas(tokenId, { value: priceInWei });
+      const gasPrice = await signer.provider.getFeeData();
+      const gasCost = gasEstimate * (gasPrice.gasPrice || ethers.parseUnits('20', 'gwei'));
+
+      const totalCost = priceInWei + gasCost;
+
+      if (balance < totalCost) {
+        toast.error('Insufficient balance to complete this purchase (including gas fees)');
+        return;
+      }
 
       toast.loading('Confirm the purchase in your wallet...', { id: 'buy' });
 
@@ -550,7 +613,7 @@ const NFTDetails = () => {
                     className="bg-background/80 backdrop-blur-md hover:bg-background/90"
                     onClick={handleLikeToggle}
                   >
-                    <Heart className={`h-4 w-4 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                    <Heart className={`h-4 w-4 ${likedNFTIds.has(String(nft.id)) ? 'fill-red-500 text-red-500' : ''}`} />
                   </Button>
                   <Button
                     variant="secondary"
@@ -775,8 +838,47 @@ const NFTDetails = () => {
                   </div>
                 </div>
               </div>
-              <Button variant="outline" className="w-full">
-                Follow Creator
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  if (!address) {
+                    toast.error('Please connect your wallet first');
+                    return;
+                  }
+                  if (!creator || !creator.wallet_address) {
+                    toast.error('Creator address not available');
+                    return;
+                  }
+                  try {
+                    const isFollowing = following.some(f => f.wallet_address === creator.wallet_address);
+                    if (isFollowing) {
+                      // Unfollow
+                      const res = await apiService.unfollowUser(creator.wallet_address, address);
+                      if (res.success) {
+                        toast.success('Unfollowed successfully');
+                        setFollowing(prev => prev.filter(f => f.wallet_address !== creator.wallet_address));
+                      } else {
+                        toast.error(res.error || 'Failed to unfollow');
+                      }
+                    } else {
+                      // Follow
+                      const res = await apiService.followUser(creator.wallet_address, address);
+                      if (res.success) {
+                        toast.success('Followed successfully');
+                        // Add to following list
+                        setFollowing(prev => [...prev, { wallet_address: creator.wallet_address, username: creator.username, avatar_url: creator.avatar_url }]);
+                      } else {
+                        toast.error(res.error || 'Failed to follow');
+                      }
+                    }
+                  } catch (error) {
+                    console.error('Follow/unfollow error:', error);
+                    toast.error('Failed to update follow status');
+                  }
+                }}
+              >
+                {following.some(f => f.wallet_address === creator?.wallet_address) ? 'Unfollow' : 'Follow Creator'}
               </Button>
         </Card>
 

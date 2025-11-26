@@ -102,6 +102,11 @@ const CollectionDetails = () => {
                     collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    onClick={() => {
+                      // Fix redirect issue: remove 'local_' prefix if present
+                      const cleanNftId = typeof nft.id === 'string' && nft.id.startsWith('local_') ? nft.id.slice(6) : nft.id;
+                      window.location.href = `/nft/${cleanNftId}`;
+                    }}
                   />
                 ))
               )}

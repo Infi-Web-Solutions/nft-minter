@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { Card } from '@/components/ui/card';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { 
   Share2, 
   Copy, 
@@ -22,30 +22,14 @@ import { useWallet } from '@/contexts/WalletContext';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
-import { apiUrl } from '@/config';
-
-interface UserProfileData {
-  id: string;
-  username: string;
-  bio: string;
-  avatar_url: string;
-  banner_url: string;
-  website: string;
-  twitter: string;
-  instagram: string;
-  discord: string;
-  total_created: number;
-  total_collected: number;
-  total_volume: number;
-  verified: boolean;
-}
+import { profileService, ProfileData } from '../api/useInfo';
 
 const UserProfile = () => {
   const { walletAddress } = useParams<{ walletAddress: string }>();
   const navigate = useNavigate();
   const { address } = useWallet();
   
-  const [profile, setProfile] = useState<UserProfileData | null>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
@@ -62,25 +46,26 @@ const UserProfile = () => {
   // Fetch profile data
   useEffect(() => {
     if (!walletAddress) return;
-    
+
     const fetchProfile = async () => {
       try {
         setLoading(true);
-        console.log(`[UserProfile] Fetching profile for wallet: ${walletAddress}`);
-        const res = await fetch(apiUrl(`/profiles/${walletAddress}/`));
-        console.log(`[UserProfile] Profile response status:`, res.status);
-        const data = await res.json();
-        console.log(`[UserProfile] Profile data:`, data);
-        
-        if (data.success) {
-          setProfile(data.data);
+        const profileData = await profileService.getProfile(walletAddress);
+        console.log("profileData", profileData)
+        if (profileData) {
+          setProfile(profileData);
+          
+          // Small delay to ensure profile is fully loaded before refreshing NFTs
+          setTimeout(async () => {
+            const nfts = await profileService.getCollectedNFTs(walletAddress);
+            setCollectedNFTs(nfts.map(mapNFTData));
+          }, 500);
         } else {
-          console.error(`[UserProfile] Profile not found:`, data.error);
           toast.error('Profile not found');
           navigate('/');
         }
       } catch (error) {
-        console.error('[UserProfile] Failed to fetch profile:', error);
+        console.error('[UserProfile] Error loading profile:', error);
         toast.error('Failed to load profile');
       } finally {
         setLoading(false);
@@ -90,39 +75,17 @@ const UserProfile = () => {
     fetchProfile();
   }, [walletAddress, navigate]);
 
-  // Fetch followers/following counts
-  const fetchSocialData = async () => {
-    if (!walletAddress) return;
-    try {
-      const followersRes = await fetch(apiUrl(`/profiles/${walletAddress}/followers/`));
-      const followersData = await followersRes.json();
-      if (followersData.success) {
-        setFollowersCount(followersData.count);
-      }
-
-      const followingRes = await fetch(apiUrl(`/profiles/${walletAddress}/following/`));
-      const followingData = await followingRes.json();
-      if (followingData.success) {
-        setFollowingCount(followingData.count);
-      }
-
-      // Check if current user is following this profile
-      if (address && address !== walletAddress) {
-        const isFollowingRes = await fetch(apiUrl(`/profiles/${walletAddress}/followers/`));
-        const isFollowingData = await isFollowingRes.json();
-        if (isFollowingData.success) {
-          const isFollowingUser = isFollowingData.followers.some(
-            (follower: any) => follower.wallet_address.toLowerCase() === address.toLowerCase()
-          );
-          setIsFollowing(isFollowingUser);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch social data:', error);
-    }
-  };
-
+  // Fetch social data
   useEffect(() => {
+    if (!walletAddress) return;
+
+    const fetchSocialData = async () => {
+      const socialData = await profileService.getSocialData(walletAddress, address);
+      setFollowersCount(socialData.followersCount);
+      setFollowingCount(socialData.followingCount);
+      setIsFollowing(socialData.isFollowing);
+    };
+
     fetchSocialData();
   }, [walletAddress, address]);
 
@@ -136,49 +99,19 @@ const UserProfile = () => {
         
         switch (activeTab) {
           case 'collected':
-            const collectedRes = await fetch(apiUrl(`/profiles/${walletAddress}/nfts/`));
-            console.log(`[UserProfile] Collected NFTs response status:`, collectedRes.status);
-            const collectedData = await collectedRes.json();
-            console.log(`[UserProfile] Collected NFTs data:`, collectedData);
-            if (collectedData.success) {
-              console.log(`[UserProfile] Collected NFTs raw data:`, collectedData.data);
-              // Map the data to match NFTCard props
-              const mappedNFTs = (collectedData.data || []).map(mapNFTData);
-              setCollectedNFTs(mappedNFTs);
-            } else {
-              console.error(`[UserProfile] Failed to fetch collected NFTs:`, collectedData.error);
-            }
+            const collected = await profileService.getCollectedNFTs(walletAddress);
+            setCollectedNFTs(collected.map(mapNFTData));
             break;
             
           case 'created':
-            const createdRes = await fetch(apiUrl(`/profiles/${walletAddress}/created/`));
-            console.log(`[UserProfile] Created NFTs response status:`, createdRes.status);
-            const createdData = await createdRes.json();
-            console.log(`[UserProfile] Created NFTs data:`, createdData);
-            if (createdData.success) {
-              console.log(`[UserProfile] Created NFTs raw data:`, createdData.data);
-              // Map the data to match NFTCard props
-              const mappedNFTs = (createdData.data || []).map(mapNFTData);
-              setCreatedNFTs(mappedNFTs);
-            } else {
-              console.error(`[UserProfile] Failed to fetch created NFTs:`, createdData.error);
-            }
+            const created = await profileService.getCreatedNFTs(walletAddress);
+            setCreatedNFTs(created.map(mapNFTData));
             break;
             
           case 'liked':
             if (isOwnProfile) {
-              const likedRes = await fetch(apiUrl(`/profiles/${walletAddress}/liked/`));
-              console.log(`[UserProfile] Liked NFTs response status:`, likedRes.status);
-              const likedData = await likedRes.json();
-              console.log(`[UserProfile] Liked NFTs data:`, likedData);
-              if (likedData.success) {
-                console.log(`[UserProfile] Liked NFTs raw data:`, likedData.data);
-                // Map the data to match NFTCard props
-                const mappedNFTs = (likedData.data || []).map(mapNFTData);
-                setLikedNFTs(mappedNFTs);
-              } else {
-                console.error(`[UserProfile] Failed to fetch liked NFTs:`, likedData.error);
-              }
+              const liked = await profileService.getLikedNFTs(walletAddress);
+              setLikedNFTs(liked.map(mapNFTData));
             }
             break;
         }
@@ -190,6 +123,7 @@ const UserProfile = () => {
     fetchNFTs();
   }, [walletAddress, activeTab, isOwnProfile]);
 
+  // Handle follow toggle
   const handleFollowToggle = async () => {
     if (!address) {
       toast.error('Please connect your wallet first');
@@ -201,44 +135,30 @@ const UserProfile = () => {
       return;
     }
 
-    try {
-      const endpoint = isFollowing ? 'unfollow' : 'follow';
-      const res = await fetch(apiUrl(`/profiles/${walletAddress}/${endpoint}/`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ follower_address: address })
-      });
-      
-      const data = await res.json();
-      if (data.success) {
-        setIsFollowing(!isFollowing);
-        setFollowersCount(data.followers_count);
-        
-        // Show success message with activity info
-        const action = isFollowing ? 'Unfollowed' : 'Followed';
-        toast.success(`${action} ${profile?.username || 'User'}!`);
-        
-        // Refresh social data to get updated counts
-        fetchSocialData();
-      } else {
-        toast.error(data.error || 'Failed to update follow status');
-      }
-    } catch (error) {
-      console.error('Failed to toggle follow:', error);
-      toast.error('Failed to update follow status');
+    const result = await profileService.toggleFollow(
+      walletAddress!,
+      address,
+      isFollowing
+    );
+
+    if (result.success) {
+      setIsFollowing(result.isFollowing);
+      setFollowersCount(result.followersCount);
     }
   };
 
+  // Copy to clipboard
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard');
   };
 
+  // Share profile
   const shareProfile = () => {
     const url = `${window.location.origin}/profile/${walletAddress}`;
     if (navigator.share) {
       navigator.share({
-        title: `${profile?.username || 'User'}'s Profile`,
+        title: `${profileService.getDisplayName(profile, walletAddress)} Profile`,
         url: url
       });
     } else {
@@ -246,33 +166,23 @@ const UserProfile = () => {
     }
   };
 
-  const getProfileImageUrl = (profile: UserProfileData | null) => {
-    return profile?.avatar_url || '';
-  };
-
-  const getProfileDisplayName = (profile: UserProfileData | null, address: string) => {
-    return profile?.username || address?.slice(0, 6) + '...' + address?.slice(-4) || 'Unknown';
-  };
-
-  // Helper function to map NFT data to NFTCard props
+  // Map NFT data to NFTCard props
   const mapNFTData = (nft: any) => {
-    const mappedNFT = {
+    return {
       ...nft,
-      image: nft.image_url, // Map image_url to image
-      title: nft.name, // Map name to title
-      price: nft.price?.toString() || '0', // Ensure price is string
+      image: nft.image_url,
+      title: nft.name,
+      price: nft.price?.toString() || '0',
       collection: nft.collection || 'Unknown Collection',
       tokenId: nft.token_id,
       owner_address: nft.owner_address,
       is_listed: nft.is_listed,
-      id: `local_${nft.id}`, // Format ID for NFTDetails navigation
-      liked: likedNFTIds.has(String(`local_${nft.id}`)) || nft.liked || false,
+      id: nft.id,
+      liked: likedNFTIds.has(String(nft.id)) || nft.liked || false,
     };
-    console.log(`[UserProfile] Mapped NFT:`, { originalId: nft.id, mappedId: mappedNFT.id, title: mappedNFT.title });
-    return mappedNFT;
   };
 
-  // Handle like toggle for NFTs in this page
+  // Handle like toggle
   const handleLikeToggle = async (nftId: string | number, newLikedState: boolean) => {
     if (!address) {
       toast.error('Please connect your wallet first');
@@ -283,7 +193,9 @@ const UserProfile = () => {
       const result = await nftService.toggleNFTLike(nftId, address);
       if (result.success) {
         const actualLiked = result.liked !== undefined ? result.liked : newLikedState;
-        const updater = (list: any[]) => list.map((n) => (n.id === nftId ? { ...n, liked: actualLiked } : n));
+        const updater = (list: any[]) => 
+          list.map((n) => (n.id === nftId ? { ...n, liked: actualLiked } : n));
+        
         setCollectedNFTs(updater);
         setCreatedNFTs(updater);
         setLikedNFTs(updater);
@@ -298,6 +210,7 @@ const UserProfile = () => {
     }
   };
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -312,6 +225,7 @@ const UserProfile = () => {
     );
   }
 
+  // Profile not found
   if (!profile) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -335,7 +249,7 @@ const UserProfile = () => {
       {/* Cover Image */}
       <div className="relative h-64 md:h-80 w-full overflow-hidden">
         <img 
-          src={profile.banner_url || getProfileImageUrl(profile)} 
+          src={profileService.getBannerImageUrl(profile)} 
           alt="Profile Cover" 
           className="w-full h-full object-cover"
           onError={(e) => {
@@ -351,34 +265,56 @@ const UserProfile = () => {
           <div className="lg:w-1/3">
             <Card className="glass-card p-6">
               <div className="text-center mb-6">
-                <Avatar className="h-24 w-24 mx-auto mb-4">
-                  <AvatarImage src={getProfileImageUrl(profile)} />
+                {/* <Avatar className="h-24 w-24 mx-auto mb-4">
                   <AvatarFallback className="text-2xl">
-                    {getProfileDisplayName(profile, walletAddress!).slice(0, 2).toUpperCase()}
+                    {profileService.getDisplayName(profile, walletAddress).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
+                </Avatar> */}
+                    <Avatar className="h-24 w-24 mx-auto mb-4">
+                  {profile.avatar_url && (
+                    <img 
+                      src={profile.avatar_url} 
+                      alt="Profile Avatar"
+                      className="h-full w-full object-cover rounded-full"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  )}
+                  {/* <AvatarFallback className="text-2xl">
+                    {profileService.getDisplayName(profile, walletAddress).slice(0, 2).toUpperCase()}
+                  </AvatarFallback> */}
                 </Avatar>
                 
                 <div className="flex items-center justify-center gap-2 mb-2">
-                  <h1 className="text-2xl font-bold">{getProfileDisplayName(profile, walletAddress!)}</h1>
+                  <h1 className="text-2xl font-bold">
+                    {profileService.getDisplayName(profile, walletAddress)}
+                  </h1>
                   {profile.verified && (
                     <Badge variant="success" className="text-xs">Verified</Badge>
                   )}
                 </div>
                 
-                <p className="text-muted-foreground mb-4">{walletAddress}</p>
+                <p className="text-muted-foreground mb-4 text-sm break-all">{walletAddress}</p>
                 
                 {profile.bio && (
                   <p className="text-sm text-muted-foreground mb-4">{profile.bio}</p>
                 )}
 
+                {profile.total_volume > 0 && (
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Total Volume: {profile.total_volume} ETH
+                  </p>
+                )}
+
                 {/* Social Stats */}
                 <div className="grid grid-cols-3 gap-4 mb-6">
                   <div className="text-center">
-                    <div className="text-lg font-semibold">{collectedNFTs.length}</div>
+                    <div className="text-lg font-semibold">{profile.total_collected}</div>
                     <div className="text-xs text-muted-foreground">Collected</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-lg font-semibold">{createdNFTs.length}</div>
+                    <div className="text-lg font-semibold">{profile.total_created}</div>
                     <div className="text-xs text-muted-foreground">Created</div>
                   </div>
                   <div className="text-center">
@@ -416,7 +352,7 @@ const UserProfile = () => {
                       onClick={() => copyToClipboard(walletAddress!)}
                     >
                       <Copy className="h-4 w-4 mr-2" />
-                      Copy Address
+                      Copy
                     </Button>
                     <Button 
                       variant="outline" 
@@ -490,22 +426,22 @@ const UserProfile = () => {
           <div className="lg:w-2/3">
             <Card className="glass-card">
               <Tabs value={activeTab} onValueChange={setActiveTab}>
-                                 <TabsList className="grid w-full grid-cols-3">
-                   <TabsTrigger value="collected" className="flex items-center gap-2">
-                     <ImageIcon className="h-4 w-4" />
-                     Collected
-                   </TabsTrigger>
-                   <TabsTrigger value="created" className="flex items-center gap-2">
-                     <Package className="h-4 w-4" />
-                     Created
-                   </TabsTrigger>
-                   {isOwnProfile && (
-                     <TabsTrigger value="liked" className="flex items-center gap-2">
-                       <Heart className="h-4 w-4" />
-                       Liked
-                     </TabsTrigger>
-                   )}
-                 </TabsList>
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="collected" className="flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Collected
+                  </TabsTrigger>
+                  <TabsTrigger value="created" className="flex items-center gap-2">
+                    <Package className="h-4 w-4" />
+                    Created
+                  </TabsTrigger>
+                  {isOwnProfile && (
+                    <TabsTrigger value="liked" className="flex items-center gap-2">
+                      <Heart className="h-4 w-4" />
+                      Liked
+                    </TabsTrigger>
+                  )}
+                </TabsList>
 
                 <TabsContent value="collected" className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -520,6 +456,7 @@ const UserProfile = () => {
                           {...nft} 
                           liked={likedNFTIds.has(String(nft.id)) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                          onClick={() => navigate(`/nft/${nft.id}`)}
                         />
                       ))
                     )}
@@ -534,11 +471,12 @@ const UserProfile = () => {
                       </div>
                     ) : (
                       createdNFTs.map((nft: any) => (
-                        <NFTCard 
-                          key={nft.id} 
-                          {...nft} 
+                        <NFTCard
+                          key={nft.id}
+                          {...nft}
                           liked={likedNFTIds.has(String(nft.id)) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                          onClick={() => navigate(`/nft/${nft.id}`)}
                         />
                       ))
                     )}
@@ -554,21 +492,18 @@ const UserProfile = () => {
                         </div>
                       ) : (
                         likedNFTs.map((nft: any) => (
-                          <NFTCard 
-                            key={nft.id} 
-                            {...nft} 
+                          <NFTCard
+                            key={nft.id}
+                            {...nft}
                             liked={likedNFTIds.has(String(nft.id))}
                             onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                            onClick={() => navigate(`/nft/${nft.id}`)}
                           />
                         ))
                       )}
                     </div>
                   </TabsContent>
                 )}
-
-
-
-
               </Tabs>
             </Card>
           </div>
@@ -580,4 +515,4 @@ const UserProfile = () => {
   );
 };
 
-export default UserProfile; 
+export default UserProfile;

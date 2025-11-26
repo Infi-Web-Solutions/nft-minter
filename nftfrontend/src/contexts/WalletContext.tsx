@@ -16,6 +16,7 @@ interface WalletContextType {
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
   switchNetwork: (chainId: number) => Promise<void>;
+  addSepoliaNetwork: () => Promise<void>;
   isLoading: boolean;
   error: string | null;
 }
@@ -167,6 +168,30 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   };
 
+  const addSepoliaNetwork = async () => {
+    if (!window.ethereum) return;
+
+    try {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [{
+          chainId: '0xaa36a7', // 11155111 in hex
+          chainName: 'Sepolia Testnet',
+          nativeCurrency: {
+            name: 'SepoliaETH',
+            symbol: 'ETH',
+            decimals: 18,
+          },
+          rpcUrls: ['https://sepolia.infura.io/v3/'],
+          blockExplorerUrls: ['https://sepolia.etherscan.io/'],
+        }],
+      });
+    } catch (err: any) {
+      console.error('Error adding Sepolia network:', err);
+      setError(err.message || 'Failed to add Sepolia network');
+    }
+  };
+
   const handleAccountsChanged = async (accounts: string[]) => {
     if (accounts.length === 0) {
       // User disconnected their wallet
@@ -196,6 +221,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     connectWallet,
     disconnectWallet,
     switchNetwork,
+    addSepoliaNetwork,
     isLoading,
     error
   };

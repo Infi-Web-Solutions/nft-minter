@@ -72,28 +72,32 @@ const Create = () => {
   });
 
   const uploadToIPFS = async (file: File) => {
-    try {
-      setIsUploading(true);
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      // Replace with your IPFS upload endpoint
-      const response = await fetch(apiUrl('/upload/ipfs/'), {
-        method: 'POST',
-        body: formData
-      });
-      
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
-      
-      return data.ipfsHash;
-    } catch (error) {
-      console.error('Error uploading to IPFS:', error);
-      throw error;
-    } finally {
-      setIsUploading(false);
+  try {
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await fetch(apiUrl('/upload/ipfs/'), {
+      method: 'POST',
+      body: formData
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP ${response.status}`);
     }
-  };
+    
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error);
+    
+    return data.data.ipfsHash; // Updated to use ipfsHash
+  } catch (error) {
+    console.error('Error uploading to IPFS:', error);
+    throw error;
+  } finally {
+    setIsUploading(false);
+  }
+};
 
   const createMetadata = async (ipfsHash: string) => {
     const metadata: any = {
@@ -548,7 +552,7 @@ const Create = () => {
                       {isUploading || isMinting ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          {isUploading ? 'Uploading...' : 'Creating NFT...'}
+                          {isUploading ? 'Uploading...' : 'Creating'}
                         </>
                       ) : (
                         'Create NFT'

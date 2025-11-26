@@ -15,7 +15,7 @@ import { activityService } from '@/services/activityService';
 type NotificationType = 'like' | 'sale' | 'offer' | 'follow';
 type NotificationItem = {
   id: string | number;
-  type: NotificationType;
+  type: string;
   title: string;
   message: string;
   time: string;
@@ -40,88 +40,44 @@ const Notifications = () => {
     return `${dday} day${dday>1?'s':''} ago`;
   };
 
+  const getIconComponent = (iconName: string) => {
+    switch (iconName) {
+      case 'ShoppingBag': return ShoppingBag;
+      case 'Tag': return Tag;
+      case 'UserPlus': return UserPlus;
+      case 'UserMinus': return UserMinus;
+      case 'Heart': return Heart;
+      default: return Heart;
+    }
+  };
+
+  const getFilteredNotifications = (tab: string) => {
+    switch (tab) {
+      case 'all': return notifications;
+      case 'like': return notifications.filter(n => n.type === 'like');
+      case 'sale': return notifications.filter(n => n.type === 'buy');
+      case 'offer': return notifications.filter(n => n.type === 'bid');
+      case 'follow': return notifications.filter(n => n.type === 'follow' || n.type === 'unfollow');
+      default: return notifications;
+    }
+  };
+
   useEffect(() => {
     const run = async () => {
       if (!address) return;
-      const items: NotificationItem[] = [];
-
-      // Likes: owner-only notifications for owned NFTs that have likes
-      try {
-        const nfts: NFT[] = await nftService.getCombinedNFTs(address);
-        const owned = nfts.filter(n => (n.owner_address || '').toLowerCase() === address.toLowerCase());
-        for (const n of owned) {
-          const count = (n as any).like_count || 0;
-          if (count > 0) {
-            items.push({
-              id: `like-${n.id}`,
-              type: 'like',
-              title: 'NFT liked',
-              message: `${n.name || (n as any).title} received ${count} like${count>1?'s':''}`,
-              time: timeAgo((n as any).updated_at || (n as any).created_at || new Date()),
-              read: false,
-              icon: Heart,
-            });
-          }
-        }
-      } catch {}
-
-      // Sales: buy activities where seller is the current user
-      try {
-        const res = await activityService.getActivities({ type: 'buy', limit: 100 });
-        if (res.success) {
-          for (const a of res.data) {
-            if ((a.from?.address || '').toLowerCase() === address.toLowerCase()) {
-              items.push({
-                id: `sale-${a.id}`,
-                type: 'sale',
-                title: 'Sale completed',
-                message: `${a.nft.name} sold for Ξ ${a.price ?? 0}`,
-                time: timeAgo(a.timestamp),
-                read: false,
-                icon: ShoppingBag,
-              });
-            }
-          }
-        }
-      } catch {}
-
-      // Offers: bid events where user is owner or bidder
-      try {
-        const res = await activityService.getActivities({ type: 'bid', limit: 100 });
-        if (res.success) {
-          for (const a of res.data) {
-            const isOwner = (a.to?.address || '').toLowerCase() === address.toLowerCase();
-            const isBidder = (a.from?.address || '').toLowerCase() === address.toLowerCase();
-            if (isOwner || isBidder) {
-              items.push({
-                id: `offer-${a.id}`,
-                type: 'offer',
-                title: isOwner ? 'New offer on your NFT' : 'You placed an offer',
-                message: isOwner ? `${a.from?.name || a.from?.address} offered Ξ ${a.price ?? 0} for ${a.nft.name}` : `Offer of Ξ ${a.price ?? 0} for ${a.nft.name}`,
-                time: timeAgo(a.timestamp),
-                read: false,
-                icon: Tag,
-              });
-            }
-          }
-        }
-      } catch {}
-
-      // Follow/unfollow using followers snapshot
-      try {
-        const followersRes = await fetch(apiUrl(`/profiles/${address}/followers/`));
-        const followersData = await followersRes.json();
-        const key = `followersSnapshot:${address.toLowerCase()}`;
-        const prev: string[] = JSON.parse(localStorage.getItem(key) || '[]');
-        const current: string[] = (followersData.followers || []).map((f: any) => (f.wallet_address || f.address || '').toLowerCase());
-        const newFollowers = current.filter(a => !prev.includes(a));
-        const unfollowed = prev.filter(a => !current.includes(a));
-        newFollowers.forEach(a => items.push({ id: `follow-${a}`, type: 'follow', title: 'New follower', message: `${a} started following you`, time: 'just now', read: false, icon: UserPlus }));
-        unfollowed.forEach(a => items.push({ id: `unfollow-${a}`, type: 'follow', title: 'Unfollowed', message: `${a} unfollowed you`, time: 'just now', read: false, icon: UserMinus }));
-        localStorage.setItem(key, JSON.stringify(current));
-      } catch {}
-
-      setNotifications(items);
+      const res = await activityService.getNotifications(address);
+      if (res.success) {
+        const items: NotificationItem[] = res.data.map((n: any) => ({
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          message: n.message,
+          time: n.time,
+          read: n.read,
+          icon: getIconComponent(n.icon),
+        }));
+        setNotifications(items);
+      }
     };
     run();
   }, [address]);
@@ -171,7 +127,7 @@ const Notifications = () => {
             <TabsContent value="all" className="mt-6">
               <div className="space-y-4">
                 {notifications.map((notification) => {
-                  const IconComponent = notification.icon;
+                  const IconComponent = getIconComponent(notification.icon);
                   return (
                     <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
                       <CardContent className="flex items-start space-x-4 p-4">
@@ -200,30 +156,36 @@ const Notifications = () => {
             {(['follow', 'like', 'sale', 'offer'] as NotificationType[]).map((type) => (
               <TabsContent key={type} value={type} className="mt-6">
                 <div className="space-y-4">
-                  {notifications.filter(n => n.type === type).map((notification) => {
-                    const IconComponent = notification.icon;
-                    return (
-                      <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
-                        <CardContent className="flex items-start space-x-4 p-4">
-                          <div className={`p-2 rounded-full bg-background ${getIconColor(notification.type, notification.read)}`}>
-                            <IconComponent className="h-5 w-5" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''}`}>
-                                {notification.title}
-                              </h3>
-                              <div className="flex items-center space-x-2">
-                                {!notification.read && <Badge variant="secondary" className="text-xs">New</Badge>}
-                                <span className="text-sm text-muted-foreground">{notification.time}</span>
-                              </div>
+                  {getFilteredNotifications(type).length > 0 ? (
+                    getFilteredNotifications(type).map((notification) => {
+                      const IconComponent = getIconComponent(notification.icon);
+                      return (
+                        <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
+                          <CardContent className="flex items-start space-x-4 p-4">
+                            <div className={`p-2 rounded-full bg-background ${getIconColor(notification.type, notification.read)}`}>
+                              <IconComponent className="h-5 w-5" />
                             </div>
-                            <p className="text-muted-foreground text-sm mt-1">{notification.message}</p>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''}`}>
+                                  {notification.title}
+                                </h3>
+                                <div className="flex items-center space-x-2">
+                                  {!notification.read && <Badge variant="secondary" className="text-xs">New</Badge>}
+                                  <span className="text-sm text-muted-foreground">{notification.time}</span>
+                                </div>
+                              </div>
+                              <p className="text-muted-foreground text-sm mt-1">{notification.message}</p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">No {type} notifications available</p>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
             ))}

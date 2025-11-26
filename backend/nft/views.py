@@ -1,3 +1,4 @@
+import traceback
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -19,6 +20,9 @@ from .web3_utils import web3_instance
 from .ipfs_utils import upload_to_ipfs
 from .auth_utils import get_or_create_web3_user
 from django.utils import timezone
+import os
+
+BASE_URL = os.environ.get('URL', 'http://localhost:8000')
 
 # User Profile Views
 @csrf_exempt
@@ -177,12 +181,17 @@ def get_user_profile(request, wallet_address):
             }
         })
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def update_profile(request, wallet_address):
     """Update user profile including profile and cover images"""
     try:
-        data = json.loads(request.body)
+        body = request.body.decode('utf-8') if request.body else '{}'
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
         # Get or create user profile
         profile, created = UserProfile.objects.get_or_create(wallet_address=wallet_address)
         # Handle profile image
@@ -194,7 +203,7 @@ def update_profile(request, wallet_address):
                 filename = f'profile_{wallet_address}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'profile_images/{filename}', file_data)
-                profile.avatar_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.avatar_url = f"{BASE_URL}{default_storage.url(file_path)}"
         # Handle cover image
         if 'cover_image' in data:
             image_data = data['cover_image']
@@ -204,7 +213,7 @@ def update_profile(request, wallet_address):
                 filename = f'cover_{wallet_address}.{ext}'
                 file_data = ContentFile(base64.b64decode(imgstr))
                 file_path = default_storage.save(f'cover_images/{filename}', file_data)
-                profile.banner_url = request.build_absolute_uri(default_storage.url(file_path))
+                profile.banner_url = f"{BASE_URL}{default_storage.url(file_path)}"
         # Update other profile fields
         for field in ['username', 'bio', 'website', 'twitter', 'instagram', 'discord']:
             if field in data:
@@ -229,7 +238,9 @@ def update_profile(request, wallet_address):
             }
         })
     except Exception as e:
+        traceback.print_exc()
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -694,16 +705,21 @@ def register_nft(request):
         print("[ERROR] register_nft:", str(e))
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+from asgiref.sync import async_to_sync
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def update_nft_owner(request, token_id):
     """Update NFT owner in the database.
-
-    Default: reads on-chain owner via web3 and updates if changed.
-    Simulation: if POST body includes 'new_owner', we force-update owner to this
-    address and optionally record a transaction. This is useful for testing UI
-    without requiring on-chain funds.
+    
+    Verifies transaction completion and validates ownership transfer before updating the database.
+    Supports simulation mode for testing without blockchain interaction.
     """
+    # Create an internal async function
+    async def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
+        from .transaction_verifier import TransactionVerifier
+        verifier = TransactionVerifier()
+        return await verifier.verify_transaction(tx_hash, token_id, expected_new_owner)
     try:
         from .models import NFT, Transaction
         data = json.loads(request.body) if request.body else {}
@@ -712,13 +728,47 @@ def update_nft_owner(request, token_id):
         nft = NFT.objects.get(token_id=token_id)
         old_owner = nft.owner_address
 
-        if forced_new_owner:
+        tx_hash = data.get('transaction_hash')
+        
+        if forced_new_owner and 'simulated' in str(tx_hash):
+            # Simulation mode
             new_owner = forced_new_owner
         else:
-            from .web3_utils import web3_instance
-            new_owner = web3_instance.get_nft_owner(token_id)
-            if not new_owner:
-                return JsonResponse({'success': False, 'error': 'Could not fetch owner from blockchain'}, status=400)
+            # Production mode - verify transaction
+            if not tx_hash:
+                return JsonResponse({
+                    'success': False, 
+                    'error': 'Transaction hash is required for ownership transfer'
+                }, status=400)
+
+            from .transaction_verifier import TransactionVerifier
+            verifier = TransactionVerifier()
+            
+            # Get the expected new owner from request or web3
+            expected_new_owner = data.get('new_owner')
+            if not expected_new_owner:
+                from .web3_utils import web3_instance
+                expected_new_owner = web3_instance.get_nft_owner(token_id)
+                if not expected_new_owner:
+                    return JsonResponse({
+                        'success': False, 
+                        'error': 'Could not verify new owner from blockchain'
+                    }, status=400)
+
+            # Verify the transaction using the async function
+            verification = async_to_sync(verify_ownership_transfer)(
+                tx_hash, 
+                int(token_id), 
+                expected_new_owner
+            )
+
+            if not verification['verified']:
+                return JsonResponse({
+                    'success': False,
+                    'error': verification.get('error', 'Transaction verification failed')
+                }, status=400)
+
+            new_owner = verification['transaction']['new_owner']
 
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
@@ -728,11 +778,20 @@ def update_nft_owner(request, token_id):
                 nft.is_listed = False
             nft.save()
 
-            tx_hash = data.get('transaction_hash', '') or (f"simulated_{token_id}_{int(time.time())}" if forced_new_owner else '')
+            if verification and 'transaction' in verification:
+                tx_info = verification['transaction']
+                tx_hash = tx_info['hash']
+                block_number = tx_info['block_number']
+                gas_used = tx_info['gas_used']
+                gas_price = tx_info['gas_price']
+            else:
+                # For simulation
+                tx_hash = data.get('transaction_hash', '') or (f"simulated_{token_id}_{int(time.time())}")
+                block_number = data.get('block_number', 0)
+                gas_used = data.get('gas_used', 0)
+                gas_price = data.get('gas_price', 0)
+
             price = data.get('price', None)
-            block_number = data.get('block_number', 0)
-            gas_used = data.get('gas_used', 0)
-            gas_price = data.get('gas_price', 0)
 
             # Create Transaction record
             Transaction.objects.create(
@@ -972,12 +1031,12 @@ def get_activities(request):
                     'from': {
                         'address': activity.from_address,
                         'name': from_username,
-                        'avatar': f"https://images.unsplash.com/photo-147209{9645785 + activity.id}?w=32&h=32&fit=crop&crop=face"
+                        'avatar': ''
                     },
                     'to': {
                         'address': activity.to_address,
                         'name': to_username,
-                        'avatar': f"https://images.unsplash.com/photo-147209{9645785 + activity.id + 100}?w=32&h=32&fit=crop&crop=face"
+                        'avatar': ''
                     },
                     'price': None,
                     'timestamp': activity.timestamp.isoformat(),
@@ -1000,12 +1059,12 @@ def get_activities(request):
                     'from': {
                         'address': activity.from_address,
                         'name': from_username,
-                        'avatar': f"https://images.unsplash.com/photo-147209{9645785 + activity.id}?w=32&h=32&fit=crop&crop=face"
+                        'avatar': ''
                     },
                     'to': {
                         'address': activity.to_address,
                         'name': to_username,
-                        'avatar': f"https://images.unsplash.com/photo-147209{9645785 + activity.id + 100}?w=32&h=32&fit=crop&crop=face"
+                        'avatar': ''
                     },
                     'price': float(activity.price) if activity.price else None,
                     'timestamp': activity.timestamp.isoformat(),
