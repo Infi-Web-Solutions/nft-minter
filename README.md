@@ -1,4 +1,4 @@
-## 🚀 NFTHUB – Full‑Stack NFT Marketplace (ERC721)
+## 🚀 NFT-Minter – Full‑Stack NFT Marketplace (ERC721)
 
 Production‑ready monorepo for an NFT marketplace with:
 - Django REST API (SQLite by default)
