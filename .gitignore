@@ -31,3 +31,5 @@ __pycache__/
 *.pyo
 *.pyd
 # Ignore SQLite database file
+
+
