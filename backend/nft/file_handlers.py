@@ -4,7 +4,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 
-BASE_URL = os.environ.get('URL', 'http://localhost:8000')
+BASE_URL = os.environ.get('URL')
 
 def handle_profile_image(profile, image_data, wallet_address, request):
     """Handle profile image upload"""

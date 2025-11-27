@@ -7,11 +7,11 @@ import Footer from '@/components/Footer';
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
-import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
+import { useLikes } from '@/contexts/LikeContext';
 
 const Favorites = () => {
   const { address } = useWallet();
-  const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const { isLiked, toggleLike, syncLikes } = useLikes();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isLoading, setIsLoading] = useState(true);
   const [favoriteNfts, setFavoriteNfts] = useState<NFT[]>([]);
@@ -40,44 +40,13 @@ const Favorites = () => {
     fetchFavoriteNFTs();
   }, [address]);
 
-  const handleLikeToggle = async (nftId: string | number, newLikedState: boolean) => {
+  const handleLikeToggle = async (nftId: string | number) => {
     if (!address) {
       toast.error('Please connect your wallet first');
       return;
     }
-    
-    console.log('[Favorites] handleLikeToggle called with:', { nftId, nftId_type: typeof nftId, newLikedState });
-    
-    try {
-      const result = await nftService.toggleNFTLike(nftId, address);
-      if (result.success) {
-        // Use the actual liked state from the backend
-        const actualLikedState = result.liked !== undefined ? result.liked : newLikedState;
-        
-        if (!actualLikedState) {
-          // If the NFT was unliked, remove it from the favorites list
-          setFavoriteNfts(prevNfts => prevNfts.filter(nft => nft.id !== nftId));
-          toast.success('Removed from favorites');
-        } else {
-          // If the NFT was liked, update its status
-          setFavoriteNfts(prevNfts => 
-            prevNfts.map(nft => 
-              nft.id === nftId 
-                ? { ...nft, liked: actualLikedState }
-                : nft
-            )
-          );
-          toast.success('Added to favorites');
-        }
-      } else {
-        toast.error(result.error || 'Failed to update like status');
-      }
-    } catch (error) {
-      console.error('Error toggling like:', error);
-      toast.error('Failed to update like status');
-    } finally {
-      await refreshLikedNFTs();
-    }
+    await toggleLike(nftId);
+    await syncLikes();
   };
 
   if (isLoading) {
@@ -177,13 +146,11 @@ const Favorites = () => {
                   image={imageUrl}
                   tokenId={nft.token_id}
                   id={nft.id}
-                  liked={likedNFTIds.has(String(nft.id))}
+                  liked={isLiked(nft.id)}
                   isAuction={nft.isAuction || nft.is_auction}
                   timeLeft={nft.timeLeft}
                   views={nft.views}
-                  onLike={(newLikedState) => {
-                    handleLikeToggle(nft.id, newLikedState);
-                  }}
+                  onLike={() => handleLikeToggle(nft.id)}
                   owner_address={nft.owner_address}
                   is_listed={nft.is_listed}
                 />

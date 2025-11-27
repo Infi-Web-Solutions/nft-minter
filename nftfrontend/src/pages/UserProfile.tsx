@@ -22,7 +22,7 @@ import { useWallet } from '@/contexts/WalletContext';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikes } from '@/contexts/LikeContext';
-import { apiUrl } from '@/config';
+import { apiUrl, mediaUrl } from '@/config';
 
 interface UserProfileData {
   id: string;
@@ -246,8 +246,21 @@ const UserProfile = () => {
     }
   };
 
-  const getProfileImageUrl = (profile: UserProfileData | null) => {
-    return profile?.avatar_url || '';
+  const getProfileImageUrl = (profile: UserProfileData | null, addr: string) => {
+    const raw = profile?.avatar_url || '';
+    const resolved = mediaUrl(raw);
+    const useFallback = !resolved || resolved.length === 0;
+    const seed = (addr || '').toLowerCase();
+    const fallback = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(seed)}`;
+    try {
+      console.debug('[UserProfile] getProfileImageUrl', {
+        addr,
+        rawUrl: raw,
+        resolvedUrl: resolved,
+        usingFallback: useFallback
+      });
+    } catch {}
+    return useFallback ? fallback : resolved;
   };
 
   const getProfileDisplayName = (profile: UserProfileData | null, address: string) => {
@@ -265,7 +278,7 @@ const UserProfile = () => {
       tokenId: nft.token_id,
       owner_address: nft.owner_address,
       is_listed: nft.is_listed,
-      id: `local_${nft.id}`, // Format ID for NFTDetails navigation
+      id: `local_${nft.id?.toString?.() || String(nft.id)}`,
       liked: isLiked(nft.id) || nft.liked || false,
     };
     console.log(`[UserProfile] Mapped NFT:`, { originalId: nft.id, mappedId: mappedNFT.id, title: mappedNFT.title });
@@ -282,12 +295,9 @@ const UserProfile = () => {
     try {
       const result = await nftService.toggleNFTLike(nftId, address);
       if (result.success) {
-        const actualLiked = result.liked !== undefined ? result.liked : newLikedState;
-        const updater = (list: any[]) => list.map((n) => (n.id === nftId ? { ...n, liked: actualLiked } : n));
-        setCollectedNFTs(updater);
-        setCreatedNFTs(updater);
-        setLikedNFTsList(updater);
+        // Re-sync likes and rely solely on isLiked() for UI state to avoid flicker
         await syncLikes();
+        const actualLiked = result.liked !== undefined ? result.liked : newLikedState;
         toast.success(actualLiked ? 'Added to favorites' : 'Removed from favorites');
       } else {
         toast.error(result.error || 'Failed to update like status');
@@ -335,7 +345,7 @@ const UserProfile = () => {
       {/* Cover Image */}
       <div className="relative h-64 md:h-80 w-full overflow-hidden">
         <img 
-          src={profile.banner_url || getProfileImageUrl(profile)} 
+          src={mediaUrl(profile.banner_url) || getProfileImageUrl(profile)} 
           alt="Profile Cover" 
           className="w-full h-full object-cover"
           onError={(e) => {
@@ -352,7 +362,15 @@ const UserProfile = () => {
             <Card className="glass-card p-6">
               <div className="text-center mb-6">
                 <Avatar className="h-24 w-24 mx-auto mb-4">
-                  <AvatarImage src={getProfileImageUrl(profile)} />
+                  <AvatarImage 
+                    src={getProfileImageUrl(profile, walletAddress!)} 
+                    onError={(e) => {
+                      console.warn('[UserProfile] Avatar failed to load', {
+                        addr: walletAddress,
+                        src: e.currentTarget.src
+                      });
+                    }}
+                  />
                   <AvatarFallback className="text-2xl">
                     {getProfileDisplayName(profile, walletAddress!).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
@@ -518,8 +536,12 @@ const UserProfile = () => {
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
-                          liked={isLiked(nft.id) || nft.liked}
+                          liked={isLiked(nft.id)}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                          afterBuy={() => {
+                            // Refresh collected NFTs after successful purchase
+                            fetchNFTs();
+                          }}
                         />
                       ))
                     )}
@@ -537,8 +559,12 @@ const UserProfile = () => {
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
-                          liked={isLiked(nft.id) || nft.liked}
+                          liked={isLiked(nft.id)}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
+                          afterBuy={() => {
+                            // Refresh collected NFTs after successful purchase
+                            fetchNFTs();
+                          }}
                         />
                       ))
                     )}

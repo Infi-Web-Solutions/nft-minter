@@ -142,17 +142,17 @@ const Notifications = () => {
       <Navbar />
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-8">
             <div>
               <h1 className="text-3xl font-bold mb-2">Notifications</h1>
               <p className="text-muted-foreground">Stay updated with your NFT activities</p>
             </div>
-            <div className="flex space-x-2">
-              <Button variant="outline" size="sm">
+            <div className="flex flex-wrap gap-2 sm:space-x-2 sm:self-auto self-start">
+              <Button variant="outline" size="sm" className="w-full sm:w-auto">
                 <Check className="h-4 w-4 mr-2" />
                 Mark all as read
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="w-full sm:w-auto">
                 <X className="h-4 w-4 mr-2" />
                 Clear all
               </Button>
@@ -160,12 +160,12 @@ const Notifications = () => {
           </div>
 
           <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="follow">Follow</TabsTrigger>
-              <TabsTrigger value="like">Likes</TabsTrigger>
-              <TabsTrigger value="sale">Sales</TabsTrigger>
-              <TabsTrigger value="offer">Offers</TabsTrigger>
+            <TabsList className="flex w-full gap-2 overflow-x-auto whitespace-nowrap">
+              <TabsTrigger className="flex-shrink-0" value="all">All</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="follow">Follow</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="like">Likes</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="sale">Sales</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="offer">Offers</TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="mt-6">
@@ -174,21 +174,21 @@ const Notifications = () => {
                   const IconComponent = notification.icon;
                   return (
                     <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
-                      <CardContent className="flex items-start space-x-4 p-4">
+                      <CardContent className="flex flex-col sm:flex-row items-start sm:items-center sm:space-x-4 space-y-3 sm:space-y-0 p-4">
                         <div className={`p-2 rounded-full bg-background ${getIconColor(notification.type, notification.read)}`}>
                           <IconComponent className="h-5 w-5" />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''}`}>
+                        <div className="flex-1 min-w-0 w-full">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''} truncate`}>
                               {notification.title}
                             </h3>
-                            <div className="flex items-center space-x-2">
+                            <div className="flex items-center space-x-2 shrink-0">
                               {!notification.read && <Badge variant="secondary" className="text-xs">New</Badge>}
                               <span className="text-sm text-muted-foreground">{notification.time}</span>
                             </div>
                           </div>
-                          <p className="text-muted-foreground text-sm mt-1">{notification.message}</p>
+                          <p className="text-muted-foreground text-sm mt-1 line-clamp-2 sm:line-clamp-none break-words">{notification.message}</p>
                         </div>
                       </CardContent>
                     </Card>
@@ -204,21 +204,21 @@ const Notifications = () => {
                     const IconComponent = notification.icon;
                     return (
                       <Card key={notification.id} className={`transition-colors hover:bg-muted/50 ${!notification.read ? 'border-primary/50 bg-primary/5' : ''}`}>
-                        <CardContent className="flex items-start space-x-4 p-4">
+                        <CardContent className="flex flex-col sm:flex-row items-start sm:items-center sm:space-x-4 space-y-3 sm:space-y-0 p-4">
                           <div className={`p-2 rounded-full bg-background ${getIconColor(notification.type, notification.read)}`}>
                             <IconComponent className="h-5 w-5" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''}`}>
+                          <div className="flex-1 min-w-0 w-full">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                              <h3 className={`font-medium ${!notification.read ? 'font-semibold' : ''} truncate`}>
                                 {notification.title}
                               </h3>
-                              <div className="flex items-center space-x-2">
+                              <div className="flex items-center space-x-2 shrink-0">
                                 {!notification.read && <Badge variant="secondary" className="text-xs">New</Badge>}
                                 <span className="text-sm text-muted-foreground">{notification.time}</span>
                               </div>
                             </div>
-                            <p className="text-muted-foreground text-sm mt-1">{notification.message}</p>
+                            <p className="text-muted-foreground text-sm mt-1 line-clamp-2 sm:line-clamp-none break-words">{notification.message}</p>
                           </div>
                         </CardContent>
                       </Card>

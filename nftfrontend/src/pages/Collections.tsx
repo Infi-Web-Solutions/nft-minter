@@ -11,6 +11,7 @@ import Footer from '@/components/Footer';
 import { apiService } from '@/services/api';
 import { toast } from 'sonner';
 import NFTCard from '@/components/NFTCard';
+import { useLikes } from '@/contexts/LikeContext';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { apiUrl } from '@/config';
 
@@ -33,6 +34,7 @@ const Collections = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('likes');
   const [topLikedNfts, setTopLikedNfts] = useState<any[]>([]);
+  const { isLiked, toggleLike } = useLikes();
   // Toggle to show/hide the collections grid/list section
   const showCollectionsGrid = false;
 
@@ -294,13 +296,17 @@ const Collections = () => {
                     image={nft.image_url || nft.image}
                     tokenId={nft.token_id}
                     id={nft.id}
-                    liked={nft.liked}
+                    liked={isLiked(nft.id)}
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}
-                    onLike={() => {}}
+                    onLike={async () => { await toggleLike(nft.id); }}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    afterBuy={() => {
+                      // Refresh top liked NFTs after successful purchase
+                      fetchTopLikedNFTs();
+                    }}
                   />
                 ))}
               </div>

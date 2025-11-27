@@ -10,6 +10,7 @@ import { TrendingUp, TrendingDown, Trophy, Crown, Award, Loader2 } from 'lucide-
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiService } from '@/services/api';
+import { mediaUrl } from '@/config';
 import { toast } from 'sonner';
 import { nftService, NFT } from '@/services/nftService';
 import { apiUrl } from '@/config';
@@ -153,7 +154,7 @@ const Rankings = () => {
             const res = await fetch(apiUrl(`/profiles/${addr}/`));
             const data = await res.json();
             if (data?.success) {
-              addressToAvatar.set(addr, data.data?.avatar_url || '');
+              addressToAvatar.set(addr, mediaUrl(data.data?.avatar_url || ''));
             }
           } catch (e) {
             console.warn('[Rankings] Failed to fetch avatar for', addr);
@@ -537,7 +538,7 @@ const Rankings = () => {
                       
                       <div className="w-16 h-16 rounded-lg overflow-hidden bg-muted">
                         <img 
-                          src={getImageUrl((collection as any).nft_image || collection.image_url)} 
+                          src={mediaUrl(getImageUrl((collection as any).nft_image || collection.image_url))} 
                           alt={collection.name}
                           className="h-full w-full object-cover"
                           onError={(e) => {
@@ -617,7 +618,7 @@ const Rankings = () => {
                       </div>
                       
                                              <Avatar className="h-12 w-12">
-                        {seller.avatar && <AvatarImage src={seller.avatar} alt={seller.name} />}
+                        {seller.avatar && <AvatarImage src={mediaUrl(seller.avatar)} alt={seller.name} />}
                         <AvatarFallback>{seller.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       
@@ -676,7 +677,7 @@ const Rankings = () => {
                       </div>
                       
                                              <Avatar className="h-12 w-12">
-                        {buyer.avatar && <AvatarImage src={buyer.avatar} alt={buyer.name} />}
+                        {buyer.avatar && <AvatarImage src={mediaUrl(buyer.avatar)} alt={buyer.name} />}
                         <AvatarFallback>{buyer.name.slice(0, 2).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       

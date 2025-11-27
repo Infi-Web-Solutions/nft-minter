@@ -10,6 +10,7 @@ from django.utils import timezone
 import json
 import time
 from datetime import datetime, timedelta
+from threading import Thread, Lock
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 import base64
@@ -22,7 +23,39 @@ from .auth_utils import get_or_create_web3_user
 from django.utils import timezone
 import os
 
-BASE_URL = os.environ.get('URL', 'http://localhost:8000')
+BASE_URL = os.environ.get('URL', 'https://nftminter-api.infiwebsolutions.com')
+
+# Lightweight, rate-limited ownership sync trigger
+_last_sync_ts = 0
+_sync_lock = Lock()
+_SYNC_MIN_INTERVAL_SEC = 300  # 5 minutes
+
+def _run_auto_sync_background():
+    try:
+        from nft.management.commands.auto_sync_ownership import Command as AutoSyncCommand
+        cmd = AutoSyncCommand()
+        cmd.sync_ownership()
+        print('[SYNC] Background ownership sync completed')
+    except Exception as e:
+        print(f"[SYNC] Background ownership sync failed: {e}")
+
+@csrf_exempt
+@require_http_methods(["POST"])  # Explicit POST to avoid accidental crawlers
+def trigger_ownership_sync(request):
+    global _last_sync_ts
+    now = time.time()
+    with _sync_lock:
+        elapsed = now - _last_sync_ts
+        if elapsed < _SYNC_MIN_INTERVAL_SEC:
+            return JsonResponse({
+                'success': True,
+                'status': 'skipped_rate_limited',
+                'next_allowed_in_sec': int(_SYNC_MIN_INTERVAL_SEC - elapsed)
+            })
+        _last_sync_ts = now
+        t = Thread(target=_run_auto_sync_background, daemon=True)
+        t.start()
+        return JsonResponse({'success': True, 'status': 'started'})
 
 # User Profile Views
 @csrf_exempt
@@ -35,8 +68,10 @@ def get_user_profile(request, wallet_address):
         
         print(f"[DEBUG] get_user_profile called with wallet_address: {wallet_address}")
         
-        # Create a safe username using hash of wallet address
-        username_hash = hashlib.md5(wallet_address.encode()).hexdigest()[:12]
+        # Normalize address to lowercase for storage; keep lookup case-insensitive
+        normalized_wallet = (wallet_address or '').lower()
+        # Create a safe username using hash of wallet address (case-insensitive)
+        username_hash = hashlib.md5(normalized_wallet.encode()).hexdigest()[:12]
         username = f"user_{username_hash}"
         
         try:
@@ -55,18 +90,18 @@ def get_user_profile(request, wallet_address):
                 print(f"[DEBUG] User created: {user_created}")
             except Exception as user_error:
                 print(f"[ERROR] Failed to create user: {str(user_error)}")
-                # If user creation fails, try to get or create profile without user
+                # If user creation fails, try to get or create profile without user (case-insensitive)
                 try:
-                    profile = UserProfile.objects.get(wallet_address=wallet_address)
+                    profile = UserProfile.objects.get(wallet_address__iexact=wallet_address)
                 except UserProfile.DoesNotExist:
                     profile = UserProfile.objects.create(
-                        wallet_address=wallet_address,
-                        username=f"User{wallet_address[-4:]}"
+                        wallet_address=normalized_wallet,
+                        username=f"User{normalized_wallet[-4:]}"
                     )
                 
                 # Get user's NFTs
-                user_nfts = NFT.objects.filter(owner_address=wallet_address)
-                created_nfts = NFT.objects.filter(creator_address=wallet_address)
+                user_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+                created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
                 
                 profile_data = {
                     'id': profile.id,
@@ -93,14 +128,22 @@ def get_user_profile(request, wallet_address):
                 })
         
         # Get or create profile
+        # Case-insensitive lookup first
         try:
-            profile, created = UserProfile.objects.get_or_create(
-                wallet_address=wallet_address,
-                defaults={
-                    'user': user,
-                    'username': f"User{wallet_address[-4:]}"
-                }
+            profile = UserProfile.objects.get(wallet_address__iexact=wallet_address)
+            created = False
+            # Normalize stored address to lowercase for consistency
+            if profile.wallet_address != normalized_wallet:
+                profile.wallet_address = normalized_wallet
+                profile.save(update_fields=["wallet_address"])
+        except UserProfile.DoesNotExist:
+            # Create with normalized address
+            profile = UserProfile.objects.create(
+                wallet_address=normalized_wallet,
+                user=user,
+                username=f"User{normalized_wallet[-4:]}"
             )
+            created = True
             print(f"[DEBUG] Profile created: {profile.id} {created}")
         except Exception as profile_error:
             print(f"[ERROR] Profile creation failed: {str(profile_error)}")
@@ -128,8 +171,12 @@ def get_user_profile(request, wallet_address):
             })
         
         # Get user's NFTs
-        user_nfts = NFT.objects.filter(owner_address=wallet_address)
-        created_nfts = NFT.objects.filter(creator_address=wallet_address)
+        # Case-insensitive match to avoid checksum/case issues
+        user_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
+        # Case-insensitive match
+        user_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
         print(f"[DEBUG] NFTs found: {user_nfts.count()} {created_nfts.count()}")
         
         profile_data = {
@@ -192,28 +239,84 @@ def update_profile(request, wallet_address):
             data = json.loads(body)
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
-        # Get or create user profile
-        profile, created = UserProfile.objects.get_or_create(wallet_address=wallet_address)
+        # Normalize and get or create user profile (case-insensitive lookup)
+        normalized_wallet = (wallet_address or '').lower()
+        # Case-insensitive lookup; deduplicate if multiple exist from legacy data
+        profiles_qs = UserProfile.objects.filter(wallet_address__iexact=wallet_address)
+        if profiles_qs.exists():
+            primary = profiles_qs.order_by('id').first()
+            # Merge duplicate profiles if any
+            duplicates = profiles_qs.exclude(id=primary.id)
+            if duplicates.exists():
+                for dup in duplicates:
+                    # Prefer non-empty fields from duplicates if primary is empty
+                    if not primary.avatar_url and dup.avatar_url:
+                        primary.avatar_url = dup.avatar_url
+                    if not primary.banner_url and dup.banner_url:
+                        primary.banner_url = dup.banner_url
+                    if not primary.username and dup.username:
+                        primary.username = dup.username
+                    dup.delete()
+                primary.save()
+            profile = primary
+            # Normalize stored value
+            if profile.wallet_address != normalized_wallet:
+                profile.wallet_address = normalized_wallet
+                profile.save(update_fields=["wallet_address"])
+            created = False
+        else:
+            profile = UserProfile.objects.create(
+                wallet_address=normalized_wallet,
+                username=f"User{normalized_wallet[-4:]}"
+            )
+            created = True
         # Handle profile image
         if 'profile_image' in data:
-            image_data = data['profile_image']
-            if image_data.startswith('data:image'):
-                format, imgstr = image_data.split(';base64,')
-                ext = format.split('/')[-1]
-                filename = f'profile_{wallet_address}.{ext}'
-                file_data = ContentFile(base64.b64decode(imgstr))
-                file_path = default_storage.save(f'profile_images/{filename}', file_data)
-                profile.avatar_url = f"{BASE_URL}{default_storage.url(file_path)}"
+            try:
+                image_data = data['profile_image']
+                if isinstance(image_data, str) and image_data.startswith('data:image'):
+                    format, imgstr = image_data.split(';base64,')
+                    ext = format.split('/')[-1]
+                    filename = f'profile_{normalized_wallet}.{ext}'
+                    file_rel_path = f'profile_images/{filename}'
+                    # Ensure directory exists and overwrite old file for stable URL
+                    try:
+                        import os
+                        from django.conf import settings
+                        os.makedirs(os.path.join(settings.MEDIA_ROOT, 'profile_images'), exist_ok=True)
+                    except Exception:
+                        pass
+                    if default_storage.exists(file_rel_path):
+                        default_storage.delete(file_rel_path)
+                    file_data = ContentFile(base64.b64decode(imgstr))
+                    file_path = default_storage.save(file_rel_path, file_data)
+                    profile.avatar_url = f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}?v={int(time.time())}"
+            except Exception as img_error:
+                traceback.print_exc()
+                return JsonResponse({'success': False, 'error': f'profile_image upload failed: {str(img_error)}'}, status=400)
         # Handle cover image
         if 'cover_image' in data:
-            image_data = data['cover_image']
-            if image_data.startswith('data:image'):
-                format, imgstr = image_data.split(';base64,')
-                ext = format.split('/')[-1]
-                filename = f'cover_{wallet_address}.{ext}'
-                file_data = ContentFile(base64.b64decode(imgstr))
-                file_path = default_storage.save(f'cover_images/{filename}', file_data)
-                profile.banner_url = f"{BASE_URL}{default_storage.url(file_path)}"
+            try:
+                image_data = data['cover_image']
+                if isinstance(image_data, str) and image_data.startswith('data:image'):
+                    format, imgstr = image_data.split(';base64,')
+                    ext = format.split('/')[-1]
+                    filename = f'cover_{normalized_wallet}.{ext}'
+                    file_rel_path = f'cover_images/{filename}'
+                    try:
+                        import os
+                        from django.conf import settings
+                        os.makedirs(os.path.join(settings.MEDIA_ROOT, 'cover_images'), exist_ok=True)
+                    except Exception:
+                        pass
+                    if default_storage.exists(file_rel_path):
+                        default_storage.delete(file_rel_path)
+                    file_data = ContentFile(base64.b64decode(imgstr))
+                    file_path = default_storage.save(file_rel_path, file_data)
+                    profile.banner_url =  f"https://nftminter-api.infiwebsolutions.com{default_storage.url(file_path)}?v={int(time.time())}"
+            except Exception as img_error:
+                traceback.print_exc()
+                return JsonResponse({'success': False, 'error': f'cover_image upload failed: {str(img_error)}'}, status=400)
         # Update other profile fields
         for field in ['username', 'bio', 'website', 'twitter', 'instagram', 'discord']:
             if field in data:
@@ -402,9 +505,9 @@ def get_user_nfts(request, wallet_address):
     """Get NFTs collected by a user (owned or created, no duplicates)"""
     try:
         # NFTs where user is owner
-        owned_nfts = NFT.objects.filter(owner_address=wallet_address)
+        owned_nfts = NFT.objects.filter(owner_address__iexact=wallet_address)
         # NFTs where user is creator
-        created_nfts = NFT.objects.filter(creator_address=wallet_address)
+        created_nfts = NFT.objects.filter(creator_address__iexact=wallet_address)
         # Combine and deduplicate by token_id
         nft_dict = {}
         for nft in owned_nfts:
@@ -705,7 +808,6 @@ def register_nft(request):
         print("[ERROR] register_nft:", str(e))
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
-from asgiref.sync import async_to_sync
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -715,24 +817,34 @@ def update_nft_owner(request, token_id):
     Verifies transaction completion and validates ownership transfer before updating the database.
     Supports simulation mode for testing without blockchain interaction.
     """
-    # Create an internal async function
-    async def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
+    print(f"[DEBUG] ===== update_nft_owner called =====")
+    print(f"[DEBUG] Token ID: {token_id}")
+    print(f"[DEBUG] Request body: {request.body}")
+    print(f"[DEBUG] Request headers: {dict(request.headers)}")
+    # Create an internal function (not async)
+    def verify_ownership_transfer(tx_hash, token_id, expected_new_owner):
         from .transaction_verifier import TransactionVerifier
         verifier = TransactionVerifier()
-        return await verifier.verify_transaction(tx_hash, token_id, expected_new_owner)
+        return verifier.verify_transaction(tx_hash, token_id, expected_new_owner)
     try:
         from .models import NFT, Transaction
+        import time
         data = json.loads(request.body) if request.body else {}
         forced_new_owner = data.get('new_owner')
+        incoming_price = data.get('price')
+        print(f"[DEBUG] Incoming update_nft_owner price for token {token_id}: {incoming_price}")
 
         nft = NFT.objects.get(token_id=token_id)
         old_owner = nft.owner_address
 
         tx_hash = data.get('transaction_hash')
         
+        verification = None  # Initialize verification variable
+        
         if forced_new_owner and 'simulated' in str(tx_hash):
             # Simulation mode
             new_owner = forced_new_owner
+            print(f"[DEBUG] Simulation mode - using forced new owner: {new_owner}")
         else:
             # Production mode - verify transaction
             if not tx_hash:
@@ -755,8 +867,8 @@ def update_nft_owner(request, token_id):
                         'error': 'Could not verify new owner from blockchain'
                     }, status=400)
 
-            # Verify the transaction using the async function
-            verification = async_to_sync(verify_ownership_transfer)(
+            # Verify the transaction
+            verification = verify_ownership_transfer(
                 tx_hash, 
                 int(token_id), 
                 expected_new_owner
@@ -769,14 +881,49 @@ def update_nft_owner(request, token_id):
                 }, status=400)
 
             new_owner = verification['transaction']['new_owner']
+            print(f"[DEBUG] Production mode - verified new owner: {new_owner}")
 
         # Only proceed if the owner actually changes
         if old_owner != new_owner:
+            print(f"[DEBUG] Ownership transfer detected for token {token_id}:")
+            print(f"[DEBUG] Old owner: {old_owner}")
+            print(f"[DEBUG] New owner: {new_owner}")
+            print(f"[DEBUG] Previous is_listed status: {nft.is_listed}")
+            
             nft.owner_address = new_owner
-            # If this was a simulated transfer, also mark NFT as not listed
-            if forced_new_owner:
-                nft.is_listed = False
+            # Mark NFT as not listed after any ownership transfer (sale, transfer, etc.)
+            nft.is_listed = False
             nft.save()
+            
+            print(f"[DEBUG] Updated NFT {token_id}:")
+            print(f"[DEBUG] New owner_address: {nft.owner_address}")
+            print(f"[DEBUG] New is_listed status: {nft.is_listed}")
+            
+            # Update user profiles immediately
+            update_user_profiles_after_transfer(old_owner, new_owner)
+            
+            # Record a transaction for stats (buy/sale)
+            try:
+                from .models import Transaction
+                tx_hash_to_store = data.get('transaction_hash') or (verification and verification.get('transaction', {}).get('hash')) or f"simulated_{token_id}_{int(time.time())}"
+                created_tx = Transaction.objects.create(
+                    transaction_hash=tx_hash_to_store,
+                    nft=nft,
+                    from_address=old_owner,
+                    to_address=new_owner,
+                    transaction_type='buy',
+                    price=data.get('price'),
+                    block_number=data.get('block_number', 0),
+                    gas_used=data.get('gas_used', 0),
+                    gas_price=data.get('gas_price', 0),
+                    timestamp=timezone.now()
+                )
+                print(f"[DEBUG] Created Transaction(id={created_tx.id}) for token {token_id} with price={created_tx.price}")
+            except Exception as tx_error:
+                print(f"[WARNING] Failed to record Transaction: {tx_error}")
+            
+        else:
+            print(f"[DEBUG] No ownership change for token {token_id} - owner is still {old_owner}")
 
             if verification and 'transaction' in verification:
                 tx_info = verification['transaction']
@@ -785,7 +932,7 @@ def update_nft_owner(request, token_id):
                 gas_used = tx_info['gas_used']
                 gas_price = tx_info['gas_price']
             else:
-                # For simulation
+                # For simulation or when verification is None
                 tx_hash = data.get('transaction_hash', '') or (f"simulated_{token_id}_{int(time.time())}")
                 block_number = data.get('block_number', 0)
                 gas_used = data.get('gas_used', 0)
@@ -794,7 +941,7 @@ def update_nft_owner(request, token_id):
             price = data.get('price', None)
 
             # Create Transaction record
-            Transaction.objects.create(
+            created_tx = Transaction.objects.create(
                 transaction_hash=tx_hash,
                 nft=nft,
                 from_address=old_owner,
@@ -806,9 +953,38 @@ def update_nft_owner(request, token_id):
                 gas_price=gas_price,
                 timestamp=timezone.now()
             )
+            print(f"[DEBUG] Created Transaction(id={created_tx.id}) for token {token_id} with price={created_tx.price} (no ownership change path)")
         return JsonResponse({'success': True, 'owner_address': new_owner})
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+def update_user_profiles_after_transfer(old_owner, new_owner):
+    """Update user profiles after ownership transfer"""
+    try:
+        from .models import UserProfile
+        
+        # Update old owner's profile
+        if old_owner and old_owner != '0x0000000000000000000000000000000000000000':
+            try:
+                old_profile = UserProfile.objects.get(wallet_address=old_owner)
+                old_profile.nfts_owned = NFT.objects.filter(owner_address=old_owner).count()
+                old_profile.save()
+                print(f"[DEBUG] Updated old owner profile: {old_owner} (owned: {old_profile.nfts_owned})")
+            except UserProfile.DoesNotExist:
+                print(f"[DEBUG] Old owner profile not found: {old_owner}")
+        
+        # Update new owner's profile
+        if new_owner and new_owner != '0x0000000000000000000000000000000000000000':
+            try:
+                new_profile = UserProfile.objects.get(wallet_address=new_owner)
+                new_profile.nfts_owned = NFT.objects.filter(owner_address=new_owner).count()
+                new_profile.save()
+                print(f"[DEBUG] Updated new owner profile: {new_owner} (owned: {new_profile.nfts_owned})")
+            except UserProfile.DoesNotExist:
+                print(f"[DEBUG] New owner profile not found: {new_owner}")
+                
+    except Exception as e:
+        print(f"[DEBUG] Error updating profiles: {e}")
 
 @csrf_exempt
 @require_http_methods(["POST"])
@@ -1146,22 +1322,28 @@ def get_activity_stats(request):
 def follow_user(request, wallet_address):
     try:
         data = json.loads(request.body)
-        follower_address = data.get('follower_address')
+        follower_address = (data.get('follower_address') or '').lower()
+        target_address = (wallet_address or '').lower()
         if not follower_address:
             return JsonResponse({'success': False, 'error': 'Missing follower_address'}, status=400)
         
-        # Get or create user profiles
-        user, user_created = UserProfile.objects.get_or_create(
-            wallet_address=wallet_address,
-            defaults={'username': f"User{wallet_address[-4:]}"}
-        )
-        follower, follower_created = UserProfile.objects.get_or_create(
-            wallet_address=follower_address,
-            defaults={'username': f"User{follower_address[-4:]}"}
-        )
+        # Get or create user profiles (case-insensitive, normalized)
+        user = UserProfile.objects.filter(wallet_address__iexact=target_address).first()
+        if not user:
+            user = UserProfile.objects.create(wallet_address=target_address, username=f"User{target_address[-4:]}")
+        elif user.wallet_address != target_address:
+            user.wallet_address = target_address
+            user.save(update_fields=["wallet_address"]) 
+
+        follower = UserProfile.objects.filter(wallet_address__iexact=follower_address).first()
+        if not follower:
+            follower = UserProfile.objects.create(wallet_address=follower_address, username=f"User{follower_address[-4:]}")
+        elif follower.wallet_address != follower_address:
+            follower.wallet_address = follower_address
+            follower.save(update_fields=["wallet_address"]) 
         
         # Check if already following
-        if user.followers.filter(wallet_address=follower_address).exists():
+        if user.followers.filter(wallet_address__iexact=follower_address).exists():
             return JsonResponse({'success': False, 'error': 'Already following this user'}, status=400)
         
         # Add follower
@@ -1171,10 +1353,10 @@ def follow_user(request, wallet_address):
         try:
             from .models import Transaction
             Transaction.objects.create(
-                transaction_hash=f"follow_{follower_address}_{wallet_address}_{int(time.time())}",
+                transaction_hash=f"follow_{follower_address}_{target_address}_{int(time.time())}",
                 nft=None,  # No NFT involved in follow action
                 from_address=follower_address,
-                to_address=wallet_address,
+                to_address=target_address,
                 transaction_type='follow',
                 price=None,
                 block_number=0,
@@ -1199,16 +1381,19 @@ def follow_user(request, wallet_address):
 def unfollow_user(request, wallet_address):
     try:
         data = json.loads(request.body)
-        follower_address = data.get('follower_address')
+        follower_address = (data.get('follower_address') or '').lower()
+        target_address = (wallet_address or '').lower()
         if not follower_address:
             return JsonResponse({'success': False, 'error': 'Missing follower_address'}, status=400)
         
         # Get user profiles
-        user = UserProfile.objects.get(wallet_address=wallet_address)
-        follower = UserProfile.objects.get(wallet_address=follower_address)
+        user = UserProfile.objects.filter(wallet_address__iexact=target_address).first()
+        follower = UserProfile.objects.filter(wallet_address__iexact=follower_address).first()
+        if not user or not follower:
+            return JsonResponse({'success': False, 'error': 'User not found'}, status=404)
         
         # Check if not following
-        if not user.followers.filter(wallet_address=follower_address).exists():
+        if not user.followers.filter(wallet_address__iexact=follower_address).exists():
             return JsonResponse({'success': False, 'error': 'Not following this user'}, status=400)
         
         # Remove follower
@@ -1218,10 +1403,10 @@ def unfollow_user(request, wallet_address):
         try:
             from .models import Transaction
             Transaction.objects.create(
-                transaction_hash=f"unfollow_{follower_address}_{wallet_address}_{int(time.time())}",
+                transaction_hash=f"unfollow_{follower_address}_{target_address}_{int(time.time())}",
                 nft=None,  # No NFT involved in unfollow action
                 from_address=follower_address,
-                to_address=wallet_address,
+                to_address=target_address,
                 transaction_type='unfollow',
                 price=None,
                 block_number=0,
@@ -1245,7 +1430,9 @@ def unfollow_user(request, wallet_address):
 @require_http_methods(["GET"])
 def get_followers(request, wallet_address):
     try:
-        user = UserProfile.objects.get(wallet_address=wallet_address)
+        user = UserProfile.objects.filter(wallet_address__iexact=wallet_address).first()
+        if not user:
+            return JsonResponse({'success': True, 'followers': [], 'count': 0})
         followers = list(user.followers.values('wallet_address', 'username', 'avatar_url'))
         return JsonResponse({'success': True, 'followers': followers, 'count': len(followers)})
     except Exception as e:
@@ -1255,7 +1442,9 @@ def get_followers(request, wallet_address):
 @require_http_methods(["GET"])
 def get_following(request, wallet_address):
     try:
-        user = UserProfile.objects.get(wallet_address=wallet_address)
+        user = UserProfile.objects.filter(wallet_address__iexact=wallet_address).first()
+        if not user:
+            return JsonResponse({'success': True, 'following': [], 'count': 0})
         following = list(user.following.values('wallet_address', 'username', 'avatar_url'))
         return JsonResponse({'success': True, 'following': following, 'count': len(following)})
     except Exception as e:
@@ -1284,6 +1473,13 @@ def get_nft_by_combined_id(request, combined_id):
                 # Get blockchain data
                 blockchain_data = web3_instance.get_nft_metadata(nft.token_id)
                 
+                print(f"[DEBUG] Found NFT in database: token_id={nft.token_id}, owner={nft.owner_address}, is_listed={nft.is_listed}")
+                try:
+                    tx_count = Transaction.objects.filter(nft=nft).count()
+                except Exception as _:
+                    tx_count = -1
+                print(f"[DEBUG] TX count for NFT {nft.token_id}: {tx_count}")
+                
                 nft_data = {
                     'id': f"local_{nft.id}",
                     'token_id': nft.token_id,
@@ -1306,6 +1502,8 @@ def get_nft_by_combined_id(request, combined_id):
                     'blockchain_data': blockchain_data,
                     'source': 'local'
                 }
+                
+                print(f"[DEBUG] Returning NFT data: owner_address={nft_data['owner_address']}, is_listed={nft_data['is_listed']}")
                 
                 return JsonResponse({
                     'success': True,
@@ -1355,15 +1553,18 @@ def get_nft_stats(request, nft_id):
         
         # Get likes count
         likes_count = Favorite.objects.filter(nft=nft).count()
+        print(f"[DEBUG] stats: likes_count for token {nft.token_id}: {likes_count}")
         
         # Get owners count (for now, just 1 since we don't track ownership history)
         owners_count = 1
         
         # Get last sale info
-        last_sale = Transaction.objects.filter(
+        last_sale_qs = Transaction.objects.filter(
             nft=nft, 
             transaction_type__in=['buy', 'sale']
-        ).order_by('-timestamp').first()
+        ).order_by('-timestamp')
+        last_sale = last_sale_qs.first()
+        print(f"[DEBUG] stats: sales_count for token {nft.token_id}: {last_sale_qs.count()}")
         
         last_sale_info = 'No sales yet'
         if last_sale and last_sale.price:
@@ -1375,6 +1576,7 @@ def get_nft_stats(request, nft_id):
             transaction_type__in=['buy', 'sale'],
             price__isnull=False
         ).aggregate(total=Sum('price'))['total'] or 0
+        print(f"[DEBUG] stats: total_volume raw for token {nft.token_id}: {total_volume}")
         
         total_volume_str = f"Ξ{float(total_volume)}" if total_volume > 0 else "0 ETH"
         
@@ -1390,6 +1592,7 @@ def get_nft_stats(request, nft_id):
         
         # Get real views count
         views_count = nft.views.count()
+        print(f"[DEBUG] stats: views_count for token {nft.token_id}: {views_count}")
         
         stats_data = {
             'views': views_count,
@@ -1420,7 +1623,7 @@ def get_user_liked_nfts(request, wallet_address):
         print(f"[DEBUG] get_user_liked_nfts called for user: {wallet_address}")
         
         # Get local NFT favorites
-        favorites = Favorite.objects.filter(user_address=wallet_address)
+        favorites = Favorite.objects.filter(user_address__iexact=wallet_address)
         print(f"[DEBUG] Found {favorites.count()} local favorites for user")
         
 

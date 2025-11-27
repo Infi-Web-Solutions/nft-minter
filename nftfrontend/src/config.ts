@@ -25,6 +25,47 @@ export function apiUrl(path: string): string {
   return `${base}${suffix}`;
 }
 
+// Normalize media URLs (avatars, banners, NFT images) to absolute URLs
+export function mediaUrl(url?: string | null): string {
+  if (!url) return '';
+
+  const original = url; // preserve query strings if any
+
+  // IPFS
+  if (original.startsWith('ipfs://')) {
+    const ipfsHash = original.replace('ipfs://', '').replace(/\/+$/, '');
+    return `https://ipfs.io/ipfs/${ipfsHash}`;
+  }
+
+  // Already absolute (http/https or data URI)
+  if (/^(https?:)?\/\//i.test(original) || original.startsWith('data:')) {
+    // Rewrite localhost to API base origin but keep path and query
+    try {
+      const base = API_BASE_URL.replace(/\/$/, '');
+      const baseOrigin = new URL(base).origin;
+      const u = new URL(original);
+      if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') {
+        return `${baseOrigin}${u.pathname}${u.search}`;
+      }
+    } catch {
+      // ignore URL parsing errors
+    }
+    return original;
+  }
+
+  // Handle typical Django media relative paths like /media/.... or media/...
+  if (original.startsWith('/media/') || original.startsWith('media/')) {
+    const path = original.startsWith('/') ? original : `/${original}`;
+    try { console.debug('[mediaUrl] Resolving relative media path', { original, resolved: apiUrl(path) }); } catch {}
+    return apiUrl(path);
+  }
+
+  // Fallback: treat as relative path under API
+  const fallback = apiUrl(original.startsWith('/') ? original : `/${original}`);
+  try { console.debug('[mediaUrl] Fallback URL resolution', { original, resolved: fallback }); } catch {}
+  return fallback;
+}
+
 // Helper to add Sepolia network to MetaMask
 export async function addSepoliaNetwork() {
   if (!window.ethereum) return false;

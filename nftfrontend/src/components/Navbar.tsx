@@ -12,6 +12,7 @@ import { useWallet } from '@/contexts/WalletContext';
 const Navbar = () => {
   const navigate = useNavigate();
   const { isConnected, address, balance, chainId, disconnectWallet, isLoading } = useWallet();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
 
   const formatAddress = (addr: string) => {
@@ -41,9 +42,9 @@ const Navbar = () => {
           <div className="flex h-16 items-center justify-between">
             {/* Logo */}
             <div className="flex items-center space-x-8">
-              <Link to="/" className="flex items-center space-x-2">
-                <img src="/logo.png" alt="NFTMinter" className="h-8 w-8 rounded" />
-                <span className="text-xl font-bold">NFTMinter</span>
+              <Link to="/" className="flex items-center space-x-2 min-w-0">
+                <img src="/logo.png" alt="NFTMinter" className="h-8 w-8 rounded flex-shrink-0" />
+                <span className="text-xl font-bold truncate">NFTMinter</span>
               </Link>
               
               <div className="hidden md:flex">
@@ -117,7 +118,7 @@ const Navbar = () => {
             </div>
 
             {/* Search */}
-            <div className="hidden md:flex flex-1 max-w-lg mx-8">
+            <div className="hidden md:flex flex-1 max-w-lg mx-4 md:mx-8">
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input 
@@ -133,8 +134,8 @@ const Navbar = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center space-x-4">
-              <ThemeToggle />
+            <div className="flex items-center space-x-2 md:space-x-4">
+              <div className="hidden md:inline-flex"><ThemeToggle /></div>
               <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => navigate('/notifications')}>
                 <Bell className="h-4 w-4" />
               </Button>
@@ -192,13 +193,43 @@ const Navbar = () => {
                 </Button>
               )}
               
-              <Button variant="ghost" size="sm" className="md:hidden">
+              <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileOpen(v => !v)} aria-expanded={mobileOpen} aria-controls="mobile-menu">
                 <Menu className="h-4 w-4" />
               </Button>
             </div>
           </div>
         </div>
       </nav>
+      {/* Mobile menu */}
+      {mobileOpen && (
+        <div id="mobile-menu" className="md:hidden bg-background border-b border-border/40">
+          <div className="px-4 py-3 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input 
+                placeholder="Search items, collections, and accounts"
+                className="pl-10 bg-muted/50 border-0"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => { navigate('/marketplace'); setMobileOpen(false); }}>Marketplace</Button>
+              <Button variant="outline" onClick={() => { navigate('/collections'); setMobileOpen(false); }}>Collections</Button>
+              <Button variant="outline" onClick={() => { navigate('/rankings'); setMobileOpen(false); }}>Rankings</Button>
+              <Button variant="outline" onClick={() => { navigate('/activity'); setMobileOpen(false); }}>Activity Feed</Button>
+              <Button variant="outline" onClick={() => { navigate('/stats'); setMobileOpen(false); }}>Statistics</Button>
+              <Button variant="outline" onClick={() => { navigate('/notifications'); setMobileOpen(false); }}>Notifications</Button>
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={() => { navigate('/create'); setMobileOpen(false); }}>Create</Button>
+              <Button variant="outline" className="flex-1" onClick={() => { navigate('/profile'); setMobileOpen(false); }}>Profile</Button>
+            </div>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-sm text-muted-foreground">Theme</span>
+              <ThemeToggle />
+            </div>
+          </div>
+        </div>
+      )}
       
       <WalletConnectionModal open={showWalletModal} onOpenChange={setShowWalletModal} />
     </>

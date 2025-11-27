@@ -212,6 +212,10 @@ const Index = () => {
                     onLike={(newLikedState) => handleLikeToggle(nft.id, newLikedState)}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    afterBuy={() => {
+                      // Refresh featured NFTs after successful purchase
+                      fetchFeaturedNFTs();
+                    }}
                   />
                 ))}
               </div>
@@ -235,6 +239,10 @@ const Index = () => {
                     onLike={(newLikedState) => handleLikeToggle(nft.id, newLikedState)}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    afterBuy={() => {
+                      // Refresh featured NFTs after successful purchase
+                      fetchFeaturedNFTs();
+                    }}
                   />
                 ))}
               </div>
@@ -258,6 +266,10 @@ const Index = () => {
                     onLike={(newLikedState) => handleLikeToggle(nft.id, newLikedState)}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
+                    afterBuy={() => {
+                      // Refresh featured NFTs after successful purchase
+                      fetchFeaturedNFTs();
+                    }}
                   />
                 ))}
               </div>

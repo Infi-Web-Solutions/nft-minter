@@ -31,4 +31,6 @@ __pycache__/
 *.pyo
 *.pyd
 # Ignore SQLite database file
-backend/db.sqlite3
+venv/
+.venv/
+db.sqlite3

@@ -261,7 +261,7 @@ const Activity = () => {
                 return (
                   <Card key={activity.id} className="hover:shadow-lg transition-shadow">
                     <CardContent className="p-6">
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
                         <Badge variant={badge.variant} className="min-w-fit">
                           {badge.label}
                         </Badge>
@@ -297,13 +297,13 @@ const Activity = () => {
                           )}
                         </div>
                         
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           {activity.nft ? (
                             <>
-                              <h3 className="font-semibold">
+                              <h3 className="font-semibold truncate">
                                 {activity.nft.name || `${activity.nft.collection} #${activity.nft.token_id || ''}`}
                               </h3>
-                              <p className="text-sm text-muted-foreground">{activity.nft.collection}</p>
+                              <p className="text-sm text-muted-foreground truncate">{activity.nft.collection}</p>
                             </>
                           ) : (
                             <>
@@ -313,7 +313,7 @@ const Activity = () => {
                           )}
                         </div>
                         
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center flex-wrap gap-2 sm:gap-4">
                           <div className="flex items-center gap-2">
                             {activity.from ? (
                               <>
@@ -321,7 +321,7 @@ const Activity = () => {
                                   <AvatarImage src={getUserDisplayInfo(activity.from).avatar} />
                                   <AvatarFallback>{getUserDisplayInfo(activity.from).initials}</AvatarFallback>
                                 </Avatar>
-                                <span className="text-sm font-medium hover:text-primary cursor-pointer" onClick={() => navigate(`/profile/${activity.from.address}`)}>
+                                <span className="text-sm font-medium hover:text-primary cursor-pointer truncate max-w-[120px] sm:max-w-none" onClick={() => navigate(`/profile/${activity.from.address}`)}>
                                   {getUserDisplayInfo(activity.from).name}
                                 </span>
                               </>
@@ -338,7 +338,7 @@ const Activity = () => {
                                   <AvatarImage src={getUserDisplayInfo(activity.to).avatar} />
                                   <AvatarFallback>{getUserDisplayInfo(activity.to).initials}</AvatarFallback>
                                 </Avatar>
-                                <span className="text-sm font-medium hover:text-primary cursor-pointer" onClick={() => navigate(`/profile/${activity.to.address}`)}>
+                                <span className="text-sm font-medium hover:text-primary cursor-pointer truncate max-w-[120px] sm:max-w-none" onClick={() => navigate(`/profile/${activity.to.address}`)}>
                                   {getUserDisplayInfo(activity.to).name}
                                 </span>
                               </div>
@@ -346,7 +346,7 @@ const Activity = () => {
                           )}
                         </div>
                         
-                        <div className="text-right">
+                        <div className="w-full sm:w-auto text-left sm:text-right mt-2 sm:mt-0">
               {activity.price && (
                 <p className="font-medium">Ξ {activity.price.toFixed(2)}</p>
               )}
@@ -356,7 +356,7 @@ const Activity = () => {
             <Button 
               variant="ghost" 
               size="sm" 
-              className="p-2"
+              className="p-2 self-start sm:self-auto"
               onClick={() => window.open(`https://sepolia.etherscan.io/tx/${activity.transaction_hash}`, '_blank')}
             >
                           <ExternalLink className="h-4 w-4" />
@@ -378,28 +378,28 @@ const Activity = () => {
                         </div>
                         
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-            <TabsList className="grid w-full max-w-2xl grid-cols-6">
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="buy">Sales</TabsTrigger>
-              <TabsTrigger value="list">Listings</TabsTrigger>
-              <TabsTrigger value="bid">Offers</TabsTrigger>
-              <TabsTrigger value="transfer">Transfers</TabsTrigger>
-              <TabsTrigger value="mint">Mints</TabsTrigger>
+          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center mb-8 gap-3 md:gap-4">
+            <TabsList className="flex w-full gap-2 overflow-x-auto whitespace-nowrap">
+              <TabsTrigger className="flex-shrink-0" value="all">All</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="buy">Sales</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="list">Listings</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="bid">Offers</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="transfer">Transfers</TabsTrigger>
+              <TabsTrigger className="flex-shrink-0" value="mint">Mints</TabsTrigger>
             </TabsList>
             
-            <div className="flex gap-4">
-              <div className="relative">
+            <div className="flex gap-2 sm:gap-3 md:gap-4 w-full md:w-auto">
+              <div className="relative flex-1 md:flex-initial">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                 <Input 
                   placeholder="Search..." 
-                  className="pl-10 w-48"
+                  className="pl-10 w-full md:w-48"
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                 />
                           </div>
               <Select value={timeFilter} onValueChange={handleTimeFilterChange}>
-                <SelectTrigger className="w-32">
+                <SelectTrigger className="w-full md:w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -424,7 +424,7 @@ const Activity = () => {
                 <p className="text-muted-foreground">No activities found</p>
             </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {activities.map(renderActivityCard)}
             </div>
             )}

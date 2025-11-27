@@ -16,12 +16,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikes } from '@/contexts/LikeContext';
-import { apiUrl } from '@/config';
+import { useOwnership } from '@/contexts/OwnershipContext';
+import { apiUrl, mediaUrl } from '@/config';
 
 const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const { address } = useWallet();
+  const { refreshTrigger } = useOwnership();
   const profileImageRef = useRef<HTMLInputElement>(null);
   const coverImageRef = useRef<HTMLInputElement>(null);
 
@@ -275,7 +277,7 @@ const Profile = () => {
     };
 
     fetchProfile();
-  }, [address]);
+  }, [address, refreshTrigger]); // Add refreshTrigger dependency
 
   // Fetch created NFTs
   useEffect(() => {
@@ -288,7 +290,7 @@ const Profile = () => {
       } catch (e) { /* ignore */ }
     };
     fetchCreatedNFTs();
-  }, [address]);
+  }, [address, refreshTrigger]); // Add refreshTrigger dependency
 
   // Fetch owned NFTs
   useEffect(() => {
@@ -301,7 +303,7 @@ const Profile = () => {
       } catch (e) { /* ignore */ }
     };
     fetchOwnedNFTs();
-  }, [address]);
+  }, [address, refreshTrigger]); // Add refreshTrigger dependency
 
   // Fetch activity
   useEffect(() => {
@@ -360,7 +362,7 @@ const Profile = () => {
         <div className="relative">
           <div 
             className="h-64 bg-gradient-to-r from-purple-500 to-blue-600 relative group"
-            style={profile.banner_url ? { backgroundImage: `url(${profile.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+            style={profile.banner_url ? { backgroundImage: `url(${mediaUrl(profile.banner_url)})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
           >
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors">
               <Button
@@ -385,7 +387,7 @@ const Profile = () => {
               <div className="flex flex-col md:flex-row gap-6">
                 <div className="relative">
                   <Avatar className="h-32 w-32 border-4 border-background">
-                    <AvatarImage src={profile.avatar_url || undefined} />
+                    <AvatarImage src={mediaUrl(profile.avatar_url) || undefined} />
                     <AvatarFallback>
                       {address ? address.slice(2, 4).toUpperCase() : 'U'}
                     </AvatarFallback>
@@ -460,8 +462,7 @@ const Profile = () => {
                   <div className="col-span-full text-center text-muted-foreground">No collected NFTs yet.</div>
                 ) : (
                   Array.from(new Map([...createdNFTs, ...ownedNFTs].map(nft => [nft.id, nft])).values()).map((nft: any) => {
-                    // Convert numeric ID to local_ format for consistency
-                    const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                    const nftId = `local_${nft.id?.toString?.() || String(nft.id)}`;
                     console.log('[Profile] Rendering NFT in collected tab:', {
                       original_id: nft.id,
                       converted_id: nftId,
@@ -488,6 +489,10 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        afterBuy={() => {
+                          // Refresh combined NFTs after successful purchase
+                          fetchCombinedNFTs();
+                        }}
                       />
                     );
                   })
@@ -502,8 +507,7 @@ const Profile = () => {
                   <div className="col-span-full text-center text-muted-foreground">No created NFTs yet.</div>
                 ) : (
                   createdNFTs.map((nft: any) => {
-                    // Convert numeric ID to local_ format for consistency
-                    const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                    const nftId = `local_${nft.id?.toString?.() || String(nft.id)}`;
                     return (
                       <NFTCard
                         key={nftId}
@@ -520,6 +524,10 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        afterBuy={() => {
+                          // Refresh combined NFTs after successful purchase
+                          fetchCombinedNFTs();
+                        }}
                       />
                     );
                   })
@@ -573,6 +581,10 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
                         canLike={true}
                         source="local"
+                        afterBuy={() => {
+                          // Refresh combined NFTs after successful purchase
+                          fetchCombinedNFTs();
+                        }}
                       />
                     ))
                 )}
@@ -590,7 +602,7 @@ const Profile = () => {
                       <CardContent className="p-4">
                         <div className="flex items-center gap-4">
                           <Avatar className="h-10 w-10">
-                            <AvatarImage src={act.avatar_url || ''} />
+                            <AvatarImage src={mediaUrl(act.avatar_url) || ''} />
                             <AvatarFallback>U</AvatarFallback>
                           </Avatar>
                           <div className="flex-1">

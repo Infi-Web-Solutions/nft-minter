@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
 import { nftService } from '@/services/nftService';
-import { apiUrl, NETWORK_CONFIG } from '@/config';
+import { apiUrl, NETWORK_CONFIG, mediaUrl } from '@/config';
 
 interface NFTCardProps {
   title: string;
@@ -52,9 +52,9 @@ const getImageUrl = (url: string) => {
     return clean;
   }
 
-  // Handle HTTP/HTTPS URLs
+  // Handle HTTP/HTTPS URLs or localhost fallbacks by returning normalized media URL
   if (clean.startsWith('http://') || clean.startsWith('https://')) {
-    return clean;
+    return mediaUrl(clean);
   }
 
   // If it's just a hash, assume it's an IPFS hash
@@ -62,7 +62,8 @@ const getImageUrl = (url: string) => {
     return `https://ipfs.io/ipfs/${clean}`;
   }
 
-  return clean;
+  // Resolve any relative paths (e.g., /media/...) through API base
+  return mediaUrl(clean);
 };
 
 const NFTCard: React.FC<NFTCardProps> = ({ 
@@ -93,9 +94,20 @@ const NFTCard: React.FC<NFTCardProps> = ({
   const [isBuying, setIsBuying] = useState(false);
   const [isListing, setIsListing] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
+  // Local mirrors to reflect immediate UI after actions
+  const [currentOwner, setCurrentOwner] = useState<string | undefined>(owner_address);
+  const [currentIsListed, setCurrentIsListed] = useState<boolean>(Boolean(is_listed));
+
+  // Keep local mirrors in sync when props change (e.g., after refetch)
+  React.useEffect(() => {
+    setCurrentOwner(owner_address);
+  }, [owner_address]);
+  React.useEffect(() => {
+    setCurrentIsListed(Boolean(is_listed));
+  }, [is_listed]);
 
   // Derived state
-  const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
+  const isOwner = Boolean(address && currentOwner && address.toLowerCase() === currentOwner.toLowerCase());
 
   // Debug: Log props on mount
   React.useEffect(() => {
@@ -114,17 +126,11 @@ const NFTCard: React.FC<NFTCardProps> = ({
   }, [title, collection, price, image, tokenId, id, liked, isOwner]);
 
   const handleLike = async () => {
-    if (isLiking || !id || !address) {
-      return;
-    }
-    
+    if (isLiking || !id || !address) return;
     setIsLiking(true);
     try {
+      // Single source of truth: update via LikeContext only
       await toggleLike(id);
-      // Still call onLike for backward compatibility
-      if (onLike) {
-        onLike(!isLiked(id));
-      }
     } catch (err) {
       console.error('[NFTCard] Like failed:', err);
       toast.error('Failed to update like');
@@ -153,6 +159,20 @@ const NFTCard: React.FC<NFTCardProps> = ({
     if (!window.ethereum) {
       toast.error('Please install a Web3 wallet (like MetaMask) to purchase NFTs.');
       return;
+    }
+
+    // Double-check listing status on-chain before attempting purchase
+    try {
+      const { getListing } = useWeb3();
+      const listing = await getListing(tokenId);
+      if (!listing || !listing.price || listing.price === '0') {
+        toast.error('This NFT is no longer available for purchase. Please refresh the page.');
+        if (afterBuy) afterBuy(); // Trigger refresh
+        return;
+      }
+    } catch (listingError) {
+      console.warn('Could not verify listing status:', listingError);
+      // Continue with purchase attempt - let the contract handle the validation
     }
 
     setIsBuying(true);
@@ -216,6 +236,9 @@ const NFTCard: React.FC<NFTCardProps> = ({
           body: JSON.stringify(payload)
         });
         toast.success('Ownership updated.');
+        // Optimistically update UI
+        setCurrentOwner(address);
+        setCurrentIsListed(false);
         if (afterBuy) afterBuy();
       } catch (backendError) {
         console.error('[NFTCard] Failed to notify backend for activity log:', backendError);
@@ -235,6 +258,8 @@ const NFTCard: React.FC<NFTCardProps> = ({
             body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
           });
           toast.success('Ownership updated (simulated).');
+          setCurrentOwner(address);
+          setCurrentIsListed(false);
           if (afterBuy) afterBuy();
         } catch (e) {
           toast.error('Simulation failed.');
@@ -324,9 +349,9 @@ const NFTCard: React.FC<NFTCardProps> = ({
     tokenId,
     title,
     address: address?.toLowerCase(),
-    owner_address: owner_address?.toLowerCase(),
+    owner_address: currentOwner?.toLowerCase(),
     isOwner,
-    is_listed,
+    is_listed: currentIsListed,
     price
   });
 
@@ -444,7 +469,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                 </Button>
               ) : (
                 <>
-                  {isOwner && !is_listed && (
+                  {isOwner && !currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
@@ -454,7 +479,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                       Owned
                     </Button>
                   )}
-                  {isOwner && is_listed && (
+                  {isOwner && currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
@@ -464,7 +489,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                       Owned
                     </Button>
                   )}
-                  {!isOwner && !is_listed && (
+                  {!isOwner && !currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-gray-400 to-gray-600 whitespace-nowrap text-xs px-2"
@@ -474,7 +499,7 @@ const NFTCard: React.FC<NFTCardProps> = ({
                       Not for Sale
                     </Button>
                   )}
-                  {!isOwner && is_listed && (
+                  {!isOwner && currentIsListed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"

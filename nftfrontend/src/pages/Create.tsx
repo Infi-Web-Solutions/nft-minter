@@ -173,7 +173,7 @@ const Create = () => {
       const tx = await contract.mintNFT(
         formData.name,
         formData.description,
-        `ipfs://${imageHash}`,
+        `ipfs://${metadataHash}`,
         formData.category,
         Math.floor(parseFloat(formData.royaltyPercentage) * 100), // Convert to basis points (2.5% -> 250)
         formData.collection || 'Default Collection'
