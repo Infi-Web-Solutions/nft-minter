@@ -69,21 +69,6 @@ const NFTCard = ({
   const [isLiking, setIsLiking] = React.useState(false);
   const navigate = useNavigate();
 
-  // Debug: Log props on mount
-  React.useEffect(() => {
-    console.log('[NFTCard] Rendered with props:', {
-      title,
-      collection,
-      price,
-      image,
-      imageUrl: getImageUrl(image),
-      tokenId,
-      id,
-      id_type: typeof id,
-      liked
-    });
-  }, [title, collection, price, image, tokenId, id, liked]);
-
   const handleLike = async () => {
     if (isLiking) {
       console.log('[NFTCard] Like already in progress, ignoring click');
@@ -412,18 +397,6 @@ const NFTCard = ({
   };
 
   const isOwner = address && owner_address && address.toLowerCase() === owner_address.toLowerCase();
-
-  // Debug logging
-  console.log('[NFTCard] Debug values:', {
-    tokenId,
-    title,
-    address: address?.toLowerCase(),
-    owner_address: owner_address?.toLowerCase(),
-    isOwner,
-    is_listed,
-    price
-  });
-
   // Handler for card click
   const handleCardClick = async (e: React.MouseEvent) => {
     // Prevent navigation if clicking on a button or interactive element
@@ -467,7 +440,6 @@ const NFTCard = ({
               console.error('[NFTCard] Image failed to load:', (e.target as HTMLImageElement).src);
               (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
             }}
-            onLoad={() => console.log('[NFTCard] Image loaded successfully:', getImageUrl(image))}
           />
         )}
         <div className="absolute top-3 right-3 flex space-x-2">

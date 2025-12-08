@@ -16,7 +16,7 @@ const nftSchema = new mongoose.Schema({
     highest_bidder: { type: String },
     royalty_percentage: { type: Number, default: 0 },
     nft_collection: { type: String },
-    
+    perceptual_hash: { type: String, sparse: true }, // pHash for similar image detection (no unique constraint)
     category: { type: String },
     created_at: { type: Date, default: Date.now },
     updated_at: { type: Date, default: Date.now }

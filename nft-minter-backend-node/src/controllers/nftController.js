@@ -6,11 +6,140 @@ import Favorite from '../models/favorite.js';
 import Collection from '../models/collection.js';
 import NFTView from '../models/nftView.js';
 import { uploadToIPFS } from '../utils/ipfsUtils.js';
+import { createRequire } from 'module';
+import hammingDistance from 'hamming-distance';
+
+// Import CommonJS module in ES module
+const require = createRequire(import.meta.url);
+const { imageHash } = require('image-hash');
+
+// Calculate perceptual hash from file buffer
+const calculatePerceptualHash = async (fileBuffer) => {
+    try {
+        console.log('[DEBUG] Calculating perceptual hash...');
+        console.log('[DEBUG] File buffer length:', fileBuffer.length);
+
+        // Wrap imageHash callback in a Promise
+        const hash = await new Promise((resolve, reject) => {
+            imageHash({
+                data: fileBuffer,
+                type: 'buffer'
+            }, 16, 'hex', (error, data) => {
+                if (error) {
+                    console.error('[DEBUG] imageHash error:', error);
+                    reject(error);
+                } else {
+                    console.log('[DEBUG] imageHash success:', data);
+                    resolve(data);
+                }
+            });
+        });
+
+        console.log('[DEBUG] Perceptual hash calculated:', hash);
+        return hash;
+    } catch (error) {
+        console.error('[ERROR] Failed to calculate perceptual hash:', error);
+        throw new Error('Failed to calculate image hash: ' + error.message);
+    }
+};
+
+// Calculate perceptual hash from uploaded file (API endpoint)
+export const calculateHashFromFile = async (req, res) => {
+    try {
+        console.log('[DEBUG] calculateHashFromFile called');
+
+        if (!req.files || !req.files.file) {
+            console.log('[DEBUG] No file in request');
+            return res.status(400).json({
+                success: false,
+                error: 'No file provided'
+            });
+        }
+
+        const fileBuffer = req.files.file.data;
+        console.log('[DEBUG] File size:', fileBuffer.length);
+
+        const pHash = await calculatePerceptualHash(fileBuffer);
+
+        return res.json({
+            success: true,
+            perceptual_hash: pHash
+        });
+    } catch (error) {
+        console.error('[ERROR] calculateHashFromFile:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+// Check for duplicate NFT by perceptual hash (using hamming distance)
+export const checkDuplicateNft = async (req, res) => {
+    try {
+        const { perceptual_hash } = req.body;
+        console.log('[DEBUG] checkDuplicateNft called with perceptual_hash:', perceptual_hash);
+
+        if (!perceptual_hash) {
+            console.log('[DEBUG] No perceptual_hash provided');
+            return res.status(400).json({
+                success: false,
+                error: 'perceptual_hash is required'
+            });
+        }
+
+        // Get all NFTs that have perceptual hashes
+        const allNfts = await NFT.find({ perceptual_hash: { $ne: null, $exists: true } });
+        console.log('[DEBUG] Found', allNfts.length, 'NFTs with perceptual hashes');
+
+        // Check hamming distance against each NFT
+        const SIMILARITY_THRESHOLD = 10; // Distance < 10 means similar images
+
+        for (const nft of allNfts) {
+            const distance = hammingDistance(perceptual_hash, nft.perceptual_hash);
+            console.log(`[DEBUG] Comparing with NFT ${nft.token_id}: distance = ${distance}`);
+
+            if (distance < SIMILARITY_THRESHOLD) {
+                console.log('[DEBUG] Similar image detected! NFT:', {
+                    token_id: nft.token_id,
+                    name: nft.name,
+                    similarity_distance: distance
+                });
+                return res.json({
+                    success: true,
+                    exists: true,
+                    similarity: distance,
+                    nft: {
+                        token_id: nft.token_id,
+                        name: nft.name,
+                        image_url: nft.image_url
+                    }
+                });
+            }
+        }
+
+        console.log('[DEBUG] No similar images found');
+        return res.json({
+            success: true,
+            exists: false,
+            nft: null
+        });
+    } catch (error) {
+        console.error("[ERROR] check_duplicate_nft:", error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+};
 
 export const registerNft = async (req, res) => {
     try {
         const data = req.body;
-        console.log("data regiester nft", data)
+        console.log("[DEBUG] registerNft called with data:", {
+            token_id: data.token_id,
+            name: data.name,
+            has_perceptual_hash: !!data.perceptual_hash,
+            perceptual_hash: data.perceptual_hash ? data.perceptual_hash.substring(0, 16) + '...' : 'none'
+        });
+
         const nft = await NFT.findOneAndUpdate(
             { token_id: data.token_id },
             {
@@ -25,10 +154,12 @@ export const registerNft = async (req, res) => {
                 is_auction: data.is_auction || false,
                 nft_collection: data.collection,
                 category: data.category,
+                perceptual_hash: data.perceptual_hash || null, // Store perceptual hash for similarity detection
             },
             { new: true, upsert: true }
         );
 
+        console.log("[DEBUG] NFT registered successfully with ID:", nft._id);
         return res.json({ success: true, created: !nft.isNew, nft_id: nft._id });
     } catch (error) {
         console.error("[ERROR] register_nft:", error);
@@ -468,7 +599,7 @@ export const getNftDetail = async (req, res) => {
 };
 
 export const getNfts = async (req, res) => {
-    
+
     try {
         let { page = 1, limit = 12, category, collection, price_min, price_max, sort_by = 'created_at', sort_order = 'desc' } = req.query;
         page = parseInt(page);
@@ -503,7 +634,7 @@ export const getNfts = async (req, res) => {
             category: nft.category,
             created_at: nft.created_at,
         }));
-    
+
         res.json({
             success: true,
             data: nfts_data,
@@ -752,7 +883,7 @@ export const uploadIpfs = async (req, res) => {
         console.log('[API] Starting IPFS upload request');
         console.log(`[API] Content type: ${req.headers['content-type']}`);
         console.log(`[API] Available files: ${Object.keys(req.files || {})}`);
-        
+
         if (!req.files || !req.files.file) {
             console.log('[API] No file found in request');
             return res.status(400).json({
@@ -760,14 +891,14 @@ export const uploadIpfs = async (req, res) => {
                 error: 'No file provided'
             });
         }
-        
+
         const file = req.files.file;
         console.log(`[API] File name: ${file.name}`);
         console.log(`[API] File size: ${file.size} bytes`);
         console.log(`[API] File mimetype: ${file.mimetype}`);
-        
+
         const ipfsHash = await uploadToIPFS(file.data);
-        
+
         return res.json({
             success: true,
             ipfsHash: ipfsHash
@@ -785,13 +916,13 @@ export const uploadIpfs = async (req, res) => {
 //     try {
 //         const { combined_id } = req.params;
 //         console.log(`[DEBUG] getNftByCombinedId called with id: ${combined_id}`);
-        
+
 //         // Check if this is a local NFT (has "local_" prefix)
 //         if (combined_id.startsWith('local_')) {
 //             // Extract the actual ID from the local ID
 //             const actualId = combined_id.replace('local_', '');
 //             console.log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
-            
+
 //             try {
 //                 // Try to find by database ID first, then by token_id
 //                 let nft;
@@ -800,14 +931,14 @@ export const uploadIpfs = async (req, res) => {
 //                 } catch {
 //                     nft = await NFT.findOne({ token_id: actualId });
 //                 }
-                
+
 //                 if (!nft) {
 //                     return res.status(404).json({
 //                         success: false,
 //                         error: 'Local NFT not found'
 //                     });
 //                 }
-                
+
 //                 // Get blockchain data
 //                 let blockchainData = null;
 //                 try {
@@ -816,7 +947,7 @@ export const uploadIpfs = async (req, res) => {
 //                     console.warn(`Could not fetch blockchain data: ${e.message}`);
 //                     blockchainData = null;
 //                 }
-                
+
 //                 const nftData = {
 //                     id: `local_${nft._id}`,
 //                     token_id: nft.token_id,
@@ -839,7 +970,7 @@ export const uploadIpfs = async (req, res) => {
 //                     blockchain_data: blockchainData,
 //                     source: 'local'
 //                 };
-                
+
 //                 return res.json({
 //                     success: true,
 //                     data: nftData
@@ -871,15 +1002,15 @@ export const getNftByCombinedId = async (req, res) => {
     try {
         const { combined_id } = req.params;
         const { user_address } = req.query; // Get user address from query params
-        
+
         console.log(`[DEBUG] getNftByCombinedId called with id: ${combined_id}`);
         console.log(`[DEBUG] User address: ${user_address}`);
-        
+
         // Check if this is a local NFT (has "local_" prefix)
         if (combined_id.startsWith('local_')) {
             const actualId = combined_id.replace('local_', '');
             console.log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
-            
+
             try {
                 // Try to find by database ID first, then by token_id
                 let nft;
@@ -888,14 +1019,14 @@ export const getNftByCombinedId = async (req, res) => {
                 } catch {
                     nft = await NFT.findOne({ token_id: actualId });
                 }
-                
+
                 if (!nft) {
                     return res.status(404).json({
                         success: false,
                         error: 'Local NFT not found'
                     });
                 }
-                
+
                 // Get blockchain data (with error handling)
                 let blockchainData = null;
                 try {
@@ -920,7 +1051,7 @@ export const getNftByCombinedId = async (req, res) => {
                         console.warn(`[WARN] Could not check like status: ${e.message}`);
                     }
                 }
-                
+
                 const nftData = {
                     id: `local_${nft._id}`,
                     token_id: nft.token_id,
@@ -944,9 +1075,9 @@ export const getNftByCombinedId = async (req, res) => {
                     source: 'local',
                     liked: liked // Add the liked status
                 };
-                
+
                 console.log(`[DEBUG] Returning NFT data with liked: ${liked}`);
-                
+
                 return res.json({
                     success: true,
                     data: nftData
@@ -978,13 +1109,13 @@ export const getNftByCombinedId = async (req, res) => {
 export const getNftStats = async (req, res) => {
     try {
         const { nft_id } = req.params;
-        
+
         // Extract the actual NFT ID from combined ID
         let actualNftId = nft_id;
         if (nft_id.startsWith('local_')) {
             actualNftId = nft_id.replace('local_', '');
         }
-        
+
         let nft;
         try {
             // Try to find by database ID first, then by token_id
@@ -999,31 +1130,31 @@ export const getNftStats = async (req, res) => {
                 error: 'NFT not found'
             });
         }
-        
+
         if (!nft) {
             return res.status(404).json({
                 success: false,
                 error: 'NFT not found'
             });
         }
-        
+
         // Get likes count
         const likesCount = await Favorite.countDocuments({ nft: nft._id });
-        
+
         // Get owners count (for now, just 1 since we don't track ownership history)
         const ownersCount = 1;
-        
+
         // Get last sale info
         const lastSale = await Transaction.findOne({
             nft: nft._id,
             transaction_type: { $in: ['buy', 'sale'] }
         }).sort({ timestamp: -1 });
-        
+
         let lastSaleInfo = 'No sales yet';
         if (lastSale && lastSale.price) {
             lastSaleInfo = `Ξ${parseFloat(lastSale.price)}`;
         }
-        
+
         // Calculate total volume
         const totalVolumeResult = await Transaction.aggregate([
             {
@@ -1040,10 +1171,10 @@ export const getNftStats = async (req, res) => {
                 }
             }
         ]);
-        
+
         const totalVolume = totalVolumeResult.length > 0 ? totalVolumeResult[0].total : 0;
         const totalVolumeStr = totalVolume > 0 ? `Ξ${parseFloat(totalVolume)}` : '0 ETH';
-        
+
         // Mock properties for now
         const properties = [];
         if (nft.description) {
@@ -1053,10 +1184,10 @@ export const getNftStats = async (req, res) => {
                 { trait_type: 'Collection', value: nft.nft_collection || 'Unknown', rarity: '25%' }
             );
         }
-        
+
         // Get real views count
         const viewsCount = await NFTView.countDocuments({ nft: nft._id });
-        
+
         const statsData = {
             views: viewsCount,
             likes: likesCount,
@@ -1065,12 +1196,12 @@ export const getNftStats = async (req, res) => {
             total_volume: totalVolumeStr,
             properties: properties
         };
-        
+
         return res.json({
             success: true,
             data: statsData
         });
-        
+
     } catch (error) {
         console.error(`[ERROR] getNftStats: ${error}`);
         return res.status(500).json({
@@ -1084,7 +1215,7 @@ export const getNftStats = async (req, res) => {
 export const trackNftView = async (req, res) => {
     try {
         const { nft_id } = req.params;
-        
+
         // Get or create the NFT
         let nft;
         if (nft_id.startsWith('local_')) {
@@ -1097,28 +1228,28 @@ export const trackNftView = async (req, res) => {
         } else {
             nft = await NFT.findOne({ token_id: nft_id });
         }
-        
+
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
-        
+
         // Get viewer information
         const data = req.body || {};
         const viewerAddress = data.viewer_address;
-        
+
         // Get IP address
         const xForwardedFor = req.headers['x-forwarded-for'];
         let ipAddress;
         if (xForwardedFor) {
             ipAddress = xForwardedFor.split(',')[0];
         } else {
-            ipAddress = req.connection.remoteAddress || req.socket.remoteAddress || 
-                       (req.connection.socket ? req.connection.socket.remoteAddress : null);
+            ipAddress = req.connection.remoteAddress || req.socket.remoteAddress ||
+                (req.connection.socket ? req.connection.socket.remoteAddress : null);
         }
-        
+
         // Get user agent
         const userAgent = req.headers['user-agent'] || '';
-        
+
         // Create view record (will fail silently if duplicate due to unique constraint)
         try {
             await NFTView.create({
@@ -1131,15 +1262,15 @@ export const trackNftView = async (req, res) => {
             // This is expected for duplicate views
             console.log(`[INFO] Duplicate view or view creation failed: ${viewError.message}`);
         }
-        
+
         // Return updated view count
         const viewCount = await NFTView.countDocuments({ nft: nft._id });
-        
+
         return res.json({
             success: true,
             view_count: viewCount
         });
-        
+
     } catch (error) {
         console.error(`[ERROR] trackNftView: ${error}`);
         return res.status(500).json({ success: false, error: error.message });

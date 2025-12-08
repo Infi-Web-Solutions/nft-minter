@@ -1,6 +1,8 @@
 import express from 'express';
 import {
     registerNft,
+    checkDuplicateNft,
+    calculateHashFromFile,
     updateNftOwner,
     buyNft,
     getNftDetail,
@@ -24,6 +26,8 @@ const router = express.Router();
 
 // Basic NFT operations
 router.post('/register/', registerNft);
+router.post('/check-duplicate/', checkDuplicateNft);  // New route for duplicate check
+router.post('/calculate-hash/', calculateHashFromFile); // New route for perceptual hash calculation
 router.get('/search/', searchNfts);
 router.get('/', getNfts);
 

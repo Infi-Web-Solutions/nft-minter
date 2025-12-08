@@ -25,10 +25,8 @@ export const LikedNFTsProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const refreshLikedNFTs = useCallback(async () => {
     if (!address) return;
     try {
-      console.log('[LikedNFTsContext] Refreshing liked NFTs for address:', address);
       const likedNFTs = await nftService.getUserLikedNFTs(address);
       const likedIds = new Set(likedNFTs.map((nft: any) => String(nft.id)));
-      console.log('[LikedNFTsContext] Setting liked NFT IDs:', Array.from(likedIds));
       setLikedNFTIds(likedIds);
     } catch (e) {
       console.error('[LikedNFTsContext] Error refreshing liked NFTs:', e);
@@ -75,7 +73,5 @@ export const useLikedNFTs = () => {
   if (!context) {
     throw new Error('useLikedNFTs must be used within a LikedNFTsProvider');
   }
-
-  console.log('[LikedNFTsContext] Context used, liked IDs:', Array.from(context.likedNFTIds));
   return context;
 };

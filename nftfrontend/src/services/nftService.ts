@@ -51,7 +51,6 @@ class NFTService {
       const data: NFTResponse = await response.json();
       
       if (data.success) {
-        console.log('[nftService] getCombinedNFTs received data:', data.data);
         console.log('[nftService] First NFT ID:', data.data[0]?.id, 'Type:', typeof data.data[0]?.id);
         console.log('[nftService] All NFT IDs:', data.data.map(nft => ({ id: nft.id, type: typeof nft.id, source: nft.source })));
         return data.data;
@@ -135,12 +134,10 @@ class NFTService {
 
   async getUserLikedNFTs(userAddress: string): Promise<NFT[]> {
     try {
-      console.log('[nftService] getUserLikedNFTs called for:', userAddress);
       const response = await fetch(apiUrl(`/profiles/${userAddress}/liked/`));
       const data = await response.json();
       
       if (data.success) {
-        console.log('[nftService] getUserLikedNFTs received:', data.data.length, 'NFTs');
         return data.data || [];
       } else {
         console.error('Failed to fetch user liked NFTs:', data.error);

@@ -24,7 +24,6 @@ const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
 // Debug logging
 console.log('[NFT] Contract Address:', CONTRACT_ADDRESS);
-console.log('[NFT] Contract ABI available:', !!NFTMarketplaceABI?.abi);
 if (!CONTRACT_ADDRESS) {
   console.error('[NFT] Error: Contract address is not set. Please check your .env file');
 }
@@ -34,7 +33,7 @@ const Create = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -71,33 +70,81 @@ const Create = () => {
     multiple: false
   });
 
-  const uploadToIPFS = async (file: File) => {
-  try {
-    setIsUploading(true);
+  // Get perceptual hash from backend (replaces client-side SHA-256)
+  const calculatePerceptualHash = async (file: File): Promise<string> => {
+    console.log('[DEBUG] Calculating perceptual hash for:', file.name, 'Size:', file.size);
+
     const formData = new FormData();
     formData.append('file', file);
-    
-    const response = await fetch(apiUrl('/upload/ipfs/'), {
+
+    const response = await fetch(apiUrl('/nfts/calculate-hash/'), {
       method: 'POST',
       body: formData
     });
-    
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `HTTP ${response.status}`);
+      throw new Error(`Failed to calculate hash: HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
-    if (!data.success) throw new Error(data.error);
-    
-    return data.data.ipfsHash; // Updated to use ipfsHash
-  } catch (error) {
-    console.error('Error uploading to IPFS:', error);
-    throw error;
-  } finally {
-    setIsUploading(false);
-  }
-};
+    console.log('[DEBUG] Perceptual hash calculated:', data.perceptual_hash);
+    return data.perceptual_hash;
+  };
+
+  // Check if NFT with similar image already exists
+  const checkDuplicate = async (perceptualHash: string): Promise<boolean> => {
+    try {
+      console.log('[DEBUG] Checking duplicate for perceptual hash:', perceptualHash.substring(0, 16) + '...');
+      const response = await fetch(apiUrl('/nfts/check-duplicate/'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perceptual_hash: perceptualHash })
+      });
+
+      console.log('[DEBUG] Duplicate check response status:', response.status);
+      const data = await response.json();
+      console.log('[DEBUG] Duplicate check response:', data);
+
+      if (!data.success) throw new Error(data.error);
+
+      if (data.exists) {
+        console.log('[DEBUG] Similar image found! Similarity distance:', data.similarity);
+      }
+
+      return data.exists;
+    } catch (error) {
+      console.error('Error checking duplicate:', error);
+      throw error;
+    }
+  };
+
+  const uploadToIPFS = async (file: File) => {
+    try {
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(apiUrl('/upload/ipfs/'), {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.success) throw new Error(data.error);
+
+      return data.data.ipfsHash; // Updated to use ipfsHash
+    } catch (error) {
+      console.error('Error uploading to IPFS:', error);
+      throw error;
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const createMetadata = async (ipfsHash: string) => {
     const metadata: any = {
@@ -125,19 +172,34 @@ const Create = () => {
     e.preventDefault();
     if (!formData.file || !address || !signer) return;
 
-    let tokenId; // <-- Declare tokenId in function scope
+    let tokenId;
+    let perceptualHash: string;
 
     try {
       setIsMinting(true);
-      toast.loading('Preparing your NFT...', { id: 'minting' });
+      toast.loading('Analyzing image...', { id: 'minting' });
 
-      // 1. Upload image to IPFS
+      // 1. Calculate perceptual hash and check for similar images
+      perceptualHash = await calculatePerceptualHash(formData.file);
+
+      toast.loading('Checking for similar images...', { id: 'minting' });
+      const isDuplicate = await checkDuplicate(perceptualHash);
+
+      if (isDuplicate) {
+        toast.error('A similar NFT image already exists. Please upload a different image.', { id: 'minting' });
+        setIsMinting(false);
+        return;
+      }
+
+      toast.loading('Uploading to IPFS...', { id: 'minting' });
+
+      // 2. Upload image to IPFS
       const imageHash = await uploadToIPFS(formData.file);
       toast.loading('Uploading metadata...', { id: 'minting' });
-      
-      // 2. Create and upload metadata
+
+      // 3. Create and upload metadata
       const metadataHash = await createMetadata(imageHash);
-      
+
       // 3. Mint NFT
       if (!CONTRACT_ADDRESS) {
         throw new Error('Contract address is not configured. Please check your environment variables.');
@@ -149,14 +211,14 @@ const Create = () => {
 
       console.log('[NFT] Initializing contract with address:', CONTRACT_ADDRESS);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, NFTMarketplaceABI.abi, signer);
-      
+
       if (!contract) {
         throw new Error('Failed to initialize contract');
       }
 
       // Log contract details safely
       console.log('[NFT] Contract instance:', contract);
-      
+
       // Safely check and log available functions
       if (contract.functions) {
         const functions = Object.keys(contract.functions);
@@ -166,13 +228,13 @@ const Create = () => {
       }
 
       // Log interface functions from ABI
-      console.log('[NFT] Contract ABI functions:', 
+      console.log('[NFT] Contract ABI functions:',
         NFTMarketplaceABI.abi
           .filter((item: any) => item.type === 'function')
           .map((item: any) => item.name)
           .join(', ')
       );
-      
+
       toast.loading('Please confirm the transaction...', { id: 'minting' });
       const tx = await contract.mintNFT(
         formData.name,
@@ -256,6 +318,7 @@ const Create = () => {
           is_auction: formData.saleType === 'auction',
           collection: formData.collection || 'Default Collection',
           category: formData.category,
+          perceptual_hash: perceptualHash, // Include perceptual hash for similarity detection
         };
         await fetch(apiUrl('/nfts/register/'), {
           method: 'POST',
@@ -295,7 +358,7 @@ const Create = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <WalletGuard message="Connect your wallet to create NFTs">
         <div className="container mx-auto px-4 py-8">
           <div className="max-w-4xl mx-auto">
@@ -344,27 +407,27 @@ const Create = () => {
                     </div>
 
                     <div className="grid grid-cols-3 gap-3">
-                      <Button 
+                      <Button
                         type="button"
-                        variant="outline" 
+                        variant="outline"
                         className="flex items-center gap-2"
                         onClick={() => setFormData(prev => ({ ...prev, fileType: 'image' }))}
                       >
                         <Image className="h-4 w-4" />
                         Image
                       </Button>
-                      <Button 
+                      <Button
                         type="button"
-                        variant="outline" 
+                        variant="outline"
                         className="flex items-center gap-2"
                         onClick={() => setFormData(prev => ({ ...prev, fileType: 'video' }))}
                       >
                         <Video className="h-4 w-4" />
                         Video
                       </Button>
-                      <Button 
+                      <Button
                         type="button"
-                        variant="outline" 
+                        variant="outline"
                         className="flex items-center gap-2"
                         onClick={() => setFormData(prev => ({ ...prev, fileType: 'audio' }))}
                       >
@@ -410,19 +473,19 @@ const Create = () => {
                 <CardContent className="space-y-6">
                   <div className="space-y-2">
                     <Label htmlFor="name">Name*</Label>
-                    <Input 
-                      id="name" 
+                    <Input
+                      id="name"
                       value={formData.name}
                       onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="Enter NFT name"
-                      required 
+                      required
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="description">Description</Label>
-                    <Textarea 
-                      id="description" 
+                    <Textarea
+                      id="description"
                       value={formData.description}
                       onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
                       placeholder="Provide a detailed description of your NFT"
@@ -469,8 +532,8 @@ const Create = () => {
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="royalties">Creator Royalties</Label>
-                        <Switch 
-                          id="royalties" 
+                        <Switch
+                          id="royalties"
                           checked={formData.royaltyEnabled}
                           onCheckedChange={checked => setFormData(prev => ({ ...prev, royaltyEnabled: checked }))}
                         />
@@ -478,8 +541,8 @@ const Create = () => {
                       {formData.royaltyEnabled && (
                         <div className="space-y-2">
                           <Label htmlFor="royalty-percentage">Royalty Percentage (%)</Label>
-                          <Input 
-                            id="royalty-percentage" 
+                          <Input
+                            id="royalty-percentage"
                             type="number"
                             value={formData.royaltyPercentage}
                             onChange={e => setFormData(prev => ({ ...prev, royaltyPercentage: e.target.value }))}
@@ -501,7 +564,7 @@ const Create = () => {
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="put-on-sale">Put on marketplace</Label>
-                        <Switch 
+                        <Switch
                           id="put-on-sale"
                           checked={formData.putOnSale}
                           onCheckedChange={checked => setFormData(prev => ({ ...prev, putOnSale: checked }))}
@@ -511,7 +574,7 @@ const Create = () => {
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
                             <Label htmlFor="price">Price (ETH)</Label>
-                            <Input 
+                            <Input
                               id="price"
                               type="number"
                               value={formData.price}
@@ -543,7 +606,7 @@ const Create = () => {
                   </div>
 
                   <div className="pt-6">
-                    <Button 
+                    <Button
                       type="submit"
                       size="lg"
                       className="w-full bg-gradient-to-r from-purple-500 to-blue-600"

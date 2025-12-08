@@ -132,7 +132,6 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
-    console.log(`[ApiService] Making request to: ${url}`);
     
     const response = await fetch(url, {
       headers: {
@@ -151,7 +150,6 @@ class ApiService {
     }
 
     const data = await response.json();
-    console.log(`[ApiService] Response data:`, data);
     return data;
   }
 
