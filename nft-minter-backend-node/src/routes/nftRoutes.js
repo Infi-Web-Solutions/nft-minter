@@ -19,7 +19,8 @@ import {
     getNftByCombinedId,
     getNftStats,
     trackNftView,
-    getCollections
+    getCollections,
+    getExternalNft
 } from '../controllers/nftController.js';
 
 const router = express.Router();
@@ -39,6 +40,9 @@ router.get('/collections/by-likes/', getCollectionsByLikes);
 // Combined endpoints (must come before dynamic routes)
 router.get('/combined/', getCombinedNfts);
 router.get('/combined/:combined_id/', getNftByCombinedId);
+
+// External NFT
+router.post('/external/', getExternalNft);
 
 // Blockchain
 router.get('/contract/info/', getContractInfo);
