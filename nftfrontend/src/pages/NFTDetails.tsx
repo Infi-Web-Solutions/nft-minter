@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
 import { nftService } from '@/services/nftService';
-import { apiUrl } from '@/config';
+import { apiUrl, CONTRACT_ADDRESS } from '@/config';
 import { web3Service } from '@/services/web3Service';
 import { ethers } from 'ethers';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
@@ -56,6 +56,7 @@ const NFTDetails = () => {
   });
 
   const [following, setFollowing] = useState<any[]>([]);
+  const [mintTransactionHash, setMintTransactionHash] = useState<string | null>(null);
 
 // 3️⃣ Fetch following list for the current user
 useEffect(() => {
@@ -248,7 +249,14 @@ useEffect(() => {
         const activityId = id.startsWith('local_') ? id.replace('local_', '') : id;
         const res = await fetch(apiUrl(`/activities/?nft=${activityId}`));
         const data = await res.json();
-        if (data.success) setActivity(data.data);
+        if (data.success) {
+          setActivity(data.data);
+          // Find the mint transaction and extract its hash
+          const mintTx = data.data.find((act: any) => act.type === 'mint');
+          if (mintTx && mintTx.transaction_hash) {
+            setMintTransactionHash(mintTx.transaction_hash);
+          }
+        }
       } catch (e) { 
         console.error('Failed to fetch activity:', e);
       }
@@ -692,10 +700,37 @@ useEffect(() => {
                     </div>
                   </div>
 
+                  {/* Transaction Hash */}
+                  {mintTransactionHash && (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3">Transaction Hash</h3>
+                      <div className="flex items-center gap-2 p-3 bg-card/50 rounded-lg">
+                        <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
+                          {mintTransactionHash}
+                        </code>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => copyToClipboard(mintTransactionHash)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => window.open(`https://sepolia.etherscan.io/tx/${mintTransactionHash}`, '_blank')}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* NFT Owner Address */}
                   <div>
-                    <h3 className="text-lg font-semibold mb-3">Contract Address</h3>
+                    <h3 className="text-lg font-semibold mb-3">NFT Owner Address</h3>
                     <div className="flex items-center gap-2 p-3 bg-card/50 rounded-lg">
-                      <code className="text-sm text-muted-foreground flex-1">
+                      <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
                         {nft.owner_address || '0x0000000000000000000000000000000000000000'}
                       </code>
                       <Button 
@@ -705,7 +740,11 @@ useEffect(() => {
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${nft.owner_address}`, '_blank')}
+                      >
                         <ExternalLink className="h-4 w-4" />
                       </Button>
                     </div>
