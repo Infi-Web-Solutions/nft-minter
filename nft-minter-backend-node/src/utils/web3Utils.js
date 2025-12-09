@@ -74,6 +74,11 @@ class NFTMarketplaceWeb3 {
             // Test basic marketplace contract calls
             this._testContract();
 
+            // Test lending contract if it exists
+            if (this.lendingContract) {
+                this._testLendingContract();
+            }
+
         } catch (error) {
             console.error(`[Web3] Error initializing web3: ${error.message}`);
             throw error;
@@ -293,12 +298,31 @@ class NFTMarketplaceWeb3 {
 
     async _testContract() {
         try {
-            const name = await this.contract.methods.name().call();
-            const symbol = await this.contract.methods.symbol().call();
-            console.log(`[Web3] Contract name: ${name}`);
-            console.log(`[Web3] Contract symbol: ${symbol}`);
+            const contractInfo = await this.getContractInfo();
+            if (contractInfo && !contractInfo.error) {
+                console.log(`[Web3] Contract name: ${contractInfo.name}`);
+                console.log(`[Web3] Contract symbol: ${contractInfo.symbol}`);
+                console.log('marketplace:', contractInfo);
+            } else {
+                console.log(`[Web3] Warning: Could not get contract name/symbol.`);
+            }
         } catch (error) {
             console.log(`[Web3] Warning: Could not get contract name/symbol: ${error.message}`);
+        }
+    }
+
+    async _testLendingContract() {
+        try {
+            const lendingInfo = await this.getLendingContractInfo();
+            if (lendingInfo && !lendingInfo.error) {
+                console.log(`[Web3] Lending contract name: ${lendingInfo.name || 'N/A'}`);
+                console.log(`[Web3] Lending contract symbol: ${lendingInfo.symbol || 'N/A'}`);
+                console.log('lending:', lendingInfo);
+            } else if (lendingInfo && lendingInfo.error) {
+                console.log(`[Web3] Could not get lending contract info: ${lendingInfo.error}`);
+            }
+        } catch (error) {
+            console.log(`[Web3] Warning: Could not get lending contract info: ${error.message}`);
         }
     }
 
