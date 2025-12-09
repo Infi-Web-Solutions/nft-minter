@@ -18,9 +18,12 @@ class NFTMarketplaceWeb3 {
         this.contractAddress = process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS;
 
         // New lending contract address (deployed NFTCollateralLendingIntegrated)
-        // Accept common env names: NFTCollateralLendingIntegrated_Address or NFT_COLLATERAL_CONTRACT_ADDRESS
         this.lendingContractAddress = process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS || process.env.NFT_COLLATERAL_ADDRESS || null;
-        this.ALCHEMY_API_URL= process.env.ALCHEMY_API_URL || null ;
+
+        // Wrapped Leasing contract address
+        this.wrappedLeasingAddress = process.env.WrappedLeasing_Address || process.env.WRAPPED_LEASING_ADDRESS || null;
+
+        this.ALCHEMY_API_URL = process.env.ALCHEMY_API_URL || null;
 
         console.log(`[Web3] Environment variables loaded:`);
         console.log(`[Web3] ALCHEMY_API_URL: ${this.ALCHEMY_API_URL}`);
@@ -28,6 +31,7 @@ class NFTMarketplaceWeb3 {
         console.log(`[Web3] Using Sepolia URL: ${this.sepoliaUrl}`);
         console.log(`[Web3] Contract address: ${this.contractAddress}`);
         console.log(`[Web3] Lending contract address: ${this.lendingContractAddress}`);
+        console.log(`[Web3] Wrapped Leasing address: ${this.wrappedLeasingAddress}`);
 
         try {
             this.web3 = new Web3(new Web3.providers.HttpProvider(this.sepoliaUrl));
@@ -71,12 +75,33 @@ class NFTMarketplaceWeb3 {
                 this.lendingContract = null;
             }
 
+            // Wrapped Leasing contract initialization
+            if (this.wrappedLeasingAddress) {
+                try {
+                    this.wrappedLeasingAddress = this.web3.utils.toChecksumAddress(this.wrappedLeasingAddress);
+                    this.wrappedLeasingAbi = this._getWrappedLeasingAbi();
+                    this.wrappedLeasingContract = new this.web3.eth.Contract(this.wrappedLeasingAbi, this.wrappedLeasingAddress);
+                    console.log(`[Web3] WrappedLeasing contract initialized at ${this.wrappedLeasingAddress}`);
+                } catch (err) {
+                    console.warn('[Web3] Failed to initialize WrappedLeasing contract:', err.message);
+                    this.wrappedLeasingContract = null;
+                }
+            } else {
+                console.log('[Web3] No WrappedLeasing address provided');
+                this.wrappedLeasingContract = null;
+            }
+
             // Test basic marketplace contract calls
             this._testContract();
 
             // Test lending contract if it exists
             if (this.lendingContract) {
                 this._testLendingContract();
+            }
+
+            // Test wrapped leasing contract if it exists
+            if (this.wrappedLeasingContract) {
+                this._testWrappedLeasingContract();
             }
 
         } catch (error) {
@@ -92,6 +117,7 @@ class NFTMarketplaceWeb3 {
             // Try to load from compiled contract artifacts
             const artifactsPath = path.join(
                 __dirname,
+                '..',
                 '..',
                 '..',
                 'smartcontract',
@@ -194,6 +220,28 @@ class NFTMarketplaceWeb3 {
                     "outputs": [],
                     "stateMutability": "nonpayable",
                     "type": "function"
+                },
+                // External Listing Functions
+                {
+                    "inputs": [{ "internalType": "address", "name": "nftContract", "type": "address" }, { "internalType": "uint256", "name": "tokenId", "type": "uint256" }, { "internalType": "uint256", "name": "price", "type": "uint256" }],
+                    "name": "listExternalNFT",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "address", "name": "nftContract", "type": "address" }, { "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "buyExternalNFT",
+                    "outputs": [],
+                    "stateMutability": "payable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "address", "name": "nftContract", "type": "address" }, { "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "cancelExternalListing",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
                 }
             ];
         } catch (error) {
@@ -208,6 +256,7 @@ class NFTMarketplaceWeb3 {
             console.log('[Web3] Getting lending contract ABI...');
             const lendingArtifactsPath = path.join(
                 __dirname,
+                '..',
                 '..',
                 '..',
                 'smartcontract',
@@ -288,10 +337,81 @@ class NFTMarketplaceWeb3 {
                     "outputs": [],
                     "stateMutability": "nonpayable",
                     "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "address", "name": "nft", "type": "address" }, { "internalType": "bool", "name": "isWrapped", "type": "bool" }],
+                    "name": "setWrappedLeasingContract",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
                 }
             ];
         } catch (error) {
             console.error(`[Web3] Error loading lending ABI: ${error.message}`);
+            throw error;
+        }
+    }
+
+    // Load WrappedLeasing ABI
+    _getWrappedLeasingAbi() {
+        try {
+            console.log('[Web3] Getting WrappedLeasing ABI...');
+            const artifactsPath = path.join(
+                __dirname,
+                '..',
+                '..',
+                '..',
+                'smartcontract',
+                'artifacts',
+                'contracts',
+                'WrappedLeasing.sol',
+                'WrappedLeasing.json'
+            );
+
+            if (fs.existsSync(artifactsPath)) {
+                try {
+                    const contractData = JSON.parse(fs.readFileSync(artifactsPath, 'utf8'));
+                    if (contractData.abi && contractData.abi.length > 0) {
+                        return contractData.abi;
+                    }
+                } catch (err) {
+                    console.warn('[Web3] Failed to parse WrappedLeasing artifact:', err.message);
+                }
+            }
+
+            console.log('[Web3] Using minimal WrappedLeasing fallback ABI');
+            return [
+                {
+                    "inputs": [{ "internalType": "address", "name": "nft", "type": "address" }, { "internalType": "uint256", "name": "tokenId", "type": "uint256" }, { "internalType": "address", "name": "renter", "type": "address" }, { "internalType": "uint256", "name": "durationSeconds", "type": "uint256" }, { "internalType": "string", "name": "metadataURI", "type": "string" }],
+                    "name": "wrap",
+                    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                    "stateMutability": "payable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "wId", "type": "uint256" }],
+                    "name": "unwrap",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "wId", "type": "uint256" }],
+                    "name": "getLeaseStatus",
+                    "outputs": [{ "internalType": "bool", "name": "isActive", "type": "bool" }, { "internalType": "uint256", "name": "timeRemaining", "type": "uint256" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "wId", "type": "uint256" }],
+                    "name": "getWrapped",
+                    "outputs": [{ "components": [{ "internalType": "address", "name": "originalNft", "type": "address" }, { "internalType": "uint256", "name": "originalTokenId", "type": "uint256" }, { "internalType": "address", "name": "owner", "type": "address" }, { "internalType": "uint256", "name": "validUntil", "type": "uint256" }, { "internalType": "bool", "name": "active", "type": "bool" }], "internalType": "struct WrappedLeasing.WrappedInfo", "name": "", "type": "tuple" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                }
+            ];
+        } catch (error) {
+            console.error(`[Web3] Error loading WrappedLeasing ABI: ${error.message}`);
             throw error;
         }
     }
@@ -323,6 +443,17 @@ class NFTMarketplaceWeb3 {
             }
         } catch (error) {
             console.log(`[Web3] Warning: Could not get lending contract info: ${error.message}`);
+        }
+    }
+
+    async _testWrappedLeasingContract() {
+        try {
+            const name = await this.wrappedLeasingContract.methods.name().call();
+            const symbol = await this.wrappedLeasingContract.methods.symbol().call();
+            console.log(`[Web3] WrappedLeasing name: ${name}`);
+            console.log(`[Web3] WrappedLeasing symbol: ${symbol}`);
+        } catch (error) {
+            console.log(`[Web3] Warning: Could not get WrappedLeasing info: ${error.message}`);
         }
     }
 
@@ -492,6 +623,99 @@ class NFTMarketplaceWeb3 {
             return result;
         } catch (error) {
             console.error('[Web3] Error withdrawing ERC20:', error.message);
+            throw error;
+        }
+    }
+
+    async setWrappedLeasingContract(nftAddress, isWrapped, fromAddress) {
+        if (!this.lendingContract) throw new Error('Lending contract not initialized');
+        try {
+            const gas = await this.lendingContract.methods.setWrappedLeasingContract(nftAddress, isWrapped).estimateGas({ from: fromAddress });
+            const result = await this.lendingContract.methods.setWrappedLeasingContract(nftAddress, isWrapped).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error setting wrapped leasing contract:', error.message);
+            throw error;
+        }
+    }
+
+    // Wrapped Leasing Methods
+    async wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, fromAddress) {
+        if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
+        try {
+            const gas = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI).estimateGas({ from: fromAddress });
+            const result = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error wrapping NFT:', error.message);
+            throw error;
+        }
+    }
+
+    async unwrap(wId, fromAddress) {
+        if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
+        try {
+            const gas = await this.wrappedLeasingContract.methods.unwrap(wId).estimateGas({ from: fromAddress });
+            const result = await this.wrappedLeasingContract.methods.unwrap(wId).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error unwrapping NFT:', error.message);
+            throw error;
+        }
+    }
+
+    async getLeaseStatus(wId) {
+        if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
+        try {
+            const status = await this.wrappedLeasingContract.methods.getLeaseStatus(wId).call();
+            return status;
+        } catch (error) {
+            console.error('[Web3] Error getting lease status:', error.message);
+            throw error;
+        }
+    }
+
+    async getWrapped(wId) {
+        if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
+        try {
+            const info = await this.wrappedLeasingContract.methods.getWrapped(wId).call();
+            return info;
+        } catch (error) {
+            console.error('[Web3] Error getting wrapped info:', error.message);
+            throw error;
+        }
+    }
+
+    // External Listing Methods (Marketplace)
+    async listExternalNFT(nftContract, tokenId, price, fromAddress) {
+        try {
+            const gas = await this.contract.methods.listExternalNFT(nftContract, tokenId, price).estimateGas({ from: fromAddress });
+            const result = await this.contract.methods.listExternalNFT(nftContract, tokenId, price).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error listing external NFT:', error.message);
+            throw error;
+        }
+    }
+
+    async buyExternalNFT(nftContract, tokenId, value, fromAddress) {
+        try {
+            const gas = await this.contract.methods.buyExternalNFT(nftContract, tokenId).estimateGas({ from: fromAddress, value });
+            const result = await this.contract.methods.buyExternalNFT(nftContract, tokenId).send({ from: fromAddress, value, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error buying external NFT:', error.message);
+            throw error;
+        }
+    }
+
+    async cancelExternalListing(nftContract, tokenId, fromAddress) {
+        try {
+            const gas = await this.contract.methods.cancelExternalListing(nftContract, tokenId).estimateGas({ from: fromAddress });
+            const result = await this.contract.methods.cancelExternalListing(nftContract, tokenId).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error cancelling external listing:', error.message);
             throw error;
         }
     }
