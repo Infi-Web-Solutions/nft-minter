@@ -47,19 +47,31 @@ import Web3 from 'web3';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment variables from the .env file in the backend directory
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 
 class NFTMarketplaceWeb3 {
     constructor() {
         console.log("[Web3] Initializing NFTMarketplaceWeb3...");
         
-        this.sepoliaUrl = process.env.ALCHEMY_API_URL || "https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE";
-        this.contractAddress = process.env.NFT_CONTRACT_ADDRESS || "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201";
-        
+        this.sepoliaUrl = "https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE";
+        this.contractAddress = process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201";
+
+        // New lending contract address (deployed NFTCollateralLendingIntegrated)
+        // Accept common env names: NFTCollateralLendingIntegrated_Address or NFT_COLLATERAL_CONTRACT_ADDRESS
+        this.lendingContractAddress = process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS || process.env.NFT_COLLATERAL_ADDRESS || null;
+
+        console.log(`[Web3] Environment variables loaded:`);
+        console.log(`[Web3] ALCHEMY_API_URL: ${process.env.ALCHEMY_API_URL ? 'SET' : 'NOT SET'}`);
+        console.log(`[Web3] TESTNET_URL: ${process.env.TESTNET_URL ? 'SET' : 'NOT SET'}`);
         console.log(`[Web3] Using Sepolia URL: ${this.sepoliaUrl}`);
         console.log(`[Web3] Contract address: ${this.contractAddress}`);
+        console.log(`[Web3] Lending contract address: ${this.lendingContractAddress}`);
         
         try {
             this.web3 = new Web3(new Web3.providers.HttpProvider(this.sepoliaUrl));
@@ -73,20 +85,37 @@ class NFTMarketplaceWeb3 {
             this.contractAddress = this.web3.utils.toChecksumAddress(this.contractAddress);
             console.log(`[Web3] Using checksum address: ${this.contractAddress}`);
             
-            // Get contract ABI
+            // Get contract ABI for marketplace
             this.contractAbi = this._getContractAbi();
-            
             if (!this.contractAbi || this.contractAbi.length === 0) {
-                throw new Error("Contract ABI is empty or invalid");
+                console.warn("[Web3] Contract ABI is empty or invalid for marketplace contract - continuing with limited fallback ABI");
             }
-            
-            console.log(`[Web3] Loaded ABI with ${this.contractAbi.length} entries`);
-            
-            // Initialize contract
+            console.log(`[Web3] Loaded marketplace ABI with ${this.contractAbi ? this.contractAbi.length : 0} entries`);
+
+            // Initialize marketplace contract
             this.contract = new this.web3.eth.Contract(this.contractAbi, this.contractAddress);
-            console.log("[Web3] Contract successfully initialized");
-            
-            // Test basic contract calls
+            console.log("[Web3] Marketplace contract successfully initialized");
+
+            // Lending contract initialization (if address provided)
+            if (this.lendingContractAddress) {
+                try {
+                    this.lendingContractAddress = this.web3.utils.toChecksumAddress(this.lendingContractAddress);
+                    this.lendingAbi = this._getLendingAbi();
+                    if (!this.lendingAbi || this.lendingAbi.length === 0) {
+                        console.warn('[Web3] Lending ABI empty - using minimal fallback signatures');
+                    }
+                    this.lendingContract = new this.web3.eth.Contract(this.lendingAbi, this.lendingContractAddress);
+                    console.log(`[Web3] Lending contract initialized at ${this.lendingContractAddress}`);
+                } catch (err) {
+                    console.warn('[Web3] Failed to initialize lending contract:', err.message);
+                    this.lendingContract = null;
+                }
+            } else {
+                console.log('[Web3] No lending contract address provided via env; lending features disabled');
+                this.lendingContract = null;
+            }
+
+            // Test basic marketplace contract calls
             this._testContract();
             
         } catch (error) {
@@ -211,6 +240,72 @@ class NFTMarketplaceWeb3 {
             throw error;
         }
     }
+
+    // Load lending contract ABI (NFTCollateralLendingIntegrated)
+    _getLendingAbi() {
+        try {
+            console.log('[Web3] Getting lending contract ABI...');
+            const lendingArtifactsPath = path.join(
+                __dirname,
+                '..',
+                '..',
+                'smartcontract',
+                'artifacts',
+                'contracts',
+                'NFTCollateralLendingIntegrated.sol',
+                'NFTCollateralLendingIntegrated.json'
+            );
+
+            console.log(`[Web3] Looking for lending ABI at: ${lendingArtifactsPath}`);
+            if (fs.existsSync(lendingArtifactsPath)) {
+                try {
+                    const contractData = JSON.parse(fs.readFileSync(lendingArtifactsPath, 'utf8'));
+                    if (contractData.abi && contractData.abi.length > 0) {
+                        console.log('[Web3] Loaded lending ABI from artifact');
+                        return contractData.abi;
+                    }
+                } catch (err) {
+                    console.warn('[Web3] Failed to parse lending artifact:', err.message);
+                }
+            }
+
+            console.log('[Web3] Using minimal lending fallback ABI');
+            // Minimal lending ABI (read & core function signatures)
+            return [
+                {
+                    "inputs": [{"internalType":"uint256","name":"loanId","type":"uint256"}],
+                    "name":"computeRepayAmount",
+                    "outputs":[{"internalType":"uint256","name":"","type":"uint256"}],
+                    "stateMutability":"view",
+                    "type":"function"
+                },
+                {
+                    "inputs":[{"internalType":"uint256","name":"loanId","type":"uint256"}],
+                    "name":"fundLoan",
+                    "outputs":[],
+                    "stateMutability":"payable",
+                    "type":"function"
+                },
+                {
+                    "inputs":[{"internalType":"uint256","name":"loanId","type":"uint256"}],
+                    "name":"repayLoan",
+                    "outputs":[],
+                    "stateMutability":"payable",
+                    "type":"function"
+                },
+                {
+                    "inputs":[{"internalType":"address","name":"nftContract","type":"address"},{"internalType":"uint256","name":"tokenId","type":"uint256"},{"internalType":"address","name":"currency","type":"address"},{"internalType":"uint256","name":"principal","type":"uint256"},{"internalType":"uint256","name":"interestBps","type":"uint256"},{"internalType":"uint256","name":"duration","type":"uint256"},{"internalType":"uint256","name":"maxLTV","type":"uint256"}],
+                    "name":"createLoanRequest",
+                    "outputs":[{"internalType":"uint256","name":"","type":"uint256"}],
+                    "stateMutability":"nonpayable",
+                    "type":"function"
+                }
+            ];
+        } catch (error) {
+            console.error(`[Web3] Error loading lending ABI: ${error.message}`);
+            throw error;
+        }
+    }
     
     async _testContract() {
         try {
@@ -258,6 +353,44 @@ class NFTMarketplaceWeb3 {
             };
         } catch (error) {
             return { error: error.message };
+        }
+    }
+
+    // Lending contract helpers
+    async getLendingContractInfo() {
+        if (!this.lendingContract) return { error: 'Lending contract not initialized' };
+        try {
+            let name = null;
+            let symbol = null;
+            try {
+                name = await this.lendingContract.methods.name().call();
+                symbol = await this.lendingContract.methods.symbol().call();
+            } catch (e) {
+                // Not all lending contracts implement name/symbol
+            }
+            const chainId = await this.web3.eth.getChainId();
+            return {
+                name,
+                symbol,
+                address: this.lendingContractAddress,
+                network: 'Sepolia Testnet',
+                chainId
+            };
+        } catch (error) {
+            return { error: error.message };
+        }
+    }
+
+    async computeRepayAmount(loanId) {
+        if (!this.lendingContract) {
+            throw new Error('Lending contract not initialized');
+        }
+        try {
+            const amount = await this.lendingContract.methods.computeRepayAmount(loanId).call();
+            return amount;
+        } catch (error) {
+            console.error('[Web3] Error computing repay amount:', error.message);
+            throw error;
         }
     }
     
