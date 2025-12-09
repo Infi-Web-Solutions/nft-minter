@@ -1,22 +1,27 @@
 {
   "_format": "hh-sol-artifact-1",
-  "contractName": "ERC165",
-  "sourceName": "@openzeppelin/contracts/utils/introspection/ERC165.sol",
+  "contractName": "IWrappedLeasing",
+  "sourceName": "contracts/NFTCollateralLendingIntegrated.sol",
   "abi": [
     {
       "inputs": [
         {
-          "internalType": "bytes4",
-          "name": "interfaceId",
-          "type": "bytes4"
+          "internalType": "uint256",
+          "name": "wId",
+          "type": "uint256"
         }
       ],
-      "name": "supportsInterface",
+      "name": "getLeaseStatus",
       "outputs": [
         {
           "internalType": "bool",
-          "name": "",
+          "name": "isActive",
           "type": "bool"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timeRemaining",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
