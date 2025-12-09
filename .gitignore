@@ -26,3 +26,6 @@ dist-ssr
 env
 *.txt
 node_modules
+smartcontract\artifacts\@openzeppelin
+smartcontract\artifacts\build-info
+
