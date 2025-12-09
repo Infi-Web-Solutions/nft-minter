@@ -2,6 +2,7 @@ require("@nomicfoundation/hardhat-toolbox");
 require("hardhat-gas-reporter");
 require("solidity-coverage");
 require('dotenv').config();
+require("./tasks/compile-one");
 
 // Debug: Check if environment variables are loaded
 console.log("TESTNET_URL:", process.env.TESTNET_URL);
