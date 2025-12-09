@@ -517,6 +517,7 @@ export const getCombinedNfts = async (req, res) => {
             const like_count = await Favorite.countDocuments({ nft: nft._id });
             return {
                 id: `local_${nft._id}`,
+                nft_address: `local_${nft._id}`, // Unique NFT identifier
                 token_id: nft.token_id,
                 name: nft.name,
                 description: nft.description,
@@ -573,6 +574,7 @@ export const getNftDetail = async (req, res) => {
         }
         const nft_data = {
             id: nft._id,
+            nft_address: `local_${nft._id}`, // Unique NFT identifier
             token_id: nft.token_id,
             name: nft.name,
             description: nft.description,
@@ -1054,6 +1056,7 @@ export const getNftByCombinedId = async (req, res) => {
 
                 const nftData = {
                     id: `local_${nft._id}`,
+                    nft_address: `local_${nft._id}`, // Unique NFT identifier
                     token_id: nft.token_id,
                     name: nft.name,
                     description: nft.description,
@@ -1274,5 +1277,193 @@ export const trackNftView = async (req, res) => {
     } catch (error) {
         console.error(`[ERROR] trackNftView: ${error}`);
         return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Calculate loan details based on NFT value
+const calculateLoanDetails = (nftPriceETH) => {
+    // If no price, return null
+    if (!nftPriceETH || nftPriceETH <= 0) {
+        return null;
+    }
+
+    const ETH_TO_USD = 1700; // Convert ETH to USD (you can make this dynamic)
+    const LTV_RATIO = 0.60; // 60% Loan-to-Value ratio (conservative)
+    const ANNUAL_INTEREST_RATE = 0.03; // 3% APR
+    
+    const nftValueETH = parseFloat(nftPriceETH);
+    const nftValueUSD = nftValueETH * ETH_TO_USD;
+    
+    // Calculate max loan amount (60% of NFT value)
+    const maxLoanETH = nftValueETH * LTV_RATIO;
+    const maxLoanUSD = nftValueUSD * LTV_RATIO;
+    
+    // Calculate interest for different loan periods
+    const calculateInterestForPeriod = (principal, rate, months) => {
+        const monthlyRate = rate / 12;
+        const totalInterest = principal * monthlyRate * months;
+        const totalRepayment = principal + totalInterest;
+        const monthlyPayment = totalRepayment / months;
+        
+        return {
+            total_interest: parseFloat(totalInterest.toFixed(4)),
+            total_repayment: parseFloat(totalRepayment.toFixed(4)),
+            monthly_payment: parseFloat(monthlyPayment.toFixed(4))
+        };
+    };
+    
+    return {
+        nft_value: {
+            eth: parseFloat(nftValueETH.toFixed(4)),
+            usd: parseFloat(nftValueUSD.toFixed(2))
+        },
+        ltv_ratio: LTV_RATIO,
+        ltv_percentage: `${(LTV_RATIO * 100).toFixed(0)}%`,
+        max_loan: {
+            eth: parseFloat(maxLoanETH.toFixed(4)),
+            usd: parseFloat(maxLoanUSD.toFixed(2))
+        },
+        interest_rate: {
+            annual: ANNUAL_INTEREST_RATE,
+            annual_percentage: `${(ANNUAL_INTEREST_RATE * 100).toFixed(0)}%`,
+            monthly: parseFloat((ANNUAL_INTEREST_RATE / 12).toFixed(4))
+        },
+        loan_terms: {
+            '3_months': {
+                period: '3 months',
+                ...calculateInterestForPeriod(maxLoanETH, ANNUAL_INTEREST_RATE, 3),
+                currency: 'ETH'
+            },
+            '6_months': {
+                period: '6 months',
+                ...calculateInterestForPeriod(maxLoanETH, ANNUAL_INTEREST_RATE, 6),
+                currency: 'ETH'
+            },
+            '12_months': {
+                period: '12 months',
+                ...calculateInterestForPeriod(maxLoanETH, ANNUAL_INTEREST_RATE, 12),
+                currency: 'ETH'
+            }
+        },
+        liquidation_threshold: {
+            ratio: 0.75, // 75% - if NFT value drops to 75% of original, liquidation may occur
+            percentage: '75%',
+            value_eth: parseFloat((nftValueETH * 0.75).toFixed(4)),
+            value_usd: parseFloat((nftValueUSD * 0.75).toFixed(2))
+        }
+    };
+};
+
+// Get external NFT metadata from any contract
+export const getExternalNft = async (req, res) => {
+    try {
+        const { contract_address, token_id } = req.body;
+        
+        console.log(`[DEBUG] getExternalNft called with contract: ${contract_address}, token: ${token_id}`);
+        
+        if (!contract_address || !token_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Both contract_address and token_id are required'
+            });
+        }
+        
+        // Always check internal database first for ANY contract
+        // This handles NFTs that were minted through this platform
+        console.log(`[DEBUG] Checking internal database for token_id: ${token_id}`);
+        const internalNft = await NFT.findOne({ token_id: parseInt(token_id) });
+        
+        if (internalNft) {
+            console.log(`[DEBUG] Found NFT in internal database - Name: ${internalNft.name}`);
+            
+            // Calculate loan details based on NFT price
+            const loanDetails = calculateLoanDetails(internalNft.price);
+            
+            // Return data from our database (most complete data)
+            const formattedData = {
+                id: `local_${internalNft._id}`,
+                nft_address: `local_${internalNft._id}`,
+                token_id: internalNft.token_id,
+                name: internalNft.name,
+                description: internalNft.description,
+                image_url: internalNft.image_url,
+                token_uri: internalNft.token_uri,
+                owner_address: internalNft.owner_address,
+                creator_address: internalNft.creator_address,
+                collection: internalNft.nft_collection || 'NFTMarketplace',
+                category: internalNft.category || 'Art',
+                contract_address: contract_address,
+                is_listed: internalNft.is_listed,
+                is_auction: internalNft.is_auction,
+                price: internalNft.price ? parseFloat(internalNft.price) : null,
+                source: 'internal',
+                blockchain_data: {
+                    contract_address: contract_address,
+                    token_id: token_id,
+                    owner: internalNft.owner_address,
+                },
+                properties: [],
+                collateral_lending: loanDetails // Add loan calculation details
+            };
+            
+            return res.json({
+                success: true,
+                data: formattedData
+            });
+        }
+        
+        // If not in our database, fetch from blockchain (external NFT)
+        console.log(`[DEBUG] NFT not in database, fetching from blockchain`);
+        const nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+        
+        if (!nftData.success) {
+            return res.status(404).json({
+                success: false,
+                error: 'NFT not found on blockchain'
+            });
+        }
+        
+        console.log(`[DEBUG] External NFT fetched - Name: ${nftData.name}, Image: ${nftData.image ? 'yes' : 'no'}`);
+        
+        // Format response similar to internal NFTs
+        const formattedData = {
+            id: `external_${contract_address}_${token_id}`,
+            nft_address: `${contract_address}:${token_id}`,
+            token_id: parseInt(token_id),
+            name: nftData.name,
+            description: nftData.description,
+            image_url: nftData.image,
+            token_uri: nftData.token_uri,
+            owner_address: nftData.owner_address,
+            creator_address: nftData.owner_address, // For external NFTs, we assume owner is creator
+            collection: nftData.collection_name,
+            category: 'External NFT',
+            contract_address: contract_address,
+            is_listed: false,
+            is_auction: false,
+            price: null,
+            source: 'external',
+            blockchain_data: {
+                contract_address: contract_address,
+                token_id: token_id,
+                owner: nftData.owner_address,
+                collection_name: nftData.collection_name,
+                symbol: nftData.symbol,
+                metadata: nftData.metadata
+            },
+            properties: nftData.attributes || []
+        };
+        
+        return res.json({
+            success: true,
+            data: formattedData
+        });
+        
+    } catch (error) {
+        console.error(`[ERROR] getExternalNft: ${error}`);
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 };
