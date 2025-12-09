@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
@@ -23,6 +24,9 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
     event NFTDelisted(uint256 indexed tokenId, address indexed seller);
     event CollectionCreated(string indexed collectionName, address indexed creator);
     event RoyaltyPaid(uint256 indexed tokenId, address indexed creator, uint256 amount);
+    event ExternalNFTListed(address indexed nftContract, uint256 indexed tokenId, address indexed seller, uint256 price);
+    event ExternalNFTSold(address indexed nftContract, uint256 indexed tokenId, address indexed seller, address buyer, uint256 price);
+    event ExternalNFTDelisted(address indexed nftContract, uint256 indexed tokenId, address indexed seller);
 
     // Structs
     struct Listing {
@@ -34,6 +38,12 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         uint256 startingPrice;
         uint256 highestBid;
         address highestBidder;
+    }
+
+    struct ExternalListing {
+        address seller;
+        uint256 price;
+        bool isActive;
     }
 
     struct Collection {
@@ -68,6 +78,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
     mapping(address => uint256[]) public userListings;
     mapping(uint256 => bool) public tokenExists;
     mapping(uint256 => string) private _tokenURIs;
+    mapping(address => mapping(uint256 => ExternalListing)) public externalListings;
 
     // Modifiers
     modifier tokenExistsModifier(uint256 tokenId) {
@@ -381,6 +392,62 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      */
     function withdrawFees() external onlyOwner {
         payable(owner()).transfer(address(this).balance);
+    }
+
+    /* ==========================
+       External NFT Support
+       ========================== */
+    function listExternalNFT(address nftContract, uint256 tokenId, uint256 price) external nonReentrant {
+        require(price > 0, "Price > 0");
+        require(!externalListings[nftContract][tokenId].isActive, "Already listed");
+        
+        // Transfer NFT to marketplace
+        IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+
+        externalListings[nftContract][tokenId] = ExternalListing({
+            seller: msg.sender,
+            price: price,
+            isActive: true
+        });
+
+        emit ExternalNFTListed(nftContract, tokenId, msg.sender, price);
+    }
+
+    function buyExternalNFT(address nftContract, uint256 tokenId) external payable nonReentrant {
+        ExternalListing storage listing = externalListings[nftContract][tokenId];
+        require(listing.isActive, "Not listed");
+        require(msg.value == listing.price, "Incorrect price");
+
+        address seller = listing.seller;
+        uint256 price = listing.price;
+
+        // Calculate fee (only marketplace fee for external NFTs, no royalties tracked)
+        uint256 feeAmount = (price * marketplaceFee) / BASIS_POINTS;
+        uint256 sellerAmount = price - feeAmount;
+
+        // Transfer NFT to buyer
+        IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);
+
+        // Clear listing
+        delete externalListings[nftContract][tokenId];
+
+        // Payments
+        payable(seller).transfer(sellerAmount);
+        payable(owner()).transfer(feeAmount);
+
+        emit ExternalNFTSold(nftContract, tokenId, seller, msg.sender, price);
+    }
+
+    function cancelExternalListing(address nftContract, uint256 tokenId) external nonReentrant {
+        ExternalListing storage listing = externalListings[nftContract][tokenId];
+        require(listing.isActive, "Not listed");
+        require(listing.seller == msg.sender, "Not seller");
+
+        // Return NFT
+        IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);
+
+        delete externalListings[nftContract][tokenId];
+        emit ExternalNFTDelisted(nftContract, tokenId, msg.sender);
     }
 
     // Helper functions

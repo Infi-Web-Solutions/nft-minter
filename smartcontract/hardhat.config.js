@@ -1,24 +1,47 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("hardhat-gas-reporter");
 require("solidity-coverage");
-require('dotenv').config();
+require("dotenv").config();
 require("./tasks/compile-one");
 
-// Debug: Check if environment variables are loaded
+// Debug Logs
 console.log("TESTNET_URL:", process.env.TESTNET_URL);
 console.log("PRIVATE_KEY exists:", !!process.env.PRIVATE_KEY);
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: "0.8.20",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200,
+    compilers: [
+      {
+        version: "0.8.20",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200
+          }
+        }
       },
-    },
-  },
+      {
+        version: "0.8.21",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200
+          }
+        }
+      },
+      {
+        version: "0.8.22",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200
+          }
+        }
+      }
+    ]
+  },   // ✅ COMMA ADDED HERE
+
   networks: {
     hardhat: {
       chainId: 1337,
@@ -35,11 +58,13 @@ module.exports = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },
+
   gasReporter: {
-    enabled: process.env.REPORT_GAS !== undefined,
+    enabled: !!process.env.REPORT_GAS,
     currency: "USD",
   },
+
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY,
   },
-}; 
+};

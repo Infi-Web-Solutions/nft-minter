@@ -7,6 +7,10 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IWrappedLeasing {
+    function getLeaseStatus(uint256 wId) external view returns (bool isActive, uint256 timeRemaining);
+}
+
 /**
  * @title NFTCollateralLendingIntegrated
  * @dev Lending contract supporting marketplace NFTs and other ERC721 NFTs
@@ -46,6 +50,9 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
     // Marketplace NFTs approved automatically
     mapping(address => bool) public marketplaceNFTs;
 
+    // Wrapped Leasing contracts
+    mapping(address => bool) public wrappedLeasingContracts;
+
     // Events
     event LoanRequested(uint256 indexed loanId, address indexed borrower, address nftContract, uint256 tokenId, address currency, uint256 principal, uint256 interestBps, uint256 duration, bool isMarketplaceNFT);
     event LoanCancelled(uint256 indexed loanId, address indexed borrower);
@@ -56,8 +63,8 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
     event WithdrawnERC20(address indexed user, address indexed token, uint256 amount);
 
     constructor(address initialOwner) Ownable(initialOwner) {
-    nextLoanId = 1;
-}
+        nextLoanId = 1;
+    }
 
 
     /* ==========================
@@ -73,6 +80,10 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
 
     function setMarketplaceNFT(address nft, bool isMarketplace) external onlyOwner {
         marketplaceNFTs[nft] = isMarketplace;
+    }
+
+    function setWrappedLeasingContract(address nft, bool isWrapped) external onlyOwner {
+        wrappedLeasingContracts[nft] = isWrapped;
     }
 
     /* ==========================
@@ -111,6 +122,13 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
 
         if (useWhitelist) {
             require(nftWhitelist[nftContract], "NFT not whitelisted");
+        }
+
+        // Check if it's a wrapped lease and verify duration
+        if (wrappedLeasingContracts[nftContract]) {
+            (bool isActive, uint256 timeRemaining) = IWrappedLeasing(nftContract).getLeaseStatus(tokenId);
+            require(isActive, "Lease not active");
+            require(timeRemaining >= duration, "Lease expires before loan");
         }
 
         bool isMarketNFT = marketplaceNFTs[nftContract];
