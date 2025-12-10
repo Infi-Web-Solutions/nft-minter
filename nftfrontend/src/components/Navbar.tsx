@@ -138,7 +138,7 @@ const Navbar = () => {
                   <NavigationMenuItem>
                     <NavigationMenuTrigger>Activity</NavigationMenuTrigger>
                     <NavigationMenuContent>
-                      <div className="grid gap-3 p-6 w-[300px]">
+                      <div className="grid gap-3 p-6 w-[350px]">
                         <NavigationMenuLink asChild>
                           <Link
                             to="/activity"
@@ -155,6 +155,24 @@ const Navbar = () => {
                           >
                             <div className="text-sm font-medium">Statistics</div>
                             <p className="text-sm text-muted-foreground">Market analytics and insights</p>
+                          </Link>
+                        </NavigationMenuLink>
+                        <NavigationMenuLink asChild>
+                          <Link
+                            to="/history"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <div className="text-sm font-medium">Transaction History</div>
+                            <p className="text-sm text-muted-foreground">View all your transactions</p>
+                          </Link>
+                        </NavigationMenuLink>
+                        <NavigationMenuLink asChild>
+                          <Link
+                            to="/lending"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <div className="text-sm font-medium">Lending Marketplace</div>
+                            <p className="text-sm text-muted-foreground">Fund loans and earn interest</p>
                           </Link>
                         </NavigationMenuLink>
                       </div>
@@ -320,6 +338,8 @@ const Navbar = () => {
               { label: 'Create', path: '/create' },
               { label: 'Activity', path: '/activity' },
               { label: 'Statistics', path: '/stats' },
+              { label: 'Transaction History', path: '/history' },
+              { label: 'Lending Marketplace', path: '/lending' },
             ].map((item) => (
               <button
                 key={item.path}

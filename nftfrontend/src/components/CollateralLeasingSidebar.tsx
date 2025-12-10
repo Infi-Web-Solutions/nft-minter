@@ -36,12 +36,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
   const [loanIdInput, setLoanIdInput] = useState('');
   const [loanDetails, setLoanDetails] = useState<LoanDetails | null>(null);
   const [fetchingLoan, setFetchingLoan] = useState(false);
+  
+  // Pending Withdrawal State
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<string>('0');
 
   useEffect(() => {
     if (isConnected && provider) {
       collateralLendingService.initialize(provider);
+      checkPendingWithdrawal();
     }
-  }, [isConnected, provider]);
+  }, [isConnected, provider, address, open]);
 
   const handleSearch = async () => {
     const hasContractAndToken = contractAddress.trim() && tokenId.trim();
@@ -267,14 +271,36 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
   };
 
   const handleFundLoan = async () => {
-    if (!loanDetails) return;
+    if (!loanDetails || !address) return;
     setProcessing(true);
     try {
       toast.loading('Funding Loan...');
-      await collateralLendingService.fundLoan(loanDetails.loanId, loanDetails.principal);
+      const receipt = await collateralLendingService.fundLoan(loanDetails.loanId, loanDetails.principal);
+      
+      // Update backend with lender and status
+      try {
+        await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'Funded',
+            lender: address,
+            startTime: Math.floor(Date.now() / 1000)
+          })
+        });
+      } catch (backendError) {
+        console.error('Failed to update backend:', backendError);
+      }
+
       toast.dismiss();
-      toast.success('Loan Funded Successfully!');
-      handleFetchLoan();
+      toast.success('Loan Funded Successfully! Money sent to borrower.');
+      toast.info('Note: If the borrower cannot receive ETH directly, they may need to manually withdraw from the contract.', { duration: 5000 });
+      
+      // Refresh loan details to show updated status
+      await handleFetchLoan();
+      
+      // Check if borrower has pending withdrawal
+      await checkPendingWithdrawal();
     } catch (error: any) {
       handleTransactionError(error, 'Failed to fund loan');
     } finally {
@@ -291,9 +317,27 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
       
       toast.loading(`Repaying ${repayAmount} ETH...`);
       await collateralLendingService.repayLoan(loanDetails.loanId, repayAmount);
+      
+      // Update backend status
+      try {
+        await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Repaid' })
+        });
+      } catch (backendError) {
+        console.error('Failed to update backend:', backendError);
+      }
+
       toast.dismiss();
       toast.success('Loan Repaid Successfully! NFT Unlocked.');
-      handleFetchLoan();
+      toast.info('Note: If the lender cannot receive ETH directly, they may need to manually withdraw from the contract.', { duration: 5000 });
+      
+      // Refresh loan details
+      await handleFetchLoan();
+      
+      // Check if lender has pending withdrawal
+      await checkPendingWithdrawal();
     } catch (error: any) {
       handleTransactionError(error, 'Failed to repay loan');
     } finally {
@@ -303,26 +347,58 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
 
   const handleLiquidateLoan = async () => {
     if (!loanDetails) return;
-    if (!loanDetails) return;
     setProcessing(true);
     try {
       toast.loading('Liquidating Loan...');
       await collateralLendingService.liquidateLoan(loanDetails.loanId);
       
       // Update backend status
-      await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            status: 'Liquidated'
-        })
-      });
+      try {
+        await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Liquidated' })
+        });
+      } catch (backendError) {
+        console.error('Failed to update backend:', backendError);
+        // Don't fail the transaction if backend update fails
+      }
 
       toast.dismiss();
       toast.success('Loan Liquidated! NFT transferred to you.');
-      handleFetchLoan(loanDetails.loanId.toString());
+      
+      // Refresh loan details
+      await handleFetchLoan(loanDetails.loanId.toString());
     } catch (error: any) {
       handleTransactionError(error, 'Failed to liquidate loan');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const checkPendingWithdrawal = async () => {
+    if (!address) return;
+    try {
+      const pending = await collateralLendingService.getPendingETHWithdrawal(address);
+      setPendingWithdrawal(pending);
+      if (parseFloat(pending) > 0) {
+        toast.info(`You have ${pending} ETH pending withdrawal from the contract!`, { duration: 6000 });
+      }
+    } catch (error) {
+      console.error('Error checking pending withdrawal:', error);
+    }
+  };
+
+  const handleWithdrawETH = async () => {
+    setProcessing(true);
+    try {
+      toast.loading('Withdrawing pending ETH...');
+      await collateralLendingService.withdrawETH();
+      toast.dismiss();
+      toast.success(`Successfully withdrew ${pendingWithdrawal} ETH!`);
+      setPendingWithdrawal('0');
+    } catch (error: any) {
+      handleTransactionError(error, 'Failed to withdraw ETH');
     } finally {
       setProcessing(false);
     }
@@ -382,6 +458,33 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
           </div>
 
           <div className="flex-1 overflow-y-auto p-6">
+            {/* Pending Withdrawal Banner */}
+            {parseFloat(pendingWithdrawal) > 0 && (
+              <Card className="mb-4 border-yellow-500/50 bg-yellow-500/10">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-1">
+                      <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-yellow-500">Pending Withdrawal</div>
+                        <div className="text-sm text-muted-foreground">
+                          You have <span className="font-bold text-yellow-500">{pendingWithdrawal} ETH</span> waiting to be claimed
+                        </div>
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={handleWithdrawETH} 
+                      disabled={processing}
+                      className="bg-yellow-600 hover:bg-yellow-700 shrink-0"
+                      size="sm"
+                    >
+                      {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Withdraw'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="new">New Loan</TabsTrigger>
