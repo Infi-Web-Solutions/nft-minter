@@ -14,7 +14,7 @@ class NFTMarketplaceWeb3 {
     constructor() {
         console.log("[Web3] Initializing NFTMarketplaceWeb3...");
 
-        this.sepoliaUrl = process.env.sepoliaUrl || null;
+        this.sepoliaUrl = process.env.sepoliaUrl || process.env.TESTNET_URL || null;
         this.contractAddress = process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS;
 
         // New lending contract address (deployed NFTCollateralLendingIntegrated)
@@ -22,6 +22,9 @@ class NFTMarketplaceWeb3 {
 
         // Wrapped Leasing contract address
         this.wrappedLeasingAddress = process.env.WrappedLeasing_Address || process.env.WRAPPED_LEASING_ADDRESS || null;
+
+        // FeeManager contract address
+        this.feeManagerAddress = process.env.FeeManager_Address || process.env.FEE_MANAGER_ADDRESS || null;
 
         this.ALCHEMY_API_URL = process.env.ALCHEMY_API_URL || null;
 
@@ -32,6 +35,7 @@ class NFTMarketplaceWeb3 {
         console.log(`[Web3] Contract address: ${this.contractAddress}`);
         console.log(`[Web3] Lending contract address: ${this.lendingContractAddress}`);
         console.log(`[Web3] Wrapped Leasing address: ${this.wrappedLeasingAddress}`);
+        console.log(`[Web3] FeeManager address: ${this.feeManagerAddress}`);
 
         try {
             this.web3 = new Web3(new Web3.providers.HttpProvider(this.sepoliaUrl));
@@ -91,6 +95,22 @@ class NFTMarketplaceWeb3 {
                 this.wrappedLeasingContract = null;
             }
 
+            // FeeManager contract initialization
+            if (this.feeManagerAddress) {
+                try {
+                    this.feeManagerAddress = this.web3.utils.toChecksumAddress(this.feeManagerAddress);
+                    this.feeManagerAbi = this._getFeeManagerAbi();
+                    this.feeManagerContract = new this.web3.eth.Contract(this.feeManagerAbi, this.feeManagerAddress);
+                    console.log(`[Web3] FeeManager contract initialized at ${this.feeManagerAddress}`);
+                } catch (err) {
+                    console.warn('[Web3] Failed to initialize FeeManager contract:', err.message);
+                    this.feeManagerContract = null;
+                }
+            } else {
+                console.log('[Web3] No FeeManager address provided');
+                this.feeManagerContract = null;
+            }
+
             // Test basic marketplace contract calls
             this._testContract();
 
@@ -102,6 +122,11 @@ class NFTMarketplaceWeb3 {
             // Test wrapped leasing contract if it exists
             if (this.wrappedLeasingContract) {
                 this._testWrappedLeasingContract();
+            }
+
+            // Test FeeManager contract if it exists
+            if (this.feeManagerContract) {
+                this._testFeeManagerContract();
             }
 
         } catch (error) {
@@ -416,6 +441,158 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    // Load FeeManager ABI
+    _getFeeManagerAbi() {
+        try {
+            console.log('[Web3] Getting FeeManager ABI...');
+            const artifactsPath = path.join(
+                __dirname,
+                '..',
+                '..',
+                '..',
+                'smartcontract',
+                'artifacts',
+                'contracts',
+                'FeeManager.sol',
+                'FeeManager.json'
+            );
+
+            if (fs.existsSync(artifactsPath)) {
+                try {
+                    const contractData = JSON.parse(fs.readFileSync(artifactsPath, 'utf8'));
+                    if (contractData.abi && contractData.abi.length > 0) {
+                        console.log('[Web3] Loaded FeeManager ABI from artifact');
+                        return contractData.abi;
+                    }
+                } catch (err) {
+                    console.warn('[Web3] Failed to parse FeeManager artifact:', err.message);
+                }
+            }
+
+            console.log('[Web3] Using minimal FeeManager fallback ABI');
+            return [
+                {
+                    "inputs": [{ "internalType": "address", "name": "admin_", "type": "address" }, { "internalType": "uint16", "name": "marketplaceFeeBps_", "type": "uint16" }, { "internalType": "uint16", "name": "lendingAprBps_", "type": "uint16" }, { "internalType": "uint16", "name": "leasingFeeBps_", "type": "uint16" }, { "internalType": "address", "name": "treasury_", "type": "address" }],
+                    "name": "initialize",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "FEE_ADMIN",
+                    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "bytes32", "name": "role", "type": "bytes32" }, { "internalType": "address", "name": "account", "type": "address" }],
+                    "name": "hasRole",
+                    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "DEFAULT_ADMIN_ROLE",
+                    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "marketplaceFeeBps",
+                    "outputs": [{ "internalType": "uint16", "name": "", "type": "uint16" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "lendingAprBps",
+                    "outputs": [{ "internalType": "uint16", "name": "", "type": "uint16" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "leasingFeeBps",
+                    "outputs": [{ "internalType": "uint16", "name": "", "type": "uint16" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "treasury",
+                    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "amount", "type": "uint256" }, { "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "calcBps",
+                    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                    "stateMutability": "pure",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "setMarketplaceFeeBps",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "setLendingAprBps",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "setLeasingFeeBps",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "address", "name": "treasury_", "type": "address" }],
+                    "name": "setTreasury",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "anonymous": false,
+                    "inputs": [{ "indexed": false, "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "MarketplaceFeeUpdated",
+                    "type": "event"
+                },
+                {
+                    "anonymous": false,
+                    "inputs": [{ "indexed": false, "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "LendingAprUpdated",
+                    "type": "event"
+                },
+                {
+                    "anonymous": false,
+                    "inputs": [{ "indexed": false, "internalType": "uint16", "name": "bps", "type": "uint16" }],
+                    "name": "LeasingFeeUpdated",
+                    "type": "event"
+                },
+                {
+                    "anonymous": false,
+                    "inputs": [{ "indexed": false, "internalType": "address", "name": "treasury", "type": "address" }],
+                    "name": "TreasuryUpdated",
+                    "type": "event"
+                }
+            ];
+        } catch (error) {
+            console.error(`[Web3] Error loading FeeManager ABI: ${error.message}`);
+            throw error;
+        }
+    }
+
     async _testContract() {
         try {
             const contractInfo = await this.getContractInfo();
@@ -454,6 +631,21 @@ class NFTMarketplaceWeb3 {
             console.log(`[Web3] WrappedLeasing symbol: ${symbol}`);
         } catch (error) {
             console.log(`[Web3] Warning: Could not get WrappedLeasing info: ${error.message}`);
+        }
+    }
+
+    async _testFeeManagerContract() {
+        try {
+            const marketplaceFee = await this.feeManagerContract.methods.marketplaceFeeBps().call();
+            const lendingApr = await this.feeManagerContract.methods.lendingAprBps().call();
+            const leasingFee = await this.feeManagerContract.methods.leasingFeeBps().call();
+            const treasury = await this.feeManagerContract.methods.treasury().call();
+            console.log(`[Web3] FeeManager marketplaceFeeBps: ${marketplaceFee}`);
+            console.log(`[Web3] FeeManager lendingAprBps: ${lendingApr}`);
+            console.log(`[Web3] FeeManager leasingFeeBps: ${leasingFee}`);
+            console.log(`[Web3] FeeManager treasury: ${treasury}`);
+        } catch (error) {
+            console.log(`[Web3] Warning: Could not get FeeManager info: ${error.message}`);
         }
     }
 
@@ -683,6 +875,277 @@ class NFTMarketplaceWeb3 {
         } catch (error) {
             console.error('[Web3] Error getting wrapped info:', error.message);
             throw error;
+        }
+    }
+
+    // FeeManager Methods
+    async getMarketplaceFeeBps() {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const fee = await this.feeManagerContract.methods.marketplaceFeeBps().call();
+            return fee;
+        } catch (error) {
+            console.error('[Web3] Error getting marketplace fee:', error.message);
+            throw error;
+        }
+    }
+
+    async getLendingAprBps() {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const apr = await this.feeManagerContract.methods.lendingAprBps().call();
+            return apr;
+        } catch (error) {
+            console.error('[Web3] Error getting lending APR:', error.message);
+            throw error;
+        }
+    }
+
+    async getLeasingFeeBps() {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const fee = await this.feeManagerContract.methods.leasingFeeBps().call();
+            return fee;
+        } catch (error) {
+            console.error('[Web3] Error getting leasing fee:', error.message);
+            throw error;
+        }
+    }
+
+    async getTreasury() {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const treasury = await this.feeManagerContract.methods.treasury().call();
+            return treasury;
+        } catch (error) {
+            console.error('[Web3] Error getting treasury:', error.message);
+            throw error;
+        }
+    }
+
+    async calcBps(amount, bps) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const result = await this.feeManagerContract.methods.calcBps(amount, bps).call();
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error calculating BPS:', error.message);
+            throw error;
+        }
+    }
+
+    async checkHasFeeAdminRole(address) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const feeAdminRole = await this.feeManagerContract.methods.FEE_ADMIN().call();
+            const hasRole = await this.feeManagerContract.methods.hasRole(feeAdminRole, address).call();
+            return hasRole;
+        } catch (error) {
+            console.error('[Web3] Error checking role:', error.message);
+            return false;
+        }
+    }
+
+    async setMarketplaceFeeBps(bps, fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            // Check if account has role first
+            const hasRole = await this.checkHasFeeAdminRole(fromAddress);
+            if (!hasRole) {
+                throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
+            }
+            const gas = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).estimateGas({ from: fromAddress });
+            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error setting marketplace fee:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    async setLendingAprBps(bps, fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const hasRole = await this.checkHasFeeAdminRole(fromAddress);
+            if (!hasRole) {
+                throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
+            }
+            const gas = await this.feeManagerContract.methods.setLendingAprBps(bps).estimateGas({ from: fromAddress });
+            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error setting lending APR:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    async setLeasingFeeBps(bps, fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const hasRole = await this.checkHasFeeAdminRole(fromAddress);
+            if (!hasRole) {
+                throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
+            }
+            const gas = await this.feeManagerContract.methods.setLeasingFeeBps(bps).estimateGas({ from: fromAddress });
+            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error setting leasing fee:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    async setTreasury(treasuryAddress, fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const hasRole = await this.checkHasFeeAdminRole(fromAddress);
+            if (!hasRole) {
+                throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
+            }
+            const gas = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
+            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error setting treasury:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    /**
+     * Initialize the FeeManager contract (only if not already initialized)
+     * @param {string} adminAddress - Admin address to grant FEE_ADMIN role
+     * @param {number} marketplaceFeeBps - Marketplace fee in basis points
+     * @param {number} lendingAprBps - Lending APR in basis points
+     * @param {number} leasingFeeBps - Leasing fee in basis points
+     * @param {string} treasuryAddress - Treasury address
+     * @param {string} fromAddress - Address calling initialize (should be deployer/admin)
+     * @returns {Promise<Object>} Transaction result
+     */
+    async initializeFeeManagerContract(adminAddress, marketplaceFeeBps, lendingAprBps, leasingFeeBps, treasuryAddress, fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            console.log('[Web3] Initializing FeeManager contract...');
+            const gas = await this.feeManagerContract.methods.initialize(
+                adminAddress,
+                marketplaceFeeBps,
+                lendingAprBps,
+                leasingFeeBps,
+                treasuryAddress
+            ).estimateGas({ from: fromAddress });
+            const result = await this.feeManagerContract.methods.initialize(
+                adminAddress,
+                marketplaceFeeBps,
+                lendingAprBps,
+                leasingFeeBps,
+                treasuryAddress
+            ).send({ from: fromAddress, gas });
+            console.log('[Web3] FeeManager contract initialized successfully');
+            return result;
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error initializing FeeManager contract:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    /**
+     * Extract revert reason from error object
+     * @private
+     */
+    _extractRevertReason(error) {
+        if (error.message) {
+            // Try to extract revert reason from error message
+            const revertMatch = error.message.match(/revert (.+?)(?:\s|$)/);
+            if (revertMatch) {
+                return revertMatch[1] || error.message;
+            }
+            // Check for encoded revert reasons
+            if (error.message.includes('execution reverted')) {
+                // Try to decode if there's data
+                if (error.data) {
+                    try {
+                        const reason = this.web3.utils.toAscii(error.data).replace(/\0/g, '');
+                        if (reason) return reason;
+                    } catch (e) {
+                        // Ignore decode errors
+                    }
+                }
+                return 'execution reverted (check permissions and contract state)';
+            }
+            return error.message;
+        }
+        return String(error);
+    }
+
+    async getFeeManagerInfo() {
+        if (!this.feeManagerContract) return { error: 'FeeManager contract not initialized' };
+        try {
+            const marketplaceFeeBps = await this.feeManagerContract.methods.marketplaceFeeBps().call();
+            const lendingAprBps = await this.feeManagerContract.methods.lendingAprBps().call();
+            const leasingFeeBps = await this.feeManagerContract.methods.leasingFeeBps().call();
+            const treasury = await this.feeManagerContract.methods.treasury().call();
+            const chainId = await this.web3.eth.getChainId();
+            return {
+                marketplaceFeeBps,
+                lendingAprBps,
+                leasingFeeBps,
+                treasury,
+                address: this.feeManagerAddress,
+                network: 'Sepolia Testnet',
+                chainId
+            };
+        } catch (error) {
+            return { error: error.message };
+        }
+    }
+
+    /**
+     * Initialize FeeManager with all fee values at once
+     * @param {number} marketplaceFeeBps - Marketplace fee in basis points
+     * @param {number} lendingAprBps - Lending APR in basis points
+     * @param {number} leasingFeeBps - Leasing fee in basis points
+     * @param {string} treasuryAddress - Treasury address
+     * @param {string} fromAddress - Admin address with FEE_ADMIN role
+     * @returns {Promise<Object>} Object with transaction results
+     */
+    async initializeFeeManager(marketplaceFeeBps, lendingAprBps, leasingFeeBps, treasuryAddress, fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const results = {
+                marketplaceFee: null,
+                lendingApr: null,
+                leasingFee: null,
+                treasury: null
+            };
+
+            console.log('[Web3] Setting FeeManager values...');
+            
+            // Set Marketplace Fee
+            const gas1 = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).estimateGas({ from: fromAddress });
+            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({ from: fromAddress, gas: gas1 });
+            
+            // Set Lending APR
+            const gas2 = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).estimateGas({ from: fromAddress });
+            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({ from: fromAddress, gas: gas2 });
+            
+            // Set Leasing Fee
+            const gas3 = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).estimateGas({ from: fromAddress });
+            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({ from: fromAddress, gas: gas3 });
+            
+            // Set Treasury
+            const gas4 = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
+            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ from: fromAddress, gas: gas4 });
+
+            console.log('[Web3] FeeManager values set successfully');
+            return results;
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error setting FeeManager values:', errorMsg);
+            throw new Error(errorMsg);
         }
     }
 
