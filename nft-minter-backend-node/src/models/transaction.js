@@ -5,8 +5,18 @@ const transactionSchema = new mongoose.Schema({
     nft: { type: mongoose.Schema.Types.ObjectId, ref: 'NFT', default: null },
     from_address: { type: String, required: true },
     to_address: { type: String, required: true },
-    transaction_type: { type: String, enum: ['mint', 'list', 'buy', 'bid', 'transfer', 'delist', 'follow', 'unfollow', 'like', 'unlike'], required: true },
+    transaction_type: { 
+        type: String, 
+        enum: [
+            'mint', 'list', 'buy', 'bid', 'transfer', 'delist', 
+            'follow', 'unfollow', 'like', 'unlike',
+            // Loan transactions
+            'loan_created', 'loan_funded', 'loan_repaid', 'loan_liquidated', 'loan_cancelled'
+        ], 
+        required: true 
+    },
     price: { type: Number },
+    loan_id: { type: Number, default: null }, // For loan-related transactions
     block_number: { type: Number, default: 0 },
     gas_used: { type: Number, default: 0 },
     gas_price: { type: Number, default: 0 },
