@@ -180,6 +180,30 @@ export class CollateralLendingService {
     const amountWei = await this.contract!.computeRepayAmount(loanId);
     return ethers.formatEther(amountWei);
   }
+
+  // Get Pending ETH Withdrawal
+  async getPendingETHWithdrawal(address: string): Promise<string> {
+    this.checkInitialized();
+    const contract = new ethers.Contract(
+      COLLATERAL_CONTRACT_ADDRESS, 
+      ["function pendingETHWithdrawals(address) external view returns (uint256)"],
+      this.provider
+    );
+    const pendingWei = await contract.pendingETHWithdrawals(address);
+    return ethers.formatEther(pendingWei);
+  }
+
+  // Withdraw Pending ETH
+  async withdrawETH() {
+    this.checkInitialized();
+    const contract = new ethers.Contract(
+      COLLATERAL_CONTRACT_ADDRESS,
+      ["function withdrawETH() external"],
+      this.signer
+    );
+    const tx = await contract.withdrawETH();
+    return await tx.wait();
+  }
 }
 
 export const collateralLendingService = new CollateralLendingService();

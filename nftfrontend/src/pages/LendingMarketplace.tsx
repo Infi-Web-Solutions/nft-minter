@@ -99,6 +99,17 @@ const LendingMarketplace = () => {
     return `${days} Days`;
   };
 
+  const getEarnings = (principal: string, interestBps: number) => {
+    const principalNum = parseFloat(principal);
+    const interestAmount = (principalNum * interestBps) / 10000;
+    const totalReturn = principalNum + interestAmount;
+    return {
+      interestETH: interestAmount.toFixed(4),
+      totalReturn: totalReturn.toFixed(4),
+      interestUSD: (interestAmount * 1700).toFixed(2) // Approximate ETH price
+    };
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -175,6 +186,22 @@ const LendingMarketplace = () => {
                         <Clock className="h-3 w-3" /> Duration
                       </div>
                       <div className="font-bold">{getDurationLabel(loan.duration)}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Earnings Display */}
+                  <div className="bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-lg p-3">
+                    <div className="text-xs text-green-400 font-semibold mb-2">💰 Your Earnings</div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-muted-foreground">Interest:</span>
+                      <span className="font-bold text-green-500">Ξ{getEarnings(loan.principal, loan.interestBps).interestETH}</span>
+                    </div>
+                    <div className="flex justify-between items-baseline mt-1">
+                      <span className="text-xs text-muted-foreground">Total Return:</span>
+                      <span className="font-bold">Ξ{getEarnings(loan.principal, loan.interestBps).totalReturn}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground text-center mt-2">
+                      ≈ ${getEarnings(loan.principal, loan.interestBps).interestUSD} profit
                     </div>
                   </div>
                 </CardContent>

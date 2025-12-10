@@ -1,10 +1,13 @@
 import express from 'express';
-import { registerTransaction, updateTransaction, getTransactionById, getAllTransactions } from '../controllers/transactionController.js';
+import { registerTransaction, updateTransaction, getTransactionById, getAllTransactions, getUserTransactions } from '../controllers/transactionController.js';
 
 const router = express.Router();
 
 // Route to get all transactions with optional filtering (must be before /:transactionId)
 router.get('/', getAllTransactions);
+
+// Route to get user-specific transactions
+router.get('/user/:address', getUserTransactions);
 
 // Route to create a new transaction
 router.post('/', registerTransaction);
