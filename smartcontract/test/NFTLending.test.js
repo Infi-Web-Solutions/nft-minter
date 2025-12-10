@@ -290,4 +290,50 @@ describe("NFTCollateralLendingIntegrated", function () {
       ).to.be.revertedWithCustomError(lending, "OwnableUnauthorizedAccount");
     });
   });
+
+  describe("Pause behavior", () => {
+    it("blocks createLoanRequest when paused", async () => {
+      await lending.connect(owner).pause();
+      await mintNFT(borrower, 200);
+      await nft.connect(borrower).approve(lending.target, 200);
+
+      await expect(
+        lending.connect(borrower).createLoanRequest(
+          nft.target,
+          200,
+          ZERO,
+          ethers.parseEther("1"),
+          10,
+          3600,
+          0
+        )
+      ).to.be.revertedWithCustomError(lending, "EnforcedPause");
+
+      // Clean up: unpause for subsequent tests
+      await lending.connect(owner).unpause();
+    });
+
+    it("allows operations after unpause", async () => {
+      await lending.connect(owner).pause();
+      await lending.connect(owner).unpause();
+
+      await mintNFT(borrower, 210);
+      await nft.connect(borrower).approve(lending.target, 210);
+
+      await lending.connect(borrower).createLoanRequest(
+        nft.target,
+        210,
+        ZERO,
+        ethers.parseEther("1"),
+        10,
+        3600,
+        0
+      );
+
+      await lending.connect(lender).fundLoan(11, { value: ethers.parseEther("1") });
+      const repayAmount = await lending.computeRepayAmount(11);
+      await lending.connect(borrower).repayLoan(11, { value: repayAmount });
+      expect(await nft.ownerOf(210)).to.equal(borrower.address);
+    });
+  });
 });

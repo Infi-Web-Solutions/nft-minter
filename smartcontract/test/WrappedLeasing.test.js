@@ -88,6 +88,36 @@ describe("WrappedLeasing", function () {
         expect(await nft.ownerOf(1)).to.equal(owner.address);
     });
 
+    it("blocks wrap when paused", async function () {
+        await wrapped.connect(admin).pause();
+        await nft.connect(owner).approve(wrapped.target, 1);
+        await expect(
+            wrapped.connect(owner).wrap(
+                nft.target,
+                1,
+                renter.address,
+                100,
+                "",
+                { value: 0 }
+            )
+        ).to.be.revertedWithCustomError(wrapped, "EnforcedPause");
+    });
+
+    it("takes fee when set", async function () {
+        await feeManager.connect(admin).setLeasingFeeBps(500); // 5%
+        await nft.connect(owner).approve(wrapped.target, 1);
+        const duration = 1000;
+        const fee = (BigInt(duration) * 500n) / 10000n;
+        await wrapped.connect(owner).wrap(
+            nft.target,
+            1,
+            renter.address,
+            duration,
+            "",
+            { value: fee }
+        );
+    });
+
     // -------------------------
     // 3. UNWRAP AFTER EXPIRY
     // -------------------------

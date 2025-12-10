@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -11,7 +12,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @title NFTMarketplace
  * @dev A comprehensive NFT marketplace with minting, buying, selling, auctions, and royalties
  */
-contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
+contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
     using Strings for uint256;
 
     // Events
@@ -120,7 +121,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         string memory category,
         uint256 royaltyPercentage,
         string memory collectionName
-    ) external returns (uint256) {
+    ) external whenNotPaused returns (uint256) {
         require(bytes(name).length > 0, "Name cannot be empty");
         require(bytes(imageURI).length > 0, "Image URI cannot be empty");
         require(royaltyPercentage <= 1000, "Royalty cannot exceed 10%");
@@ -179,7 +180,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         uint256 price,
         bool isAuction,
         uint256 auctionDuration
-    ) external tokenExistsModifier(tokenId) onlyTokenOwner(tokenId) {
+    ) external tokenExistsModifier(tokenId) onlyTokenOwner(tokenId) whenNotPaused {
         require(price > 0, "Price must be greater than 0");
         require(!listings[tokenId].isActive, "NFT already listed");
         require(ownerOf(tokenId) == msg.sender, "Not the token owner");
@@ -213,7 +214,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Buy an NFT (fixed price sale)
      * @param tokenId The NFT token ID
      */
-    function buyNFT(uint256 tokenId) external payable nonReentrant listingExists(tokenId) {
+    function buyNFT(uint256 tokenId) external payable nonReentrant listingExists(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(!listing.isAuction, "This is an auction, use placeBid instead");
         require(msg.value == listing.price, "Incorrect price");
@@ -254,7 +255,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Place a bid on an auction
      * @param tokenId The NFT token ID
      */
-    function placeBid(uint256 tokenId) external payable nonReentrant auctionActive(tokenId) {
+    function placeBid(uint256 tokenId) external payable nonReentrant auctionActive(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(msg.sender != listing.seller, "Cannot bid on your own auction");
         require(msg.value > listing.highestBid, "Bid must be higher than current bid");
@@ -275,7 +276,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev End an auction and transfer NFT to winner
      * @param tokenId The NFT token ID
      */
-    function endAuction(uint256 tokenId) external nonReentrant listingExists(tokenId) {
+    function endAuction(uint256 tokenId) external nonReentrant listingExists(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(listing.isAuction, "Not an auction");
         require(block.timestamp >= listing.auctionEndTime, "Auction not ended yet");
@@ -318,7 +319,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Delist an NFT from marketplace
      * @param tokenId The NFT token ID
      */
-    function delistNFT(uint256 tokenId) external onlyTokenOwner(tokenId) listingExists(tokenId) {
+    function delistNFT(uint256 tokenId) external onlyTokenOwner(tokenId) listingExists(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(listing.seller == msg.sender, "Not the seller");
 
@@ -394,10 +395,18 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         payable(owner()).transfer(address(this).balance);
     }
 
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     /* ==========================
        External NFT Support
        ========================== */
-    function listExternalNFT(address nftContract, uint256 tokenId, uint256 price) external nonReentrant {
+    function listExternalNFT(address nftContract, uint256 tokenId, uint256 price) external nonReentrant whenNotPaused {
         require(price > 0, "Price > 0");
         require(!externalListings[nftContract][tokenId].isActive, "Already listed");
         
@@ -413,7 +422,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         emit ExternalNFTListed(nftContract, tokenId, msg.sender, price);
     }
 
-    function buyExternalNFT(address nftContract, uint256 tokenId) external payable nonReentrant {
+    function buyExternalNFT(address nftContract, uint256 tokenId) external payable nonReentrant whenNotPaused {
         ExternalListing storage listing = externalListings[nftContract][tokenId];
         require(listing.isActive, "Not listed");
         require(msg.value == listing.price, "Incorrect price");
@@ -438,7 +447,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         emit ExternalNFTSold(nftContract, tokenId, seller, msg.sender, price);
     }
 
-    function cancelExternalListing(address nftContract, uint256 tokenId) external nonReentrant {
+    function cancelExternalListing(address nftContract, uint256 tokenId) external nonReentrant whenNotPaused {
         ExternalListing storage listing = externalListings[nftContract][tokenId];
         require(listing.isActive, "Not listed");
         require(listing.seller == msg.sender, "Not seller");
