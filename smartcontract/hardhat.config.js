@@ -3,6 +3,7 @@ require("hardhat-gas-reporter");
 require("solidity-coverage");
 require("dotenv").config();
 require("./tasks/compile-one");
+require("@openzeppelin/hardhat-upgrades");
 
 // Debug Logs
 console.log("TESTNET_URL:", process.env.TESTNET_URL);

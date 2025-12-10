@@ -49,7 +49,7 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         require(durationSeconds > 0, "duration>0");
 
         // fee handling: the UI should pass rent/deposit; we optionally collect a small lease fee
-        uint256 fee = feeManager.calcBps(0, feeManager.leasingFeeBps()); // placeholder if price known
+        uint256 fee = feeManager.calcBps(durationSeconds, feeManager.leasingFeeBps()); // fee based on duration
         if (fee > 0) {
             require(msg.value >= fee, "insufficient fee");
             // route fee to treasury via FeeManager (treasury withdraw handled offchain)
