@@ -9,6 +9,7 @@ import collectionRoutes from './routes/collectionRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import loanRoutes from './routes/loanRoutes.js';
 
 const app = express();
 
@@ -31,5 +32,6 @@ app.use('/api/collections', collectionRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/activities', activityRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/loans', loanRoutes);
 
 export default app;

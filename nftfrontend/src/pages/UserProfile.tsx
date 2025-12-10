@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { profileService, ProfileData } from '../api/useInfo';
+import { apiUrl, CONTRACT_ADDRESS } from '@/config';
 
 const UserProfile = () => {
   const { walletAddress } = useParams<{ walletAddress: string }>();
@@ -38,10 +39,32 @@ const UserProfile = () => {
   const [collectedNFTs, setCollectedNFTs] = useState<any[]>([]);
   const [createdNFTs, setCreatedNFTs] = useState<any[]>([]);
   const [likedNFTs, setLikedNFTs] = useState<any[]>([]);
+  const [activeLoans, setActiveLoans] = useState<Map<string, string>>(new Map());
   
   const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
 
   const isOwnProfile = address?.toLowerCase() === walletAddress?.toLowerCase();
+
+  // Fetch active loans
+  useEffect(() => {
+    const fetchActiveLoans = async () => {
+        try {
+            const res = await fetch(apiUrl('/loans/open'));
+            const data = await res.json();
+            if (data.success) {
+                const loanMap = new Map<string, string>();
+                data.data.forEach((loan: any) => {
+                    const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
+                    loanMap.set(key, loan.status);
+                });
+                setActiveLoans(loanMap);
+            }
+        } catch (err) {
+            console.error('Failed to fetch active loans', err);
+        }
+    };
+    fetchActiveLoans();
+  }, []);
 
   // Fetch profile data
   useEffect(() => {
@@ -208,6 +231,19 @@ const UserProfile = () => {
       console.error('Failed to toggle like:', e);
       toast.error('Failed to update like status');
     }
+  };
+
+  // Helper to get loan status
+  const getLoanStatus = (nft: any) => {
+      let contractAddr = '';
+      if (nft.source === 'local' || !nft.source) {
+          contractAddr = CONTRACT_ADDRESS;
+      } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+          contractAddr = nft.collection;
+      }
+      
+      const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.tokenId}` : '';
+      return loanKey ? activeLoans.get(loanKey) : undefined;
   };
 
   // Loading state
@@ -450,13 +486,16 @@ const UserProfile = () => {
                         No collected NFTs yet.
                       </div>
                     ) : (
-                      collectedNFTs.map((nft: any) => (
+                      collectedNFTs
+                      .filter((nft: any) => getLoanStatus(nft) !== 'Requested')
+                      .map((nft: any) => (
                         <NFTCard 
                           key={nft.id} 
                           {...nft} 
                           liked={likedNFTIds.has(String(nft.id)) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                           onClick={() => navigate(`/nft/${nft.id}`)}
+                          loanStatus={getLoanStatus(nft)}
                         />
                       ))
                     )}
@@ -477,6 +516,7 @@ const UserProfile = () => {
                           liked={likedNFTIds.has(String(nft.id)) || nft.liked}
                           onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                           onClick={() => navigate(`/nft/${nft.id}`)}
+                          loanStatus={getLoanStatus(nft)}
                         />
                       ))
                     )}
@@ -498,6 +538,7 @@ const UserProfile = () => {
                             liked={likedNFTIds.has(String(nft.id))}
                             onLike={(newLiked) => handleLikeToggle(nft.id, newLiked)}
                             onClick={() => navigate(`/nft/${nft.id}`)}
+                            loanStatus={getLoanStatus(nft)}
                           />
                         ))
                       )}

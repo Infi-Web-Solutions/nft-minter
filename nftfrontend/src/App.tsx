@@ -23,6 +23,7 @@ import NFTDetails from "./pages/NFTDetails";
 import CollectionDetails from "./pages/CollectionDetails";
 import Favorites from "./pages/Favorites";
 import Contact from "./pages/Contact";
+import LendingMarketplace from "./pages/LendingMarketplace";
 import { LikedNFTsProvider } from '@/contexts/LikedNFTsContext';
 
 const queryClient = new QueryClient();
@@ -53,6 +54,7 @@ const App = () => (
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/nft/:id" element={<NFTDetails />} />
                 <Route path="/favorites" element={<Favorites />} />
+                <Route path="/lending" element={<LendingMarketplace />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
