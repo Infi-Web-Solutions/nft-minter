@@ -402,9 +402,25 @@ useEffect(() => {
 
       toast.success('Purchase successful!', { id: 'buy' });
     } catch (err: any) {
+      console.error('[NFTDetails] Buy failed:', err);
+      
+      // Handle user rejection
+      if (err?.code === 4001 || 
+          err?.code === 'ACTION_REJECTED' || 
+          err?.message?.includes('User denied') || 
+          err?.message?.includes('user rejected')) {
+        toast.error('Transaction cancelled by user', { id: 'buy' });
+        return;
+      }
+
+      // Handle insufficient funds
+      if (err?.code === 'INSUFFICIENT_FUNDS' || err?.message?.includes('insufficient funds')) {
+        toast.error('Insufficient funds in your wallet', { id: 'buy' });
+        return;
+      }
+
       const message = err?.message || 'Failed to buy NFT';
       toast.error(message, { id: 'buy' });
-      console.error('[NFTDetails] Buy failed:', err);
     }
   };
 
@@ -726,24 +742,25 @@ useEffect(() => {
                     </div>
                   )}
 
-                  {/* NFT Owner Address */}
+                
+                  {/* Contract Address */}
                   <div>
-                    <h3 className="text-lg font-semibold mb-3">NFT Owner Address</h3>
+                    <h3 className="text-lg font-semibold mb-3">Contract Address</h3>
                     <div className="flex items-center gap-2 p-3 bg-card/50 rounded-lg">
                       <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
-                        {nft.owner_address || '0x0000000000000000000000000000000000000000'}
+                        {CONTRACT_ADDRESS}
                       </code>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => copyToClipboard(nft.owner_address || '0x0000000000000000000000000000000000000000')}
+                        onClick={() => copyToClipboard(CONTRACT_ADDRESS)}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${nft.owner_address}`, '_blank')}
+                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, '_blank')}
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>

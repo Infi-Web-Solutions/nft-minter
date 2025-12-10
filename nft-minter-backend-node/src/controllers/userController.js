@@ -404,22 +404,14 @@ export const getUserCreatedNFTs = async (req, res) => {
     }
 };
 
-// Get all NFTs owned or created by user
+// Get all NFTs owned by user
 export const getUserNfts = async (req, res) => {
     try {
         const { walletAddress } = req.params;
+        // Only fetch NFTs owned by the user
         const owned_nfts = await NFT.find({ owner_address: walletAddress }).lean();
         
-        const created_nfts = await NFT.find({ creator_address: walletAddress }).lean();
-        const nftMap = new Map();
-        for (const nft of owned_nfts) {
-            nftMap.set(nft.token_id, nft);
-        }
-        for (const nft of created_nfts) {
-            nftMap.set(nft.token_id, nft);
-        }
-        const nfts = Array.from(nftMap.values());
-        const nfts_data = nfts.map(nft => ({
+        const nfts_data = owned_nfts.map(nft => ({
             id: `local_${nft._id}`,
             token_id: nft.token_id,
             name: nft.name,

@@ -31,6 +31,7 @@ interface NFTCardProps {
   canLike?: boolean;
   source?: string;
   onClick?: () => void; // Add custom onClick handler
+  loanStatus?: string;
 }
 
 const getImageUrl = (url: string) => {
@@ -61,6 +62,7 @@ const NFTCard = ({
   canLike = true,
   source,
   onClick,
+  loanStatus,
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
   const { address } = useWallet();
@@ -266,6 +268,22 @@ const NFTCard = ({
       }
     } catch (err: any) {
       console.error('[NFTCard] List NFT failed:', err);
+      
+      // Handle user rejection
+      if (err?.code === 4001 || 
+          err?.code === 'ACTION_REJECTED' || 
+          err?.message?.includes('User denied') || 
+          err?.message?.includes('user rejected')) {
+        toast.error('Transaction cancelled by user');
+        return;
+      }
+
+      // Handle insufficient funds
+      if (err?.code === 'INSUFFICIENT_FUNDS' || err?.message?.includes('insufficient funds')) {
+        toast.error('Insufficient funds in your wallet');
+        return;
+      }
+
       if (err && err.message) {
         toast.error('Failed to list NFT: ' + err.message);
       } else {
@@ -497,7 +515,21 @@ const NFTCard = ({
                 </Button>
               ) : (
                 <>
-                  {isOwner && !is_listed && (
+                  {loanStatus === 'Requested' && (
+                     <Button
+                      size="sm"
+                      className="bg-blue-500 hover:bg-blue-600 text-white whitespace-nowrap text-xs px-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate('/lending');
+                      }}
+                      title="This NFT has an active loan request"
+                    >
+                      Loan Requested
+                    </Button>
+                  )}
+                  
+                  {loanStatus !== 'Requested' && isOwner && !is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
@@ -507,7 +539,7 @@ const NFTCard = ({
                       Owned
                     </Button>
                   )}
-                  {isOwner && is_listed && (
+                  {loanStatus !== 'Requested' && isOwner && is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
@@ -517,7 +549,7 @@ const NFTCard = ({
                       Owned
                     </Button>
                   )}
-                  {!isOwner && !is_listed && (
+                  {loanStatus !== 'Requested' && !isOwner && !is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-gray-400 to-gray-600 whitespace-nowrap text-xs px-2"
@@ -527,7 +559,7 @@ const NFTCard = ({
                       Not for Sale
                     </Button>
                   )}
-                  {!isOwner && is_listed && (
+                  {loanStatus !== 'Requested' && !isOwner && is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
