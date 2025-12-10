@@ -37,11 +37,17 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         bool isMarketplaceNFT;
     }
 
+    struct NFTInfo {
+        address nftContract;
+        uint256 tokenId;
+    }
+
     uint256 public nextLoanId;
     mapping(uint256 => Loan) public loans;
 
     mapping(address => uint256) public pendingETHWithdrawals;
     mapping(address => mapping(address => uint256)) public pendingERC20Withdrawals;
+    mapping(address => NFTInfo[]) public pendingNFTs;
 
     // Optional whitelist for trusted NFTs
     mapping(address => bool) public nftWhitelist;
@@ -218,19 +224,41 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
     }
 
     function liquidateLoan(uint256 loanId) external nonReentrant {
-        Loan storage L = loans[loanId];
-        require(L.status == LoanStatus.Funded, "LoanNotActive");
-        require(msg.sender == L.lender, "NotLender");
-        require(block.timestamp > L.startTime + L.duration, "NotExpired");
-        require(!L.isMarketplaceNFT, "MarketplaceNFTNoLiquidation");
+    Loan storage L = loans[loanId];
 
-        // NFT remains with marketplace for marketplace NFTs
-        if (!L.isMarketplaceNFT) {
-            IERC721(L.nftContract).safeTransferFrom(address(this), L.lender, L.tokenId);
-        }
+    // 1️⃣ Ensure loan is active
+    require(L.status == LoanStatus.Funded, "LoanNotActive");
 
-        L.status = LoanStatus.Liquidated;
-        emit LoanLiquidated(loanId, msg.sender);
+    // 2️⃣ Only the lender can liquidate
+    require(msg.sender == L.lender, "NotLender");
+
+    // 3️⃣ Check that loan has expired
+    require(block.timestamp > L.startTime + L.duration, "NotExpired");
+
+    // 4️⃣ Marketplace NFTs cannot be liquidated
+    require(!L.isMarketplaceNFT, "MarketplaceNFTNoLiquidation");
+
+    // 5️⃣ Handle Wrapped Leasing NFTs if applicable
+    if (wrappedLeasingContracts[L.nftContract]) {
+        // Check lease status
+        (bool isActive, uint256 timeRemaining) = IWrappedLeasing(L.nftContract).getLeaseStatus(L.tokenId);
+        require(!isActive || timeRemaining == 0, "Lease not expired yet");
+    }
+
+    // 6️⃣ Transfer NFT to lender
+    try IERC721(L.nftContract).safeTransferFrom(address(this), L.lender, L.tokenId) {
+        // Transfer succeeded
+    } catch {
+        // If transfer fails, mark NFT as pending for withdrawal
+        pendingNFTs[L.lender].push(NFTInfo({
+            nftContract: L.nftContract,
+            tokenId: L.tokenId
+        }));
+    }
+
+    // 7️⃣ Update loan status & emit event
+    L.status = LoanStatus.Liquidated;
+    emit LoanLiquidated(loanId, msg.sender);
     }
 
     /* ==========================
