@@ -27,11 +27,12 @@ import {
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
 import { nftService } from '@/services/nftService';
-import { apiUrl, CONTRACT_ADDRESS } from '@/config';
+import { apiUrl } from '@/config';
 import { web3Service } from '@/services/web3Service';
 import { ethers } from 'ethers';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { apiService } from '@/services/api';
+import { getNFTMarketplaceAddress } from '@/services/configService';
 
 const NFTDetails = () => {
   const { id } = useParams();
@@ -46,6 +47,7 @@ const NFTDetails = () => {
   const [imageLoading, setImageLoading] = useState(true);
   const [currentGatewayIndex, setCurrentGatewayIndex] = useState(0);
   const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
+  const [contractAddress, setContractAddress] = useState<string>('');
   const [nftStats, setNftStats] = useState({
     views: 0,
     likes: 0,
@@ -57,6 +59,11 @@ const NFTDetails = () => {
 
   const [following, setFollowing] = useState<any[]>([]);
   const [mintTransactionHash, setMintTransactionHash] = useState<string | null>(null);
+
+  // Load contract address from config
+  useEffect(() => {
+    getNFTMarketplaceAddress().then(setContractAddress).catch(console.error);
+  }, []);
 
 // 3️⃣ Fetch following list for the current user
 useEffect(() => {
@@ -748,19 +755,21 @@ useEffect(() => {
                     <h3 className="text-lg font-semibold mb-3">Contract Address</h3>
                     <div className="flex items-center gap-2 p-3 bg-card/50 rounded-lg">
                       <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
-                        {CONTRACT_ADDRESS}
+                        {contractAddress || 'Loading...'}
                       </code>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => copyToClipboard(CONTRACT_ADDRESS)}
+                        onClick={() => copyToClipboard(contractAddress)}
+                        disabled={!contractAddress}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, '_blank')}
+                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${contractAddress}`, '_blank')}
+                        disabled={!contractAddress}
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>

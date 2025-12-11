@@ -5,21 +5,42 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, ExternalLink, Copy, X, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Loader2, ExternalLink, Copy, X, RefreshCw, ShieldCheck, AlertTriangle, Gift, Package, Clock, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 import { apiUrl } from '@/config';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { collateralLendingService, LoanStatus, LoanDetails } from '@/services/collateralLendingService';
+import { wrappedLeasingService } from '@/services/wrappedLeasingService';
 import { ethers } from 'ethers';
+import { web3Service } from '@/services/web3Service';
+
+interface WrappedNFT {
+  wId: string;
+  originalNft: string;
+  originalTokenId: string;
+  owner: string;
+  validUntil: number;
+  active: boolean;
+  isActive?: boolean;
+  timeRemaining?: number;
+}
 
 interface CollateralLeasingSidebarProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialContractAddress?: string;
+  initialTokenId?: string;
 }
 
-const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ open, onOpenChange }) => {
+const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ 
+  open, 
+  onOpenChange,
+  initialContractAddress,
+  initialTokenId
+}) => {
   const { isConnected, provider, address } = useWallet();
   const [activeTab, setActiveTab] = useState('new');
+  const [leasingType, setLeasingType] = useState('collateral');
   
   // Search State
   const [contractAddress, setContractAddress] = useState('');
@@ -36,15 +57,63 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
   const [loanIdInput, setLoanIdInput] = useState('');
   const [loanDetails, setLoanDetails] = useState<LoanDetails | null>(null);
   const [fetchingLoan, setFetchingLoan] = useState(false);
+  
+  // Pending Withdrawal State
+  const [pendingWithdrawal, setPendingWithdrawal] = useState<string>('0');
 
+  // Wrapped Leasing State
+  const [renterAddress, setRenterAddress] = useState('');
+  const [durationDays, setDurationDays] = useState('30');
+  const [wrappedNFTs, setWrappedNFTs] = useState<WrappedNFT[]>([]);
+  const [searchWId, setSearchWId] = useState('');
+  const [wrappedLoading, setWrappedLoading] = useState(false);
+  const [wrappedContractAddress, setWrappedContractAddress] = useState<string>('');
+  const [selectedWrappedNFT, setSelectedWrappedNFT] = useState<WrappedNFT | null>(null);
+
+  // Initialize services
   useEffect(() => {
-    if (isConnected && provider) {
-      collateralLendingService.initialize(provider);
-    }
-  }, [isConnected, provider]);
+    const initializeServices = async () => {
+      if (isConnected && provider) {
+        try {
+          await collateralLendingService.initialize(provider);
+          await checkPendingWithdrawal();
+          
+          // Also initialize wrapped leasing service
+          if (window.ethereum) {
+            const ethProvider = new ethers.BrowserProvider(window.ethereum as any);
+            const signer = await ethProvider.getSigner();
+            await wrappedLeasingService.initialize(ethProvider, signer);
+            
+            // Get the wrapped leasing contract address
+            const wrappedAddr = wrappedLeasingService.getContractAddress();
+            if (wrappedAddr) {
+              setWrappedContractAddress(wrappedAddr);
+            }
+          }
+        } catch (error) {
+          console.error('Error initializing services:', error);
+        }
+      }
+    };
+    initializeServices();
+  }, [isConnected, provider, address, open]);
 
-  const handleSearch = async () => {
-    const hasContractAndToken = contractAddress.trim() && tokenId.trim();
+  // Handle initial data when opening
+  useEffect(() => {
+    if (open && initialContractAddress && initialTokenId) {
+      setContractAddress(initialContractAddress);
+      setTokenId(initialTokenId);
+      setLeasingType('collateral'); // Default to collateral when opening from card
+      // Auto-trigger search after a short delay to ensure state is set
+      const timer = setTimeout(() => {
+        handleSearch(initialContractAddress, initialTokenId);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open, initialContractAddress, initialTokenId]);
+
+  const handleSearch = async (addr = contractAddress, id = tokenId) => {
+    const hasContractAndToken = addr.trim() && id.trim();
 
     if (!hasContractAndToken) {
       toast.error('Please enter both Contract Address and Token ID');
@@ -56,12 +125,13 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
     setNftData(null);
 
     try {
+      // First try the backend
       const res = await fetch(apiUrl('/nfts/external/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contract_address: contractAddress.trim(),
-          token_id: tokenId.trim(),
+          contract_address: addr.trim(),
+          token_id: id.trim(),
         }),
       });
       
@@ -69,19 +139,113 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
 
       if (data.success && data.data) {
         setNftData(data.data);
-        toast.success('External NFT found!');
+        toast.success('NFT found!');
       } else {
-        setNotFound(true);
-        toast.error(data.error || 'No NFT found for this address');
+        // Fallback to direct blockchain fetch
+        console.log('Backend search failed, trying direct blockchain fetch...');
+        try {
+            const externalData = await web3Service.getExternalNFTMetadata(addr.trim(), id.trim());
+            if (externalData) {
+                setNftData(externalData);
+                toast.success('NFT found on blockchain!');
+            } else {
+                setNotFound(true);
+                toast.error('No NFT found for this address');
+            }
+        } catch (chainError) {
+            console.error('Blockchain fetch failed:', chainError);
+            setNotFound(true);
+            toast.error('No NFT found on blockchain');
+        }
       }
     } catch (error) {
       console.error('Error fetching NFT:', error);
-      toast.error('Failed to fetch NFT details from blockchain');
-      setNotFound(true);
+      // Fallback to direct blockchain fetch on API error too
+      try {
+          const externalData = await web3Service.getExternalNFTMetadata(addr.trim(), id.trim());
+          if (externalData) {
+              setNftData(externalData);
+              toast.success('NFT found on blockchain!');
+          } else {
+              setNotFound(true);
+              toast.error('Failed to fetch NFT details');
+          }
+      } catch (chainError) {
+          console.error('Blockchain fetch failed:', chainError);
+          setNotFound(true);
+          toast.error('Failed to fetch NFT details');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  // ... (handleTransactionError and other handlers remain same)
+
+  // ... (handleCreateLoan, handleFetchLoan, handleFundLoan, etc. remain same)
+
+  // ... (checkPendingWithdrawal, handleWithdrawETH, copyToClipboard, handleClose remain same)
+
+  // ... (getNFTImageUrl, getStatusBadge remain same)
+
+  // ... (render logic)
+
+  // Inside render, specifically the "new" tab content:
+  /*
+              <TabsContent value="new" className="space-y-6">
+                <div className="space-y-3">
+                  <Label>Leasing Type</Label>
+                  <select
+                    className="w-full p-2 rounded-md border bg-background"
+                    value={leasingType}
+                    onChange={(e) => setLeasingType(e.target.value)}
+                  >
+                    <option value="wrapped">Wrapped Leasing</option>
+                    <option value="collateral">Collateral Leasing</option>
+                    <option value="program">Leasing Program (Coming Soon)</option>
+                  </select>
+                </div>
+
+                {leasingType === 'program' ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>Leasing Program is coming soon!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Label>Enter {leasingType === 'wrapped' ? 'Wrapped' : ''} Contract Address + Token ID</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="contract-address" className="text-xs">Contract Address</Label>
+                        <Input
+                          id="contract-address"
+                          placeholder="0x..."
+                          value={contractAddress}
+                          onChange={(e) => setContractAddress(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="token-id" className="text-xs">Token ID</Label>
+                        <Input
+                          id="token-id"
+                          placeholder="123"
+                          value={tokenId}
+                          onChange={(e) => setTokenId(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={() => handleSearch()} disabled={loading} className="w-full">
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching...</> : 'Search NFT'}
+                    </Button>
+                  </div>
+                )}
+
+                {nftData && leasingType !== 'program' && (
+                  // ... (render NFT card details)
+                )}
+  */
+
 
   const handleTransactionError = (error: any, defaultMessage: string) => {
     console.error(defaultMessage, error);
@@ -267,14 +431,36 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
   };
 
   const handleFundLoan = async () => {
-    if (!loanDetails) return;
+    if (!loanDetails || !address) return;
     setProcessing(true);
     try {
       toast.loading('Funding Loan...');
-      await collateralLendingService.fundLoan(loanDetails.loanId, loanDetails.principal);
+      const receipt = await collateralLendingService.fundLoan(loanDetails.loanId, loanDetails.principal);
+      
+      // Update backend with lender and status
+      try {
+        await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'Funded',
+            lender: address,
+            startTime: Math.floor(Date.now() / 1000)
+          })
+        });
+      } catch (backendError) {
+        console.error('Failed to update backend:', backendError);
+      }
+
       toast.dismiss();
-      toast.success('Loan Funded Successfully!');
-      handleFetchLoan();
+      toast.success('Loan Funded Successfully! Money sent to borrower.');
+      toast.info('Note: If the borrower cannot receive ETH directly, they may need to manually withdraw from the contract.', { duration: 5000 });
+      
+      // Refresh loan details to show updated status
+      await handleFetchLoan();
+      
+      // Check if borrower has pending withdrawal
+      await checkPendingWithdrawal();
     } catch (error: any) {
       handleTransactionError(error, 'Failed to fund loan');
     } finally {
@@ -291,9 +477,27 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
       
       toast.loading(`Repaying ${repayAmount} ETH...`);
       await collateralLendingService.repayLoan(loanDetails.loanId, repayAmount);
+      
+      // Update backend status
+      try {
+        await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Repaid' })
+        });
+      } catch (backendError) {
+        console.error('Failed to update backend:', backendError);
+      }
+
       toast.dismiss();
       toast.success('Loan Repaid Successfully! NFT Unlocked.');
-      handleFetchLoan();
+      toast.info('Note: If the lender cannot receive ETH directly, they may need to manually withdraw from the contract.', { duration: 5000 });
+      
+      // Refresh loan details
+      await handleFetchLoan();
+      
+      // Check if lender has pending withdrawal
+      await checkPendingWithdrawal();
     } catch (error: any) {
       handleTransactionError(error, 'Failed to repay loan');
     } finally {
@@ -303,26 +507,58 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
 
   const handleLiquidateLoan = async () => {
     if (!loanDetails) return;
-    if (!loanDetails) return;
     setProcessing(true);
     try {
       toast.loading('Liquidating Loan...');
       await collateralLendingService.liquidateLoan(loanDetails.loanId);
       
       // Update backend status
-      await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            status: 'Liquidated'
-        })
-      });
+      try {
+        await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Liquidated' })
+        });
+      } catch (backendError) {
+        console.error('Failed to update backend:', backendError);
+        // Don't fail the transaction if backend update fails
+      }
 
       toast.dismiss();
       toast.success('Loan Liquidated! NFT transferred to you.');
-      handleFetchLoan(loanDetails.loanId.toString());
+      
+      // Refresh loan details
+      await handleFetchLoan(loanDetails.loanId.toString());
     } catch (error: any) {
       handleTransactionError(error, 'Failed to liquidate loan');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const checkPendingWithdrawal = async () => {
+    if (!address) return;
+    try {
+      const pending = await collateralLendingService.getPendingETHWithdrawal(address);
+      setPendingWithdrawal(pending);
+      if (parseFloat(pending) > 0) {
+        toast.info(`You have ${pending} ETH pending withdrawal from the contract!`, { duration: 6000 });
+      }
+    } catch (error) {
+      console.error('Error checking pending withdrawal:', error);
+    }
+  };
+
+  const handleWithdrawETH = async () => {
+    setProcessing(true);
+    try {
+      toast.loading('Withdrawing pending ETH...');
+      await collateralLendingService.withdrawETH();
+      toast.dismiss();
+      toast.success(`Successfully withdrew ${pendingWithdrawal} ETH!`);
+      setPendingWithdrawal('0');
+    } catch (error: any) {
+      handleTransactionError(error, 'Failed to withdraw ETH');
     } finally {
       setProcessing(false);
     }
@@ -333,6 +569,139 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
     toast.success('Copied to clipboard');
   };
 
+  // ===== WRAPPED LEASING FUNCTIONS =====
+  
+  const loadWrappedNFTs = async () => {
+    if (!address) return;
+    setWrappedLoading(true);
+    try {
+      const counter = await wrappedLeasingService.getWCounter();
+      const nfts: WrappedNFT[] = [];
+      
+      // Load last 20 wrapped NFTs
+      const start = Math.max(1, counter - 19);
+      for (let i = counter; i >= start; i--) {
+        try {
+          const info = await wrappedLeasingService.getWrappedInfo(i.toString());
+          const status = await wrappedLeasingService.getLeaseStatus(i.toString());
+          
+          // Only show NFTs owned by current user
+          if (info.owner.toLowerCase() === address?.toLowerCase()) {
+            nfts.push({
+              wId: i.toString(),
+              ...info,
+              ...status
+            });
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+      
+      setWrappedNFTs(nfts);
+    } catch (error) {
+      console.error('Error loading wrapped NFTs:', error);
+    } finally {
+      setWrappedLoading(false);
+    }
+  };
+
+  const handleWrapNFT = async () => {
+    if (!contractAddress || !tokenId || !renterAddress || !durationDays) {
+      toast.error('Please fill all fields');
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      // Step 1: Approve NFT
+      toast.loading('Approving NFT for wrapping...', { id: 'wrap' });
+      await wrappedLeasingService.approveNFTForWrapping(contractAddress, tokenId);
+      toast.dismiss('wrap');
+
+      // Step 2: Wrap the NFT
+      toast.loading('Wrapping NFT...', { id: 'wrap' });
+      const result = await wrappedLeasingService.wrapNFT(
+        contractAddress,
+        tokenId,
+        renterAddress,
+        parseFloat(durationDays),
+        '', // metadata URI empty for now
+        '0' // fee
+      );
+      toast.dismiss('wrap');
+
+      toast.success(`NFT Wrapped Successfully! wID: ${result.wId}`);
+      
+      // Reset form
+      setContractAddress('');
+      setTokenId('');
+      setRenterAddress('');
+      setDurationDays('30');
+      setNftData(null);
+      
+      // Refresh list and switch to manage tab
+      await loadWrappedNFTs();
+      setActiveTab('manage');
+    } catch (error: any) {
+      toast.dismiss('wrap');
+      handleTransactionError(error, 'Failed to wrap NFT');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleUnwrapNFT = async (wId: string) => {
+    if (!window.confirm('Are you sure you want to unwrap this NFT?')) return;
+
+    setProcessing(true);
+    try {
+      toast.loading('Unwrapping NFT...', { id: 'unwrap' });
+      await wrappedLeasingService.unwrapNFT(wId);
+      toast.dismiss('unwrap');
+      toast.success('NFT Unwrapped Successfully!');
+      await loadWrappedNFTs();
+    } catch (error: any) {
+      toast.dismiss('unwrap');
+      handleTransactionError(error, 'Failed to unwrap NFT');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSearchWId = async () => {
+    if (!searchWId) return;
+
+    setWrappedLoading(true);
+    try {
+      const info = await wrappedLeasingService.getWrappedInfo(searchWId);
+      const status = await wrappedLeasingService.getLeaseStatus(searchWId);
+      
+      setWrappedNFTs([{
+        wId: searchWId,
+        ...info,
+        ...status
+      }]);
+    } catch (error) {
+      toast.error('Wrapped NFT not found');
+    } finally {
+      setWrappedLoading(false);
+    }
+  };
+
+  const formatTimeRemaining = (seconds: number) => {
+    if (seconds <= 0) return 'Expired';
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 0) return `${days}d ${hours}h remaining`;
+    if (hours > 0) return `${hours}h ${minutes}m remaining`;
+    return `${minutes}m remaining`;
+  };
+
+  // ===== END WRAPPED LEASING FUNCTIONS =====
+
   const handleClose = () => {
     setContractAddress('');
     setTokenId('');
@@ -340,6 +709,12 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
     setNotFound(false);
     setLoanDetails(null);
     setLoanIdInput('');
+    // Reset wrapped leasing state
+    setRenterAddress('');
+    setDurationDays('30');
+    setWrappedNFTs([]);
+    setSearchWId('');
+    setSelectedWrappedNFT(null);
     onOpenChange(false);
   };
 
@@ -373,8 +748,20 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
         <div className="h-full flex flex-col overflow-hidden">
           <div className="flex items-center justify-between p-6 border-b border-border/40">
             <div>
-              <h2 className="text-2xl font-bold gradient-text">Collateral Leasing</h2>
-              <p className="text-sm text-muted-foreground mt-1">Borrow against your NFTs</p>
+              <h2 className="text-2xl font-bold gradient-text flex items-center gap-2">
+                {leasingType === 'wrapped' ? (
+                  <><Gift className="h-6 w-6" /> NFT Leasing</>
+                ) : (
+                  <><ShieldCheck className="h-6 w-6" /> NFT Leasing</>
+                )}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {leasingType === 'wrapped' 
+                  ? 'Wrap & lend your NFTs safely' 
+                  : leasingType === 'collateral'
+                  ? 'Borrow against your NFTs'
+                  : 'Explore leasing options'}
+              </p>
             </div>
             <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
               <X className="h-5 w-5" />
@@ -382,6 +769,33 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
           </div>
 
           <div className="flex-1 overflow-y-auto p-6">
+            {/* Pending Withdrawal Banner */}
+            {parseFloat(pendingWithdrawal) > 0 && (
+              <Card className="mb-4 border-yellow-500/50 bg-yellow-500/10">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-1">
+                      <AlertTriangle className="h-5 w-5 text-yellow-500 shrink-0" />
+                      <div>
+                        <div className="font-semibold text-yellow-500">Pending Withdrawal</div>
+                        <div className="text-sm text-muted-foreground">
+                          You have <span className="font-bold text-yellow-500">{pendingWithdrawal} ETH</span> waiting to be claimed
+                        </div>
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={handleWithdrawETH} 
+                      disabled={processing}
+                      className="bg-yellow-600 hover:bg-yellow-700 shrink-0"
+                      size="sm"
+                    >
+                      {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Withdraw'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="new">New Loan</TabsTrigger>
@@ -390,35 +804,155 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
 
               <TabsContent value="new" className="space-y-6">
                 <div className="space-y-3">
-                  <Label>Enter Contract Address + Token ID</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="contract-address" className="text-xs">Contract Address</Label>
-                      <Input
-                        id="contract-address"
-                        placeholder="0x..."
-                        value={contractAddress}
-                        onChange={(e) => setContractAddress(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="token-id" className="text-xs">Token ID</Label>
-                      <Input
-                        id="token-id"
-                        placeholder="123"
-                        value={tokenId}
-                        onChange={(e) => setTokenId(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      />
-                    </div>
-                  </div>
-                  <Button onClick={handleSearch} disabled={loading} className="w-full">
-                    {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching...</> : 'Search NFT'}
-                  </Button>
+                  <Label>Leasing Type</Label>
+                  <select
+                    className="w-full p-2 rounded-md border bg-background"
+                    value={leasingType}
+                    onChange={(e) => setLeasingType(e.target.value)}
+                  >
+                    <option value="wrapped">Wrapped Leasing</option>
+                    <option value="collateral">Collateral Leasing</option>
+                    <option value="program">Leasing Program (Coming Soon)</option>
+                  </select>
                 </div>
 
-                {nftData && (
+                {leasingType === 'program' ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>Leasing Program is coming soon!</p>
+                  </div>
+                ) : leasingType === 'wrapped' ? (
+                  /* ===== WRAPPED LEASING FORM ===== */
+                  <div className="space-y-4">
+                    {/* Info Banner */}
+                    <Card className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/20">
+                      <CardContent className="p-3">
+                        <div className="flex items-start gap-2">
+                          <Info className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-xs text-muted-foreground">
+                              Wrap your NFT into a time-limited wNFT. The renter receives the wNFT for the specified duration. 
+                              After expiry, you can unwrap to get your original NFT back.
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* NFT Contract & Token ID */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="wrap-contract" className="text-xs">NFT Contract Address *</Label>
+                        <Input
+                          id="wrap-contract"
+                          placeholder="0x..."
+                          value={contractAddress}
+                          onChange={(e) => setContractAddress(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="wrap-token" className="text-xs">Token ID *</Label>
+                        <Input
+                          id="wrap-token"
+                          placeholder="123"
+                          value={tokenId}
+                          onChange={(e) => setTokenId(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Renter Address */}
+                    <div className="space-y-2">
+                      <Label htmlFor="renter-address" className="text-xs">Renter Address *</Label>
+                      <Input
+                        id="renter-address"
+                        placeholder="0x... (Who will receive the wrapped NFT)"
+                        value={renterAddress}
+                        onChange={(e) => setRenterAddress(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Duration */}
+                    <div className="space-y-2">
+                      <Label htmlFor="wrap-duration" className="text-xs">Lease Duration (Days) *</Label>
+                      <Input
+                        id="wrap-duration"
+                        type="number"
+                        min="0.0001"
+                        step="any"
+                        placeholder="30 (or 0.0014 for 2 min test)"
+                        value={durationDays}
+                        onChange={(e) => setDurationDays(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use 0.0014 for a 2-minute test
+                      </p>
+                    </div>
+
+                    {/* Summary */}
+                    <div className="bg-muted/30 p-3 rounded-lg space-y-1">
+                      <h4 className="font-semibold text-sm flex items-center gap-2">
+                        <Package className="h-4 w-4" /> Summary
+                      </h4>
+                      <ul className="text-xs space-y-1 text-muted-foreground">
+                        <li>• Your NFT will be locked in the contract</li>
+                        <li>• Renter receives a time-limited wrapped NFT</li>
+                        <li>• Lease expires in {durationDays || '0'} days</li>
+                        <li>• You can unwrap after expiry to get your NFT back</li>
+                      </ul>
+                    </div>
+
+                    {/* Wrap Button */}
+                    <Button
+                      className="w-full bg-gradient-to-r from-purple-500 to-blue-600"
+                      onClick={handleWrapNFT}
+                      disabled={processing || !contractAddress || !tokenId || !renterAddress || !durationDays}
+                    >
+                      {processing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Wrapping NFT...
+                        </>
+                      ) : (
+                        <>
+                          <Gift className="h-4 w-4 mr-2" />
+                          Wrap NFT
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  /* ===== COLLATERAL LEASING FORM ===== */
+                  <div className="space-y-3">
+                    <Label>Enter Contract Address + Token ID</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="contract-address" className="text-xs">Contract Address</Label>
+                        <Input
+                          id="contract-address"
+                          placeholder="0x..."
+                          value={contractAddress}
+                          onChange={(e) => setContractAddress(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="token-id" className="text-xs">Token ID</Label>
+                        <Input
+                          id="token-id"
+                          placeholder="123"
+                          value={tokenId}
+                          onChange={(e) => setTokenId(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={() => handleSearch()} disabled={loading} className="w-full">
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching...</> : 'Search NFT'}
+                    </Button>
+                  </div>
+                )}
+
+                {nftData && leasingType !== 'program' && (
                   <Card className="glass-card border-0">
                     <CardContent className="p-6 space-y-4">
                       <div className="flex gap-4">
@@ -527,101 +1061,320 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
               </TabsContent>
 
               <TabsContent value="manage" className="space-y-6">
-                <div className="flex gap-2">
-                  <Input 
-                    placeholder="Enter Loan ID" 
-                    value={loanIdInput} 
-                    onChange={(e) => setLoanIdInput(e.target.value)}
-                  />
-                  <Button onClick={() => handleFetchLoan()} disabled={fetchingLoan}>
-                    {fetchingLoan ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  </Button>
-                </div>
+                {leasingType === 'wrapped' ? (
+                  /* ===== WRAPPED NFTs MANAGEMENT ===== */
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Search by Wrapped ID (wId)..."
+                        value={searchWId}
+                        onChange={(e) => setSearchWId(e.target.value)}
+                      />
+                      <Button onClick={handleSearchWId} disabled={wrappedLoading}>
+                        Search
+                      </Button>
+                      <Button variant="outline" onClick={loadWrappedNFTs} disabled={wrappedLoading}>
+                        <RefreshCw className={`h-4 w-4 ${wrappedLoading ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
 
-                {loanDetails && (
-                  <Card className="glass-card border-0">
-                    <CardContent className="p-6 space-y-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="text-lg font-bold">Loan #{loanDetails.loanId}</h3>
-                          <div className="mt-1">{getStatusBadge(loanDetails.status)}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm text-muted-foreground">Principal</div>
-                          <div className="text-xl font-bold">Ξ{loanDetails.principal}</div>
-                        </div>
+                    {wrappedLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       </div>
+                    ) : wrappedNFTs.length === 0 ? (
+                      <Card className="glass-card">
+                        <CardContent className="p-8 text-center">
+                          <Package className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                          <h3 className="font-semibold mb-2">No Wrapped NFTs Found</h3>
+                          <p className="text-sm text-muted-foreground">
+                            You haven't wrapped any NFTs yet. Switch to "New Loan" tab to wrap your first NFT!
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-3">
+                        {wrappedNFTs.map((nft) => (
+                          <Card key={nft.wId} className={`glass-card hover:border-primary/50 transition-colors ${selectedWrappedNFT?.wId === nft.wId ? 'border-primary' : ''}`}>
+                            <CardContent className="p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h4 className="font-bold">wNFT #{nft.wId}</h4>
+                                <div className="flex items-center gap-2">
+                                  {nft.active ? (
+                                    <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
+                                      Active
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="bg-gray-500/10 text-gray-500">
+                                      Inactive
+                                    </Badge>
+                                  )}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => setSelectedWrappedNFT(selectedWrappedNFT?.wId === nft.wId ? null : nft)}
+                                  >
+                                    <Info className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
 
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="bg-card/50 p-3 rounded-lg">
-                          <div className="text-muted-foreground">Borrower</div>
-                          <div className="font-mono truncate">{loanDetails.borrower.slice(0, 6)}...{loanDetails.borrower.slice(-4)}</div>
-                        </div>
-                        <div className="bg-card/50 p-3 rounded-lg">
-                          <div className="text-muted-foreground">Lender</div>
-                          <div className="font-mono truncate">{loanDetails.lender === ethers.ZeroAddress ? 'None' : `${loanDetails.lender.slice(0, 6)}...${loanDetails.lender.slice(-4)}`}</div>
-                        </div>
-                        <div className="bg-card/50 p-3 rounded-lg">
-                          <div className="text-muted-foreground">Interest</div>
-                          <div>{(loanDetails.interestBps / 100).toFixed(2)}%</div>
-                        </div>
-                        <div className="bg-card/50 p-3 rounded-lg">
-                          <div className="text-muted-foreground">Duration</div>
-                          <div>{Math.floor(loanDetails.duration / (24 * 3600))} Days</div>
-                        </div>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Original Token:</span>
+                                  <code className="text-xs bg-muted px-2 py-1 rounded">#{nft.originalTokenId}</code>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-muted-foreground">NFT Contract:</span>
+                                  <div className="flex items-center gap-1">
+                                    <code className="text-xs bg-muted px-2 py-1 rounded truncate max-w-[120px]">
+                                      {nft.originalNft.slice(0, 6)}...{nft.originalNft.slice(-4)}
+                                    </code>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5"
+                                      onClick={() => copyToClipboard(nft.originalNft)}
+                                    >
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="bg-muted/30 p-2 rounded-lg mt-3 flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-purple-500" />
+                                <span className="font-medium text-sm">
+                                  {nft.timeRemaining !== undefined
+                                    ? formatTimeRemaining(nft.timeRemaining)
+                                    : 'Calculating...'}
+                                </span>
+                              </div>
+
+                              {/* Expanded Details View */}
+                              {selectedWrappedNFT?.wId === nft.wId && (
+                                <div className="mt-4 p-3 bg-gradient-to-r from-purple-500/5 to-blue-500/5 rounded-lg border border-purple-500/20 space-y-3">
+                                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                                    <ShieldCheck className="h-4 w-4 text-purple-500" />
+                                    On-Chain Details
+                                  </h5>
+                                  
+                                  <div className="grid grid-cols-1 gap-2 text-xs">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Wrapped ID:</span>
+                                      <span className="font-mono">{nft.wId}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Owner:</span>
+                                      <code className="bg-muted px-1 py-0.5 rounded">
+                                        {nft.owner.slice(0, 6)}...{nft.owner.slice(-4)}
+                                      </code>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Expires:</span>
+                                      <span>{nft.validUntil ? new Date(nft.validUntil * 1000).toLocaleString() : 'N/A'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Status:</span>
+                                      <span className={nft.isActive ? 'text-green-500' : 'text-gray-500'}>
+                                        {nft.isActive ? '✓ Active Lease' : '✗ Inactive'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Contract Links */}
+                                  <div className="pt-2 border-t border-border/40 space-y-2">
+                                    <div className="text-xs text-muted-foreground">Smart Contract:</div>
+                                    <div className="flex items-center gap-1">
+                                      <code className="text-xs bg-muted px-2 py-1 rounded flex-1 truncate">
+                                        {wrappedContractAddress || 'Loading...'}
+                                      </code>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 shrink-0"
+                                        onClick={() => copyToClipboard(wrappedContractAddress)}
+                                        disabled={!wrappedContractAddress}
+                                      >
+                                        <Copy className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 shrink-0"
+                                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${wrappedContractAddress}`, '_blank')}
+                                        disabled={!wrappedContractAddress}
+                                      >
+                                        <ExternalLink className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {nft.active && nft.owner.toLowerCase() === address?.toLowerCase() && (
+                                <Button
+                                  className="w-full mt-3"
+                                  variant={nft.timeRemaining === 0 ? 'default' : 'outline'}
+                                  onClick={() => handleUnwrapNFT(nft.wId)}
+                                  disabled={processing || (nft.timeRemaining !== undefined && nft.timeRemaining > 0 && nft.isActive)}
+                                >
+                                  {nft.timeRemaining !== undefined && nft.timeRemaining > 0 ? (
+                                    <>
+                                      <AlertCircle className="h-4 w-4 mr-2" />
+                                      Cannot Unwrap Yet
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                                      Unwrap NFT
+                                    </>
+                                  )}
+                                </Button>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
+                    )}
 
-                      {/* Actions */}
-                      <div className="pt-4 border-t border-border space-y-3">
-                        {loanDetails.status === LoanStatus.Requested && address && (
-                          address.toLowerCase() !== loanDetails.borrower.toLowerCase() ? (
-                            <Button className="w-full bg-green-600 hover:bg-green-700" onClick={handleFundLoan} disabled={processing}>
-                              {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Fund Loan (Lend ETH)'}
+                    {/* Wrapped Leasing Contract Info Footer */}
+                    {wrappedContractAddress && (
+                      <Card className="mt-4 bg-gradient-to-r from-purple-500/5 to-blue-500/5 border-purple-500/20">
+                        <CardContent className="p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <ShieldCheck className="h-4 w-4 text-purple-500" />
+                            <span className="text-xs font-semibold">NFTs Locked in Smart Contract</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <code className="text-xs bg-muted px-2 py-1 rounded flex-1 truncate">
+                              {wrappedContractAddress}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={() => copyToClipboard(wrappedContractAddress)}
+                            >
+                              <Copy className="h-3 w-3" />
                             </Button>
-                          ) : (
-                            <div className="text-center text-sm text-muted-foreground">Waiting for a lender...</div>
-                          )
-                        )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={() => window.open(`https://sepolia.etherscan.io/address/${wrappedContractAddress}`, '_blank')}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Your original NFTs are safely locked in this contract until the lease expires.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                ) : (
+                  /* ===== COLLATERAL LOAN MANAGEMENT ===== */
+                  <>
+                    <div className="flex gap-2">
+                      <Input 
+                        placeholder="Enter Loan ID" 
+                        value={loanIdInput} 
+                        onChange={(e) => setLoanIdInput(e.target.value)}
+                      />
+                      <Button onClick={() => handleFetchLoan()} disabled={fetchingLoan}>
+                        {fetchingLoan ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      </Button>
+                    </div>
 
-                        {loanDetails.status === LoanStatus.Funded && (
-                          <>
-                            {address && address.toLowerCase() === loanDetails.borrower.toLowerCase() && (
-                              <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleRepayLoan} disabled={processing}>
-                                {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Repay Loan & Unlock NFT'}
-                              </Button>
+                    {loanDetails && (
+                      <Card className="glass-card border-0">
+                        <CardContent className="p-6 space-y-4">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h3 className="text-lg font-bold">Loan #{loanDetails.loanId}</h3>
+                              <div className="mt-1">{getStatusBadge(loanDetails.status)}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm text-muted-foreground">Principal</div>
+                              <div className="text-xl font-bold">Ξ{loanDetails.principal}</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="bg-card/50 p-3 rounded-lg">
+                              <div className="text-muted-foreground">Borrower</div>
+                              <div className="font-mono truncate">{loanDetails.borrower.slice(0, 6)}...{loanDetails.borrower.slice(-4)}</div>
+                            </div>
+                            <div className="bg-card/50 p-3 rounded-lg">
+                              <div className="text-muted-foreground">Lender</div>
+                              <div className="font-mono truncate">{loanDetails.lender === ethers.ZeroAddress ? 'None' : `${loanDetails.lender.slice(0, 6)}...${loanDetails.lender.slice(-4)}`}</div>
+                            </div>
+                            <div className="bg-card/50 p-3 rounded-lg">
+                              <div className="text-muted-foreground">Interest</div>
+                              <div>{(loanDetails.interestBps / 100).toFixed(2)}%</div>
+                            </div>
+                            <div className="bg-card/50 p-3 rounded-lg">
+                              <div className="text-muted-foreground">Duration</div>
+                              <div>{Math.floor(loanDetails.duration / (24 * 3600))} Days</div>
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="pt-4 border-t border-border space-y-3">
+                            {loanDetails.status === LoanStatus.Requested && address && (
+                              address.toLowerCase() !== loanDetails.borrower.toLowerCase() ? (
+                                <Button className="w-full bg-green-600 hover:bg-green-700" onClick={handleFundLoan} disabled={processing}>
+                                  {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Fund Loan (Lend ETH)'}
+                                </Button>
+                              ) : (
+                                <div className="text-center text-sm text-muted-foreground">Waiting for a lender...</div>
+                              )
+                            )}
+
+                            {loanDetails.status === LoanStatus.Funded && (
+                              <>
+                                {address && address.toLowerCase() === loanDetails.borrower.toLowerCase() && (
+                                  <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleRepayLoan} disabled={processing}>
+                                    {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Repay Loan & Unlock NFT'}
+                                  </Button>
+                                )}
+                                
+                                {/* Liquidation Check */}
+                                {Date.now() / 1000 > loanDetails.startTime + loanDetails.duration && (
+                                   <div className="bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                                     <div className="flex items-center gap-2 text-red-500 font-bold mb-2">
+                                       <AlertTriangle className="h-4 w-4" /> Loan Expired
+                                     </div>
+                                     <p className="text-xs text-muted-foreground mb-3">The loan duration has passed. The lender can now liquidate the NFT.</p>
+                                     {address && address.toLowerCase() === loanDetails.lender.toLowerCase() && (
+                                       <Button className="w-full bg-red-600 hover:bg-red-700" onClick={handleLiquidateLoan} disabled={processing}>
+                                         {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Liquidate NFT'}
+                                       </Button>
+                                     )}
+                                   </div>
+                                )}
+                              </>
                             )}
                             
-                            {/* Liquidation Check */}
-                            {Date.now() / 1000 > loanDetails.startTime + loanDetails.duration && (
-                               <div className="bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-                                 <div className="flex items-center gap-2 text-red-500 font-bold mb-2">
-                                   <AlertTriangle className="h-4 w-4" /> Loan Expired
-                                 </div>
-                                 <p className="text-xs text-muted-foreground mb-3">The loan duration has passed. The lender can now liquidate the NFT.</p>
-                                 {address && address.toLowerCase() === loanDetails.lender.toLowerCase() && (
-                                   <Button className="w-full bg-red-600 hover:bg-red-700" onClick={handleLiquidateLoan} disabled={processing}>
-                                     {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Liquidate NFT'}
-                                   </Button>
-                                 )}
-                               </div>
+                            {loanDetails.status === LoanStatus.Repaid && (
+                                <div className="flex items-center justify-center gap-2 text-green-500 font-medium p-3 bg-green-500/10 rounded-lg">
+                                    <ShieldCheck className="h-5 w-5" /> Loan Repaid & NFT Returned
+                                </div>
                             )}
-                          </>
-                        )}
-                        
-                        {loanDetails.status === LoanStatus.Repaid && (
-                            <div className="flex items-center justify-center gap-2 text-green-500 font-medium p-3 bg-green-500/10 rounded-lg">
-                                <ShieldCheck className="h-5 w-5" /> Loan Repaid & NFT Returned
-                            </div>
-                        )}
-                        
-                        {loanDetails.status === LoanStatus.Liquidated && (
-                            <div className="flex items-center justify-center gap-2 text-red-500 font-medium p-3 bg-red-500/10 rounded-lg">
-                                <AlertTriangle className="h-5 w-5" /> Loan Liquidated
-                            </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                            
+                            {loanDetails.status === LoanStatus.Liquidated && (
+                                <div className="flex items-center justify-center gap-2 text-red-500 font-medium p-3 bg-red-500/10 rounded-lg">
+                                    <AlertTriangle className="h-5 w-5" /> Loan Liquidated
+                                </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
                 )}
               </TabsContent>
             </Tabs>

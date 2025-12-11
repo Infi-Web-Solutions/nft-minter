@@ -95,3 +95,51 @@ export const getAllTransactions = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
+// Get user-specific transactions
+export const getUserTransactions = async (req, res) => {
+    try {
+        const { address } = req.params;
+        const { type, page = 1, limit = 20 } = req.query;
+        
+        // Build query to find transactions where user is either sender or receiver
+        const query = {
+            $or: [
+                { from_address: address.toLowerCase() },
+                { to_address: address.toLowerCase() }
+            ],
+            // Exclude like/unlike/follow/unfollow - only show meaningful transactions
+            transaction_type: { 
+                $nin: ['like', 'unlike', 'follow', 'unfollow'] 
+            }
+        };
+
+        if (type) {
+            query.transaction_type = type;
+        }
+
+        const transactions = await Transaction.find(query)
+            .populate('nft')
+            .skip((page - 1) * limit)
+            .limit(Number(limit))
+            .sort({ timestamp: -1 });
+
+        const total = await Transaction.countDocuments(query);
+
+        res.json({
+            success: true,
+            data: transactions,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                total_pages: Math.ceil(total / limit),
+                total_items: total,
+                has_next: (page * limit) < total,
+                has_previous: page > 1
+            }
+        });
+    } catch (error) {
+        console.error("[ERROR] getUserTransactions:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};

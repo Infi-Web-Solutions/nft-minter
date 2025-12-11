@@ -41,10 +41,13 @@ export const createLoan = async (req, res) => {
   }
 };
 
-// Get all open loans (Status = Requested)
+// Get all active loans (Status = Requested or Funded)
+// This includes both loans waiting for lenders and loans that are currently active
 export const getOpenLoans = async (req, res) => {
   try {
-    const loans = await Loan.find({ status: 'Requested' }).sort({ createdAt: -1 });
+    const loans = await Loan.find({ 
+      status: { $in: ['Requested', 'Funded'] } 
+    }).sort({ createdAt: -1 });
     
     // Optionally fetch NFT details for each loan to display images
     // This assumes the NFT is in our local DB. If it's external, we might need to fetch metadata differently.
@@ -84,27 +87,42 @@ export const updateLoanStatus = async (req, res) => {
     await loan.save();
 
     // If Liquidated, update the NFT owner to the lender
-    if (status === 'Liquidated') {
+    if (status === 'Liquidated' && loan.lender) {
         try {
-            // Find NFT by token ID (assuming local NFT for now, or matching ID)
-            // In a multi-collection system, we should also check the contract address
-            // But based on the NFT model, token_id is unique.
-            const nft = await NFT.findOne({ token_id: loan.tokenId });
+            // Try to find NFT by contract address AND token ID for external NFTs
+            // For local NFTs, we can match by token_id alone as they're unique
+            let nft = await NFT.findOne({ 
+                contract_address: loan.nftContract,
+                token_id: loan.tokenId 
+            });
+            
+            // If not found by contract, try by token_id alone (for older local NFTs)
+            if (!nft) {
+                nft = await NFT.findOne({ token_id: loan.tokenId });
+            }
             
             if (nft) {
-                // Verify if it's the correct collection if possible, or just update
-                // For local NFTs, contract address usually matches config
+                console.log(`[Loan] Updating NFT ownership for liquidation - Loan #${loan.loanId}`);
+                console.log(`[Loan] Previous owner: ${nft.owner_address}`);
+                console.log(`[Loan] New owner (lender): ${loan.lender}`);
+                console.log(`[Loan] Original NFT price: ${nft.price} ETH (will be preserved)`);
                 
-                // Update owner
-                nft.owner_address = loan.lender;
-                nft.is_listed = false; // Ensure it's not listed anymore
-                nft.price = null; // Reset price
+                // Update owner - KEEP the original price so lender can sell it to recover investment!
+                nft.owner_address = loan.lender.toLowerCase();
+                nft.is_listed = false; // Set to false - new owner (lender) should decide if they want to list it
+                // ✅ DO NOT reset price - lender can sell at original price to recover their loss
                 await nft.save();
-                console.log(`[Loan] NFT ${nft.token_id} ownership transferred to lender ${loan.lender} due to liquidation`);
+                
+                console.log(`[Loan] ✅ NFT ${nft.token_id} ownership transferred to lender ${loan.lender} due to liquidation`);
+                console.log(`[Loan] ✅ NFT price preserved (${nft.price} ETH) - lender can list to recover investment`);
+            } else {
+                console.log(`[Loan] ⚠️ NFT not found in database (Contract: ${loan.nftContract}, Token: ${loan.tokenId})`);
+                console.log(`[Loan] This is expected for external NFTs not minted through the platform`);
+                console.log(`[Loan] Liquidation successful on blockchain - lender now owns NFT on-chain`);
             }
         } catch (nftError) {
             console.error('[Loan] Failed to update NFT owner on liquidation:', nftError);
-            // Don't fail the request, just log it
+            // Don't fail the request, just log it - blockchain transfer already happened
         }
     }
 

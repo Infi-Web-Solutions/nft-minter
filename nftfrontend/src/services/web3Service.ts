@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { getNFTMarketplaceAddress } from './configService';
 
 // Smart contract ABI (you'll need to import this from your compiled contract)
 const NFT_MARKETPLACE_ABI = [
@@ -31,9 +32,6 @@ const NFT_MARKETPLACE_ABI = [
   "event AuctionEnded(uint256 indexed tokenId, address indexed winner, uint256 finalPrice)"
 ];
 
-// Contract address (your deployed contract address)
-const CONTRACT_ADDRESS = "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201";
-
 export interface NFTMetadata {
   name: string;
   description: string;
@@ -56,11 +54,15 @@ export class Web3Service {
   private contract: ethers.Contract | null = null;
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.JsonRpcSigner | null = null;
+  private contractAddress: string = '';
 
   async initialize(provider: ethers.BrowserProvider) {
     this.provider = provider;
     this.signer = await provider.getSigner();
-    this.contract = new ethers.Contract(CONTRACT_ADDRESS, NFT_MARKETPLACE_ABI, this.signer);
+    
+    // Get contract address from backend config
+    this.contractAddress = await getNFTMarketplaceAddress();
+    this.contract = new ethers.Contract(this.contractAddress, NFT_MARKETPLACE_ABI, this.signer);
   }
 
   // Check if service is initialized
@@ -226,9 +228,14 @@ export class Web3Service {
     return {
       name,
       symbol,
-      address: CONTRACT_ADDRESS,
+      address: this.contractAddress,
       network: await this.provider!.getNetwork()
     };
+  }
+
+  // Get contract address
+  getContractAddress(): string {
+    return this.contractAddress;
   }
 
   // Wait for transaction
@@ -252,6 +259,72 @@ export class Web3Service {
     }
     
     return 'An unknown error occurred';
+  }
+
+  async getExternalNFTMetadata(contractAddress: string, tokenId: string): Promise<any> {
+    if (!this.provider) {
+       throw new Error('Web3Service not initialized');
+    }
+
+    try {
+      const ERC721_ABI = [
+        "function name() view returns (string)",
+        "function symbol() view returns (string)",
+        "function tokenURI(uint256 tokenId) view returns (string)",
+        "function ownerOf(uint256 tokenId) view returns (address)"
+      ];
+
+      const contract = new ethers.Contract(contractAddress, ERC721_ABI, this.provider);
+      
+      // Fetch basic on-chain data
+      const [tokenURI, owner] = await Promise.all([
+        contract.tokenURI(tokenId),
+        contract.ownerOf(tokenId)
+      ]);
+
+      // Resolve IPFS URI
+      let metadataUrl = tokenURI;
+      if (tokenURI.startsWith('ipfs://')) {
+        metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      }
+
+      // Fetch metadata JSON
+      // Use a proxy or try direct fetch (CORS might be an issue for some)
+      // For now, try direct fetch
+      const response = await fetch(metadataUrl);
+      const metadata = await response.json();
+
+      // Resolve image IPFS URI
+      let imageUrl = metadata.image || metadata.image_url || '';
+      if (imageUrl.startsWith('ipfs://')) {
+        imageUrl = imageUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      }
+
+      return {
+        name: metadata.name || `#${tokenId}`,
+        description: metadata.description || '',
+        image_url: imageUrl,
+        collection: await contract.name().catch(() => 'Unknown Collection'),
+        owner_address: owner,
+        token_id: tokenId,
+        contract_address: contractAddress,
+        source: 'external',
+        // Add default collateral lending data structure so the UI doesn't break
+        collateral_lending: {
+            max_loan: { eth: 0, usd: 0 },
+            interest_rate: { annual_percentage: '0%' },
+            loan_terms: {
+                '3_months': { monthly_payment: 0 },
+                '6_months': { monthly_payment: 0 },
+                '12_months': { monthly_payment: 0 }
+            }
+        }
+      };
+
+    } catch (error) {
+      console.error('Error fetching external NFT metadata:', error);
+      throw error;
+    }
   }
 }
 

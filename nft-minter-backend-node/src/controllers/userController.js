@@ -426,6 +426,7 @@ export const getUserNfts = async (req, res) => {
             category: nft.category,
             created_at: nft.created_at,
         }));
+        console.log(`[DEBUG] getUserNfts found ${nfts_data} NFTs for user ${walletAddress}`);
         res.json({ success: true, data: nfts_data });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });

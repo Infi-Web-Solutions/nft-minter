@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,22 +17,32 @@ import WalletGuard from '@/components/WalletGuard';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiUrl } from '@/config';
+import { getNFTMarketplaceAddress } from '@/services/configService';
 
-// Import ABI and contract address
+// Import ABI
 import NFTMarketplaceABI from '../../../smartcontract/artifacts/contracts/nftmarketplace.sol/NFTMarketplace.json';
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
-
-// Debug logging
-console.log('[NFT] Contract Address:', CONTRACT_ADDRESS);
-if (!CONTRACT_ADDRESS) {
-  console.error('[NFT] Error: Contract address is not set. Please check your .env file');
-}
 
 const Create = () => {
   const { address, signer } = useWallet();
   const [isUploading, setIsUploading] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [contractAddress, setContractAddress] = useState<string>('');
+
+  // Load contract address from backend config on component mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const address = await getNFTMarketplaceAddress();
+        setContractAddress(address);
+        console.log('[NFT] Contract Address loaded from config:', address);
+      } catch (error) {
+        console.error('[NFT] Failed to load contract address from config:', error);
+        toast.error('Failed to load configuration. Please refresh the page.');
+      }
+    };
+    loadConfig();
+  }, []);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -201,16 +211,16 @@ const Create = () => {
       const metadataHash = await createMetadata(imageHash);
 
       // 3. Mint NFT
-      if (!CONTRACT_ADDRESS) {
-        throw new Error('Contract address is not configured. Please check your environment variables.');
+      if (!contractAddress) {
+        throw new Error('Contract address is not configured. Please refresh the page.');
       }
 
       if (!NFTMarketplaceABI?.abi) {
         throw new Error('Contract ABI is not available. Please check the import path.');
       }
 
-      console.log('[NFT] Initializing contract with address:', CONTRACT_ADDRESS);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, NFTMarketplaceABI.abi, signer);
+      console.log('[NFT] Initializing contract with address:', contractAddress);
+      const contract = new ethers.Contract(contractAddress, NFTMarketplaceABI.abi, signer);
 
       if (!contract) {
         throw new Error('Failed to initialize contract');
@@ -313,6 +323,7 @@ const Create = () => {
           token_uri: `ipfs://${metadataHash}`,
           creator_address: address,
           owner_address: address,
+          contract_address: contractAddress, // Store smart contract address
           price: formData.price || null,
           is_listed: !!formData.putOnSale,
           is_auction: formData.saleType === 'auction',
@@ -610,7 +621,7 @@ const Create = () => {
                       type="submit"
                       size="lg"
                       className="w-full bg-gradient-to-r from-purple-500 to-blue-600"
-                      disabled={!formData.file || isUploading || isMinting}
+                      disabled={!formData.file || isUploading || isMinting || !contractAddress}
                     >
                       {isUploading || isMinting ? (
                         <>

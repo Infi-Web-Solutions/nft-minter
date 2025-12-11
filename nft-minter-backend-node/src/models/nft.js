@@ -8,6 +8,7 @@ const nftSchema = new mongoose.Schema({
     token_uri: { type: String },
     owner_address: { type: String, required: true },
     creator_address: { type: String, required: true },
+    contract_address: { type: String, required: true }, // Smart contract address
     price: { type: Number },
     is_listed: { type: Boolean, default: false },
     is_auction: { type: Boolean, default: false },
