@@ -41,10 +41,13 @@ export const createLoan = async (req, res) => {
   }
 };
 
-// Get all open loans (Status = Requested)
+// Get all active loans (Status = Requested or Funded)
+// This includes both loans waiting for lenders and loans that are currently active
 export const getOpenLoans = async (req, res) => {
   try {
-    const loans = await Loan.find({ status: 'Requested' }).sort({ createdAt: -1 });
+    const loans = await Loan.find({ 
+      status: { $in: ['Requested', 'Funded'] } 
+    }).sort({ createdAt: -1 });
     
     // Optionally fetch NFT details for each loan to display images
     // This assumes the NFT is in our local DB. If it's external, we might need to fetch metadata differently.

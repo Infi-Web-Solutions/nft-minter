@@ -252,6 +252,72 @@ export class Web3Service {
     
     return 'An unknown error occurred';
   }
+
+  async getExternalNFTMetadata(contractAddress: string, tokenId: string): Promise<any> {
+    if (!this.provider) {
+       throw new Error('Web3Service not initialized');
+    }
+
+    try {
+      const ERC721_ABI = [
+        "function name() view returns (string)",
+        "function symbol() view returns (string)",
+        "function tokenURI(uint256 tokenId) view returns (string)",
+        "function ownerOf(uint256 tokenId) view returns (address)"
+      ];
+
+      const contract = new ethers.Contract(contractAddress, ERC721_ABI, this.provider);
+      
+      // Fetch basic on-chain data
+      const [tokenURI, owner] = await Promise.all([
+        contract.tokenURI(tokenId),
+        contract.ownerOf(tokenId)
+      ]);
+
+      // Resolve IPFS URI
+      let metadataUrl = tokenURI;
+      if (tokenURI.startsWith('ipfs://')) {
+        metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      }
+
+      // Fetch metadata JSON
+      // Use a proxy or try direct fetch (CORS might be an issue for some)
+      // For now, try direct fetch
+      const response = await fetch(metadataUrl);
+      const metadata = await response.json();
+
+      // Resolve image IPFS URI
+      let imageUrl = metadata.image || metadata.image_url || '';
+      if (imageUrl.startsWith('ipfs://')) {
+        imageUrl = imageUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      }
+
+      return {
+        name: metadata.name || `#${tokenId}`,
+        description: metadata.description || '',
+        image_url: imageUrl,
+        collection: await contract.name().catch(() => 'Unknown Collection'),
+        owner_address: owner,
+        token_id: tokenId,
+        contract_address: contractAddress,
+        source: 'external',
+        // Add default collateral lending data structure so the UI doesn't break
+        collateral_lending: {
+            max_loan: { eth: 0, usd: 0 },
+            interest_rate: { annual_percentage: '0%' },
+            loan_terms: {
+                '3_months': { monthly_payment: 0 },
+                '6_months': { monthly_payment: 0 },
+                '12_months': { monthly_payment: 0 }
+            }
+        }
+      };
+
+    } catch (error) {
+      console.error('Error fetching external NFT metadata:', error);
+      throw error;
+    }
+  }
 }
 
 // Create singleton instance

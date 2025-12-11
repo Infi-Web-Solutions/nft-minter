@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Edit, Share, MoreHorizontal, Copy, ExternalLink, Camera, Settings } from 'lucide-react';
 import NFTCard from '@/components/NFTCard';
+import CollateralLeasingSidebar from '@/components/CollateralLeasingSidebar';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import WalletGuard from '@/components/WalletGuard';
@@ -54,6 +55,8 @@ const Profile = () => {
   const [combinedNFTs, setCombinedNFTs] = useState([]);
   const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
   const [activeLoans, setActiveLoans] = useState<Map<string, string>>(new Map());
+  const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string} | null>(null);
 
   // Fetch followers/following counts
   useEffect(() => {
@@ -170,7 +173,7 @@ const Profile = () => {
         const data = await res.json();
         
         if (data.success) {
-          console.log('[Profile] Setting owned NFTs with length:', data.data.length);
+          console.log('[Profile] Setting owned NFTs with length:', data.data);
           setCombinedNFTs(data.data);
         } else {
           console.error('Failed to fetch owned NFTs:', data.error);
@@ -486,17 +489,7 @@ const Profile = () => {
                 {combinedNFTs.length === 0 ? (
                   <div className="col-span-full text-center text-muted-foreground">No collected NFTs yet.</div>
                 ) : (
-                  combinedNFTs.filter((nft: any) => {
-                    // Filter out NFTs with active loan requests
-                    let contractAddr = '';
-                    if (nft.source === 'local' || !nft.source) {
-                        contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
-                    } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                        contractAddr = nft.collection;
-                    }
-                    const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                    return activeLoans.get(loanKey) !== 'Requested';
-                  }).map((nft: any) => {
+                  combinedNFTs.map((nft: any) => {
                     // Convert numeric ID to local_ format for consistency
                     const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
                     
@@ -517,6 +510,7 @@ const Profile = () => {
                       id_type: typeof nftId,
                       title: nft.name,
                       image: nft.image_url,
+                      collection: nft.collection,
                       source: 'local',
                       token_id: nft.token_id,
                       liked: isNFTLiked({ ...nft, id: nftId })
@@ -541,6 +535,13 @@ const Profile = () => {
                           window.location.href = `/nft/${nftId}`;
                         }}
                         loanStatus={loanStatus}
+                        onRequestLoan={() => {
+                            setSelectedLoanNft({
+                                contract: contractAddr,
+                                tokenId: String(nft.token_id)
+                            });
+                            setShowCollateralSidebar(true);
+                        }}
                       />
                     );
                   })
@@ -589,6 +590,13 @@ const Profile = () => {
                           window.location.href = `/nft/${nftId}`;
                         }}
                         loanStatus={loanStatus}
+                        onRequestLoan={() => {
+                            setSelectedLoanNft({
+                                contract: contractAddr,
+                                tokenId: String(nft.token_id)
+                            });
+                            setShowCollateralSidebar(true);
+                        }}
                       />
                     );
                   })
@@ -628,6 +636,14 @@ const Profile = () => {
                     .filter((nft: any) => likedNFTIds.has(String(nft.id)))
                     .map((nft: any) => {
                       const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                      
+                      let contractAddr = '';
+                      if (nft.source === 'local' || !nft.source) {
+                          contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
+                      } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                          contractAddr = nft.collection;
+                      }
+
                       return (
                         <NFTCard
                           key={nftId}
@@ -646,6 +662,13 @@ const Profile = () => {
                           source="local"
                           onClick={() => {
                             window.location.href = `/nft/${nftId}`;
+                          }}
+                          onRequestLoan={() => {
+                              setSelectedLoanNft({
+                                  contract: contractAddr, // Note: contractAddr needs to be defined in this scope
+                                  tokenId: String(nft.token_id)
+                              });
+                              setShowCollateralSidebar(true);
                           }}
                         />
                       );
@@ -712,6 +735,12 @@ const Profile = () => {
         </div>
       </WalletGuard>
 
+      <CollateralLeasingSidebar 
+        open={showCollateralSidebar} 
+        onOpenChange={setShowCollateralSidebar}
+        initialContractAddress={selectedLoanNft?.contract}
+        initialTokenId={selectedLoanNft?.tokenId}
+      />
       <Footer />
     </div>
   );

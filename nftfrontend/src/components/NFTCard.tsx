@@ -33,6 +33,8 @@ interface NFTCardProps {
   onClick?: () => void; // Add custom onClick handler
   loanStatus?: string;
   loanBorrower?: string;
+  onRequestLoan?: () => void;
+  disableRequestLoan?: boolean;
 }
 
 const getImageUrl = (url: string) => {
@@ -65,6 +67,8 @@ const NFTCard = ({
   onClick,
   loanStatus,
   loanBorrower,
+  onRequestLoan,
+  disableRequestLoan = false,
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
   const { address } = useWallet();
@@ -74,6 +78,8 @@ const NFTCard = ({
   const navigate = useNavigate();
 
   const isLoanBorrower = address && loanBorrower && address.toLowerCase() === loanBorrower.toLowerCase();
+
+
 
   const handleLike = async () => {
     if (isLiking) {
@@ -521,7 +527,7 @@ const NFTCard = ({
                 </Button>
               ) : (
                 <>
-                  {loanStatus === 'Requested' && (
+                  {loanStatus === 'Requested' && !isOwner && (
                      <Button
                       size="sm"
                       className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
@@ -534,28 +540,47 @@ const NFTCard = ({
                       {isLoanBorrower ? "Requested Loan" : "Fund Loan"}
                     </Button>
                   )}
+                  {loanStatus === 'Requested' && isOwner &&(
+                     <Button
+                      size="sm"
+                      className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
+                      // onClick={(e) => {
+                      //   e.stopPropagation();
+                      //   navigate('/lending');
+                      // }}
+                      title={isLoanBorrower ? "You have requested a loan for this NFT" : "Click to fund this loan"}
+                    >
+                      Requested Loan
+                    </Button>
+                  )}
                   
-                  {loanStatus !== 'Requested' && isOwner && !is_listed && (
+                  {/* NFT is actively loaned - show collateral badge instead of buy button */}
+                  {loanStatus === 'Funded' && (
                     <Button
                       size="sm"
-                      className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
+                      className="bg-orange-500/80 whitespace-nowrap text-xs px-2 cursor-not-allowed"
                       disabled
-                      title="You own this NFT"
+                      title="This NFT is currently used as loan collateral"
                     >
-                      Owned
+                      🔒 Collateral
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && isOwner && is_listed && (
+                  
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && (
                     <Button
                       size="sm"
-                      className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"
-                      disabled
-                      title="You cannot buy your own NFT"
+                      className={`whitespace-nowrap text-xs px-2 text-white ${(disableRequestLoan || !onRequestLoan) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700'}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!disableRequestLoan && onRequestLoan) onRequestLoan();
+                      }}
+                      disabled={disableRequestLoan || !onRequestLoan}
+                      title={(disableRequestLoan || !onRequestLoan) ? "Loan requests are disabled here" : "Request a loan using this NFT as collateral"}
                     >
-                      Owned
+                      Request Loan
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && !isOwner && !is_listed && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-gray-400 to-gray-600 whitespace-nowrap text-xs px-2"
@@ -565,7 +590,7 @@ const NFTCard = ({
                       Not for Sale
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && !isOwner && is_listed && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"

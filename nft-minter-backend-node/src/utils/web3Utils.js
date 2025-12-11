@@ -1190,9 +1190,124 @@ class NFTMarketplaceWeb3 {
             return false;
         }
     }
+    async getExternalNftMetadata(contractAddress, tokenId) {
+        try {
+            console.log(`[Web3] Fetching external NFT metadata for ${contractAddress} #${tokenId}`);
+            
+            // Generic ERC721 ABI
+            const erc721Abi = [
+                {
+                    "inputs": [],
+                    "name": "name",
+                    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "symbol",
+                    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "tokenURI",
+                    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "ownerOf",
+                    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                }
+            ];
+
+            const contract = new this.web3.eth.Contract(erc721Abi, contractAddress);
+            
+            // Fetch on-chain data
+            const [tokenURI, owner, name, symbol] = await Promise.all([
+                contract.methods.tokenURI(tokenId).call().catch(() => ''),
+                contract.methods.ownerOf(tokenId).call().catch(() => null),
+                contract.methods.name().call().catch(() => 'Unknown Collection'),
+                contract.methods.symbol().call().catch(() => '')
+            ]);
+
+            if (!owner) {
+                throw new Error('NFT does not exist or owner could not be fetched');
+            }
+
+            // Resolve IPFS URI
+            let metadataUrl = tokenURI;
+            if (tokenURI.startsWith('ipfs://')) {
+                metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+            } else if (!tokenURI.startsWith('http')) {
+                // Assume it's a raw IPFS hash if not http/https
+                metadataUrl = `https://ipfs.io/ipfs/${tokenURI}`;
+            }
+
+            console.log(`[Web3] Resolved metadata URL: ${metadataUrl}`);
+
+            // Fetch metadata JSON
+            let metadata = {};
+            try {
+                if (metadataUrl) {
+                    const response = await fetch(metadataUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    metadata = await response.json();
+                    console.log(`[Web3] Fetched metadata:`, metadata);
+                }
+            } catch (err) {
+                console.warn(`[Web3] Failed to fetch metadata JSON from ${metadataUrl}:`, err.message);
+                // Try fallback gateway
+                if (tokenURI.startsWith('ipfs://')) {
+                     const fallbackUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+                     console.log(`[Web3] Trying fallback gateway: ${fallbackUrl}`);
+                     try {
+                        const response = await fetch(fallbackUrl);
+                        if (response.ok) {
+                            metadata = await response.json();
+                            console.log(`[Web3] Fetched metadata from fallback:`, metadata);
+                        }
+                     } catch (fallbackErr) {
+                         console.warn(`[Web3] Fallback gateway failed:`, fallbackErr.message);
+                     }
+                }
+            }
+
+            // Resolve image IPFS URI
+            let imageUrl = metadata.image || metadata.image_url || '';
+            if (imageUrl.startsWith('ipfs://')) {
+                imageUrl = imageUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
+            } else if (imageUrl && !imageUrl.startsWith('http')) {
+                 imageUrl = `https://ipfs.io/ipfs/${imageUrl}`;
+            }
+
+            return {
+                success: true,
+                name: metadata.name || `${name} #${tokenId}`,
+                description: metadata.description || '',
+                image: imageUrl,
+                token_uri: tokenURI,
+                owner_address: owner,
+                collection_name: name,
+                symbol: symbol,
+                metadata: metadata,
+                attributes: metadata.attributes || []
+            };
+
+        } catch (error) {
+            console.error(`[Web3] Error fetching external NFT: ${error.message}`);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 // Create singleton instance
-const web3Instance = new NFTMarketplaceWeb3();
-
-export default web3Instance;
+const web3Utils = new NFTMarketplaceWeb3();
+export default web3Utils;

@@ -8,6 +8,7 @@ import NFTCard from '@/components/NFTCard';
 import FilterSidebar from '@/components/FilterSidebar';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import CollateralLeasingSidebar from '@/components/CollateralLeasingSidebar';
 import { apiUrl } from '@/config';
 
 import { nftService, NFT } from '@/services/nftService';
@@ -34,6 +35,10 @@ const Marketplace = () => {
     collections: [] as string[],
     blockchain: [] as string[]
   });
+
+  // Collateral Leasing State
+  const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string} | null>(null);
 
   // Fetch active loans
   useEffect(() => {
@@ -445,6 +450,16 @@ const Marketplace = () => {
                     is_listed={nft.is_listed}
                     loanStatus={loanInfo?.status}
                     loanBorrower={loanInfo?.borrower}
+                    onRequestLoan={() => {
+                        setSelectedLoanNft({
+                            contract: contractAddr,
+                            tokenId: String(nft.token_id)
+                        });
+                        setShowCollateralSidebar(true);
+                    }}
+
+
+                    disableRequestLoan={address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()}
                   />
                 );
               })}
@@ -467,6 +482,12 @@ const Marketplace = () => {
           </div>
         </div>
       </div>
+      <CollateralLeasingSidebar 
+        open={showCollateralSidebar} 
+        onOpenChange={setShowCollateralSidebar}
+        initialContractAddress={selectedLoanNft?.contract}
+        initialTokenId={selectedLoanNft?.tokenId}
+      />
       <Footer />
     </div>
   );

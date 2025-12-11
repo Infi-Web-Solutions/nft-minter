@@ -11,15 +11,24 @@ import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { collateralLendingService, LoanStatus, LoanDetails } from '@/services/collateralLendingService';
 import { ethers } from 'ethers';
+import { web3Service } from '@/services/web3Service';
 
 interface CollateralLeasingSidebarProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialContractAddress?: string;
+  initialTokenId?: string;
 }
 
-const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ open, onOpenChange }) => {
+const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ 
+  open, 
+  onOpenChange,
+  initialContractAddress,
+  initialTokenId
+}) => {
   const { isConnected, provider, address } = useWallet();
   const [activeTab, setActiveTab] = useState('new');
+  const [leasingType, setLeasingType] = useState('collateral');
   
   // Search State
   const [contractAddress, setContractAddress] = useState('');
@@ -54,8 +63,22 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
     initializeService();
   }, [isConnected, provider, address, open]);
 
-  const handleSearch = async () => {
-    const hasContractAndToken = contractAddress.trim() && tokenId.trim();
+  // Handle initial data when opening
+  useEffect(() => {
+    if (open && initialContractAddress && initialTokenId) {
+      setContractAddress(initialContractAddress);
+      setTokenId(initialTokenId);
+      setLeasingType('collateral'); // Default to collateral when opening from card
+      // Auto-trigger search after a short delay to ensure state is set
+      const timer = setTimeout(() => {
+        handleSearch(initialContractAddress, initialTokenId);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [open, initialContractAddress, initialTokenId]);
+
+  const handleSearch = async (addr = contractAddress, id = tokenId) => {
+    const hasContractAndToken = addr.trim() && id.trim();
 
     if (!hasContractAndToken) {
       toast.error('Please enter both Contract Address and Token ID');
@@ -67,12 +90,13 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
     setNftData(null);
 
     try {
+      // First try the backend
       const res = await fetch(apiUrl('/nfts/external/'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contract_address: contractAddress.trim(),
-          token_id: tokenId.trim(),
+          contract_address: addr.trim(),
+          token_id: id.trim(),
         }),
       });
       
@@ -80,19 +104,113 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
 
       if (data.success && data.data) {
         setNftData(data.data);
-        toast.success('External NFT found!');
+        toast.success('NFT found!');
       } else {
-        setNotFound(true);
-        toast.error(data.error || 'No NFT found for this address');
+        // Fallback to direct blockchain fetch
+        console.log('Backend search failed, trying direct blockchain fetch...');
+        try {
+            const externalData = await web3Service.getExternalNFTMetadata(addr.trim(), id.trim());
+            if (externalData) {
+                setNftData(externalData);
+                toast.success('NFT found on blockchain!');
+            } else {
+                setNotFound(true);
+                toast.error('No NFT found for this address');
+            }
+        } catch (chainError) {
+            console.error('Blockchain fetch failed:', chainError);
+            setNotFound(true);
+            toast.error('No NFT found on blockchain');
+        }
       }
     } catch (error) {
       console.error('Error fetching NFT:', error);
-      toast.error('Failed to fetch NFT details from blockchain');
-      setNotFound(true);
+      // Fallback to direct blockchain fetch on API error too
+      try {
+          const externalData = await web3Service.getExternalNFTMetadata(addr.trim(), id.trim());
+          if (externalData) {
+              setNftData(externalData);
+              toast.success('NFT found on blockchain!');
+          } else {
+              setNotFound(true);
+              toast.error('Failed to fetch NFT details');
+          }
+      } catch (chainError) {
+          console.error('Blockchain fetch failed:', chainError);
+          setNotFound(true);
+          toast.error('Failed to fetch NFT details');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  // ... (handleTransactionError and other handlers remain same)
+
+  // ... (handleCreateLoan, handleFetchLoan, handleFundLoan, etc. remain same)
+
+  // ... (checkPendingWithdrawal, handleWithdrawETH, copyToClipboard, handleClose remain same)
+
+  // ... (getNFTImageUrl, getStatusBadge remain same)
+
+  // ... (render logic)
+
+  // Inside render, specifically the "new" tab content:
+  /*
+              <TabsContent value="new" className="space-y-6">
+                <div className="space-y-3">
+                  <Label>Leasing Type</Label>
+                  <select
+                    className="w-full p-2 rounded-md border bg-background"
+                    value={leasingType}
+                    onChange={(e) => setLeasingType(e.target.value)}
+                  >
+                    <option value="wrapped">Wrapped Leasing</option>
+                    <option value="collateral">Collateral Leasing</option>
+                    <option value="program">Leasing Program (Coming Soon)</option>
+                  </select>
+                </div>
+
+                {leasingType === 'program' ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>Leasing Program is coming soon!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Label>Enter {leasingType === 'wrapped' ? 'Wrapped' : ''} Contract Address + Token ID</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="contract-address" className="text-xs">Contract Address</Label>
+                        <Input
+                          id="contract-address"
+                          placeholder="0x..."
+                          value={contractAddress}
+                          onChange={(e) => setContractAddress(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="token-id" className="text-xs">Token ID</Label>
+                        <Input
+                          id="token-id"
+                          placeholder="123"
+                          value={tokenId}
+                          onChange={(e) => setTokenId(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={() => handleSearch()} disabled={loading} className="w-full">
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching...</> : 'Search NFT'}
+                    </Button>
+                  </div>
+                )}
+
+                {nftData && leasingType !== 'program' && (
+                  // ... (render NFT card details)
+                )}
+  */
+
 
   const handleTransactionError = (error: any, defaultMessage: string) => {
     console.error(defaultMessage, error);
@@ -500,35 +618,54 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
 
               <TabsContent value="new" className="space-y-6">
                 <div className="space-y-3">
-                  <Label>Enter Contract Address + Token ID</Label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="contract-address" className="text-xs">Contract Address</Label>
-                      <Input
-                        id="contract-address"
-                        placeholder="0x..."
-                        value={contractAddress}
-                        onChange={(e) => setContractAddress(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="token-id" className="text-xs">Token ID</Label>
-                      <Input
-                        id="token-id"
-                        placeholder="123"
-                        value={tokenId}
-                        onChange={(e) => setTokenId(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      />
-                    </div>
-                  </div>
-                  <Button onClick={handleSearch} disabled={loading} className="w-full">
-                    {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching...</> : 'Search NFT'}
-                  </Button>
+                  <Label>Leasing Type</Label>
+                  <select
+                    className="w-full p-2 rounded-md border bg-background"
+                    value={leasingType}
+                    onChange={(e) => setLeasingType(e.target.value)}
+                  >
+                    <option value="wrapped">Wrapped Leasing</option>
+                    <option value="collateral">Collateral Leasing</option>
+                    <option value="program">Leasing Program (Coming Soon)</option>
+                  </select>
                 </div>
 
-                {nftData && (
+                {leasingType === 'program' ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <p>Leasing Program is coming soon!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Label>Enter {leasingType === 'wrapped' ? 'Wrapped' : ''} Contract Address + Token ID</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="contract-address" className="text-xs">Contract Address</Label>
+                        <Input
+                          id="contract-address"
+                          placeholder="0x..."
+                          value={contractAddress}
+                          onChange={(e) => setContractAddress(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="token-id" className="text-xs">Token ID</Label>
+                        <Input
+                          id="token-id"
+                          placeholder="123"
+                          value={tokenId}
+                          onChange={(e) => setTokenId(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                        />
+                      </div>
+                    </div>
+                    <Button onClick={() => handleSearch()} disabled={loading} className="w-full">
+                      {loading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Searching...</> : 'Search NFT'}
+                    </Button>
+                  </div>
+                )}
+
+                {nftData && leasingType !== 'program' && (
                   <Card className="glass-card border-0">
                     <CardContent className="p-6 space-y-4">
                       <div className="flex gap-4">
