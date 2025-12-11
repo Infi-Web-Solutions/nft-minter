@@ -8,7 +8,7 @@ import NFTCard from '@/components/NFTCard';
 import FilterSidebar from '@/components/FilterSidebar';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { apiUrl, CONTRACT_ADDRESS } from '@/config';
+import { apiUrl } from '@/config';
 
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
@@ -26,7 +26,7 @@ const Marketplace = () => {
   const [sortBy, setSortBy] = useState('recent');
   const [isLoading, setIsLoading] = useState(true);
   const [allNfts, setAllNfts] = useState<NFT[]>([]);
-  const [activeLoans, setActiveLoans] = useState<Map<string, string>>(new Map());
+  const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string }>>(new Map());
   
   const [filters, setFilters] = useState({
     status: [] as string[],
@@ -42,10 +42,10 @@ const Marketplace = () => {
             const res = await fetch(apiUrl('/loans/open'));
             const data = await res.json();
             if (data.success) {
-                const loanMap = new Map<string, string>();
+                const loanMap = new Map<string, { status: string, borrower: string }>();
                 data.data.forEach((loan: any) => {
                     const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
-                    loanMap.set(key, loan.status);
+                    loanMap.set(key, { status: loan.status, borrower: loan.borrower });
                 });
                 setActiveLoans(loanMap);
             }
@@ -404,13 +404,25 @@ const Marketplace = () => {
                 // Determine loan status
                 let contractAddr = '';
                 if (nft.source === 'local' || !nft.source) {
-                    contractAddr = CONTRACT_ADDRESS;
+                    contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
                 } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                     contractAddr = nft.collection;
                 }
                 
                 const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                const loanStatus = loanKey ? activeLoans.get(loanKey) : undefined;
+                let loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
+
+                // Fallback: if no direct match and it's a local NFT, check if any active loan matches this token ID
+                // This handles cases where VITE_CONTRACT_ADDRESS might be missing or mismatched
+                if (!loanInfo && (nft.source === 'local' || !nft.source) && nft.token_id) {
+                    const tokenIdStr = String(nft.token_id);
+                    for (const [key, info] of activeLoans.entries()) {
+                        if (key.endsWith(`-${tokenIdStr}`)) {
+                            loanInfo = info;
+                            break;
+                        }
+                    }
+                }
                 
                 return (
                   <NFTCard
@@ -431,7 +443,8 @@ const Marketplace = () => {
                      }}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
-                    loanStatus={loanStatus}
+                    loanStatus={loanInfo?.status}
+                    loanBorrower={loanInfo?.borrower}
                   />
                 );
               })}

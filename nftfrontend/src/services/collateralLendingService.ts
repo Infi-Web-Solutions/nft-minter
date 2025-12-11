@@ -26,9 +26,6 @@ const ERC721_ABI = [
   "function ownerOf(uint256 tokenId) external view returns (address)"
 ];
 
-// Placeholder address - REPLACE WITH ACTUAL DEPLOYED ADDRESS
-export const COLLATERAL_CONTRACT_ADDRESS = "0x6c963e6EfBAe88Db30272202a9e6352ab7Ecb56e";
-
 export enum LoanStatus {
   Requested = 0,
   Funded = 1,
@@ -58,7 +55,7 @@ export class CollateralLendingService {
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.JsonRpcSigner | null = null;
 
-  async initialize(provider: ethers.BrowserProvider, address: string = COLLATERAL_CONTRACT_ADDRESS) {
+  async initialize(provider: ethers.BrowserProvider, address: string = import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS) {
     this.provider = provider;
     this.signer = await provider.getSigner();
     this.contract = new ethers.Contract(address, COLLATERAL_LENDING_ABI, this.signer);
@@ -81,7 +78,7 @@ export class CollateralLendingService {
   async approveNFT(nftContractAddress: string, tokenId: string) {
     this.checkInitialized();
     const nftContract = new ethers.Contract(nftContractAddress, ERC721_ABI, this.signer);
-    const tx = await nftContract.approve(COLLATERAL_CONTRACT_ADDRESS, tokenId);
+    const tx = await nftContract.approve(import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS, tokenId);
     return await tx.wait();
   }
 
@@ -185,7 +182,7 @@ export class CollateralLendingService {
   async getPendingETHWithdrawal(address: string): Promise<string> {
     this.checkInitialized();
     const contract = new ethers.Contract(
-      COLLATERAL_CONTRACT_ADDRESS, 
+      import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS, 
       ["function pendingETHWithdrawals(address) external view returns (uint256)"],
       this.provider
     );
@@ -197,7 +194,7 @@ export class CollateralLendingService {
   async withdrawETH() {
     this.checkInitialized();
     const contract = new ethers.Contract(
-      COLLATERAL_CONTRACT_ADDRESS,
+      import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS,
       ["function withdrawETH() external"],
       this.signer
     );

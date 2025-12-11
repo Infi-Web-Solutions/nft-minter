@@ -32,6 +32,7 @@ interface NFTCardProps {
   source?: string;
   onClick?: () => void; // Add custom onClick handler
   loanStatus?: string;
+  loanBorrower?: string;
 }
 
 const getImageUrl = (url: string) => {
@@ -63,6 +64,7 @@ const NFTCard = ({
   source,
   onClick,
   loanStatus,
+  loanBorrower,
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
   const { address } = useWallet();
@@ -70,6 +72,8 @@ const NFTCard = ({
   const [isListing, setIsListing] = React.useState(false);
   const [isLiking, setIsLiking] = React.useState(false);
   const navigate = useNavigate();
+
+  const isLoanBorrower = address && loanBorrower && address.toLowerCase() === loanBorrower.toLowerCase();
 
   const handleLike = async () => {
     if (isLiking) {
@@ -96,6 +100,8 @@ const NFTCard = ({
       setIsLiking(false);
     }
   };
+
+
 
 //     const handleBuy = () => {
 //     if (!tokenId || !price) {
@@ -518,14 +524,14 @@ const NFTCard = ({
                   {loanStatus === 'Requested' && (
                      <Button
                       size="sm"
-                      className="bg-blue-500 hover:bg-blue-600 text-white whitespace-nowrap text-xs px-2"
+                      className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
                       onClick={(e) => {
                         e.stopPropagation();
                         navigate('/lending');
                       }}
-                      title="This NFT has an active loan request"
+                      title={isLoanBorrower ? "You have requested a loan for this NFT" : "Click to fund this loan"}
                     >
-                      Loan Requested
+                      {isLoanBorrower ? "Requested Loan" : "Fund Loan"}
                     </Button>
                   )}
                   

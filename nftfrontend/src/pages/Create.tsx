@@ -313,6 +313,7 @@ const Create = () => {
           token_uri: `ipfs://${metadataHash}`,
           creator_address: address,
           owner_address: address,
+          contract_address: CONTRACT_ADDRESS, // Store smart contract address
           price: formData.price || null,
           is_listed: !!formData.putOnSale,
           is_auction: formData.saleType === 'auction',

@@ -136,6 +136,7 @@ export const registerNft = async (req, res) => {
         console.log("[DEBUG] registerNft called with data:", {
             token_id: data.token_id,
             name: data.name,
+            contract_address: data.contract_address,
             has_perceptual_hash: !!data.perceptual_hash,
             perceptual_hash: data.perceptual_hash ? data.perceptual_hash.substring(0, 16) + '...' : 'none'
         });
@@ -149,6 +150,7 @@ export const registerNft = async (req, res) => {
                 token_uri: data.token_uri || '',
                 creator_address: data.creator_address,
                 owner_address: data.owner_address,
+                contract_address: data.contract_address || process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS,
                 price: data.price,
                 is_listed: data.is_listed || false,
                 is_auction: data.is_auction || false,
@@ -1357,7 +1359,9 @@ const calculateLoanDetails = (nftPriceETH) => {
 // Get external NFT metadata from any contract
 export const getExternalNft = async (req, res) => {
     try {
-        const { contract_address, token_id } = req.body;
+        // Support both POST (body) and GET (params)
+        const contract_address = req.body.contract_address || req.params.contract;
+        const token_id = req.body.token_id || req.params.tokenId;
         
         console.log(`[DEBUG] getExternalNft called with contract: ${contract_address}, token: ${token_id}`);
         

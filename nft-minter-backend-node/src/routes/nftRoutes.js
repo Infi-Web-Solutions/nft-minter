@@ -43,6 +43,7 @@ router.get('/combined/:combined_id/', getNftByCombinedId);
 
 // External NFT
 router.post('/external/', getExternalNft);
+router.get('/external/:contract/:tokenId/', getExternalNft); // GET route for external NFTs
 
 // Blockchain
 router.get('/contract/info/', getContractInfo);

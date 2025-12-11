@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { profileService, ProfileData } from '../api/useInfo';
-import { apiUrl, CONTRACT_ADDRESS } from '@/config';
+import { apiUrl } from '@/config';
 
 const UserProfile = () => {
   const { walletAddress } = useParams<{ walletAddress: string }>();
@@ -237,7 +237,7 @@ const UserProfile = () => {
   const getLoanStatus = (nft: any) => {
       let contractAddr = '';
       if (nft.source === 'local' || !nft.source) {
-          contractAddr = CONTRACT_ADDRESS;
+          contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
       } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
           contractAddr = nft.collection;
       }

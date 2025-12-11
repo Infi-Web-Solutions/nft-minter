@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
 import { nftService } from '@/services/nftService';
-import { apiUrl, CONTRACT_ADDRESS } from '@/config';
+import { apiUrl } from '@/config';
 import { web3Service } from '@/services/web3Service';
 import { ethers } from 'ethers';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
@@ -748,19 +748,19 @@ useEffect(() => {
                     <h3 className="text-lg font-semibold mb-3">Contract Address</h3>
                     <div className="flex items-center gap-2 p-3 bg-card/50 rounded-lg">
                       <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
-                        {CONTRACT_ADDRESS}
+                        {import.meta.env.VITE_CONTRACT_ADDRESS}
                       </code>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => copyToClipboard(CONTRACT_ADDRESS)}
+                        onClick={() => copyToClipboard(import.meta.env.VITE_CONTRACT_ADDRESS)}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
                       <Button 
                         variant="ghost" 
                         size="icon"
-                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${CONTRACT_ADDRESS}`, '_blank')}
+                        onClick={() => window.open(`https://sepolia.etherscan.io/address/${import.meta.env.VITE_CONTRACT_ADDRESS}`, '_blank')}
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>

@@ -31,8 +31,7 @@ const NFT_MARKETPLACE_ABI = [
   "event AuctionEnded(uint256 indexed tokenId, address indexed winner, uint256 finalPrice)"
 ];
 
-// Contract address (your deployed contract address)
-const CONTRACT_ADDRESS = "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201";
+const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
 
 export interface NFTMetadata {
   name: string;

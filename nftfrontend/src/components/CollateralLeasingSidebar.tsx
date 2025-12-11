@@ -41,10 +41,17 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ ope
   const [pendingWithdrawal, setPendingWithdrawal] = useState<string>('0');
 
   useEffect(() => {
-    if (isConnected && provider) {
-      collateralLendingService.initialize(provider);
-      checkPendingWithdrawal();
-    }
+    const initializeService = async () => {
+      if (isConnected && provider) {
+        try {
+          await collateralLendingService.initialize(provider);
+          await checkPendingWithdrawal();
+        } catch (error) {
+          console.error('Error initializing collateral service:', error);
+        }
+      }
+    };
+    initializeService();
   }, [isConnected, provider, address, open]);
 
   const handleSearch = async () => {

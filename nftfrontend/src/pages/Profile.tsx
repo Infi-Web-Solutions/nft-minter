@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
-import { apiUrl, CONTRACT_ADDRESS } from '@/config';
+import { apiUrl } from '@/config';
 
 const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
@@ -490,7 +490,7 @@ const Profile = () => {
                     // Filter out NFTs with active loan requests
                     let contractAddr = '';
                     if (nft.source === 'local' || !nft.source) {
-                        contractAddr = CONTRACT_ADDRESS;
+                        contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
                     } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                         contractAddr = nft.collection;
                     }
@@ -503,7 +503,7 @@ const Profile = () => {
                     // Determine loan status
                     let contractAddr = '';
                     if (nft.source === 'local' || !nft.source) {
-                        contractAddr = CONTRACT_ADDRESS;
+                        contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
                     } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                         contractAddr = nft.collection;
                     }
@@ -561,7 +561,7 @@ const Profile = () => {
                     // Determine loan status
                     let contractAddr = '';
                     if (nft.source === 'local' || !nft.source) {
-                        contractAddr = CONTRACT_ADDRESS;
+                        contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
                     } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                         contractAddr = nft.collection;
                     }

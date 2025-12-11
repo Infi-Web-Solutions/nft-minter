@@ -17,14 +17,15 @@ export const NETWORK_CONFIG = {
   blockExplorerUrls: ['https://sepolia.etherscan.io']
 };
 
-// Contract addresses
-export const CONTRACT_ADDRESS = "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201";
 
 // Helper to build full API URLs safely
 export function apiUrl(path: string): string {
-  const base = API_BASE_URL.replace(/\/$/, '');
-  const suffix = path.startsWith('/') ? path : `/${path}`;
-  return `${base}${suffix}`;
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  // Remove trailing slash from base URL if exists
+  const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+  // Remove leading slash from path if exists
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${cleanBaseUrl}${cleanPath}`;
 }
 
 // Helper to add Sepolia network to MetaMask
