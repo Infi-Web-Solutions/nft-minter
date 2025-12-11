@@ -10,6 +10,7 @@ import transactionRoutes from './routes/transactionRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import loanRoutes from './routes/loanRoutes.js';
+import configRoutes from './routes/configRoutes.js';
 
 const app = express();
 
@@ -33,5 +34,6 @@ app.use('/api/transactions', transactionRoutes);
 app.use('/api/activities', activityRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/loans', loanRoutes);
+app.use('/api/config', configRoutes);
 
 export default app;

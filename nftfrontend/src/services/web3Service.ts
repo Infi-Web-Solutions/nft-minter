@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { getNFTMarketplaceAddress } from './configService';
 
 // Smart contract ABI (you'll need to import this from your compiled contract)
 const NFT_MARKETPLACE_ABI = [
@@ -31,8 +32,6 @@ const NFT_MARKETPLACE_ABI = [
   "event AuctionEnded(uint256 indexed tokenId, address indexed winner, uint256 finalPrice)"
 ];
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
-
 export interface NFTMetadata {
   name: string;
   description: string;
@@ -55,11 +54,15 @@ export class Web3Service {
   private contract: ethers.Contract | null = null;
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.JsonRpcSigner | null = null;
+  private contractAddress: string = '';
 
   async initialize(provider: ethers.BrowserProvider) {
     this.provider = provider;
     this.signer = await provider.getSigner();
-    this.contract = new ethers.Contract(CONTRACT_ADDRESS, NFT_MARKETPLACE_ABI, this.signer);
+    
+    // Get contract address from backend config
+    this.contractAddress = await getNFTMarketplaceAddress();
+    this.contract = new ethers.Contract(this.contractAddress, NFT_MARKETPLACE_ABI, this.signer);
   }
 
   // Check if service is initialized
@@ -225,9 +228,14 @@ export class Web3Service {
     return {
       name,
       symbol,
-      address: CONTRACT_ADDRESS,
+      address: this.contractAddress,
       network: await this.provider!.getNetwork()
     };
+  }
+
+  // Get contract address
+  getContractAddress(): string {
+    return this.contractAddress;
   }
 
   // Wait for transaction

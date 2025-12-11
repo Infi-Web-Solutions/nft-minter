@@ -10,6 +10,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import CollateralLeasingSidebar from '@/components/CollateralLeasingSidebar';
 import { apiUrl } from '@/config';
+import { getNFTMarketplaceAddress } from '@/services/configService';
 
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ const Marketplace = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [allNfts, setAllNfts] = useState<NFT[]>([]);
   const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string }>>(new Map());
+  const [contractAddress, setContractAddress] = useState<string>('');
   
   const [filters, setFilters] = useState({
     status: [] as string[],
@@ -35,6 +37,11 @@ const Marketplace = () => {
     collections: [] as string[],
     blockchain: [] as string[]
   });
+
+  // Load contract address from config
+  useEffect(() => {
+    getNFTMarketplaceAddress().then(setContractAddress).catch(console.error);
+  }, []);
 
   // Collateral Leasing State
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
@@ -409,16 +416,13 @@ const Marketplace = () => {
                 // Determine loan status
                 let contractAddr = '';
                 if (nft.source === 'local' || !nft.source) {
-                    contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
+                    contractAddr = contractAddress;
                 } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                     contractAddr = nft.collection;
                 }
                 
                 const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                let loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
-
-                // Fallback: if no direct match and it's a local NFT, check if any active loan matches this token ID
-                // This handles cases where VITE_CONTRACT_ADDRESS might be missing or mismatched
+                let loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;                                                    
                 if (!loanInfo && (nft.source === 'local' || !nft.source) && nft.token_id) {
                     const tokenIdStr = String(nft.token_id);
                     for (const [key, info] of activeLoans.entries()) {

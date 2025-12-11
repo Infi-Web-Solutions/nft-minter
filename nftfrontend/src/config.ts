@@ -70,9 +70,13 @@ export async function switchToSepoliaNetwork() {
   }
 }
 
-
-
-
+// Prefetch configuration from backend at app startup
+// This is imported dynamically to avoid circular dependencies
+import('./services/configService').then(({ prefetchConfig }) => {
+  prefetchConfig();
+}).catch(() => {
+  // Config service not available yet, will be loaded when needed
+});
 
 
 

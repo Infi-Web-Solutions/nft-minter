@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { apiUrl } from '@/config';
+import { getNFTMarketplaceAddress } from '@/services/configService';
 
 const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
@@ -57,6 +58,12 @@ const Profile = () => {
   const [activeLoans, setActiveLoans] = useState<Map<string, string>>(new Map());
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
   const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string} | null>(null);
+  const [contractAddress, setContractAddress] = useState<string>('');
+
+  // Load contract address from config
+  useEffect(() => {
+    getNFTMarketplaceAddress().then(setContractAddress).catch(console.error);
+  }, []);
 
   // Fetch followers/following counts
   useEffect(() => {
@@ -496,7 +503,7 @@ const Profile = () => {
                     // Determine loan status
                     let contractAddr = '';
                     if (nft.source === 'local' || !nft.source) {
-                        contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
+                        contractAddr = contractAddress;
                     } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                         contractAddr = nft.collection;
                     }
@@ -562,7 +569,7 @@ const Profile = () => {
                     // Determine loan status
                     let contractAddr = '';
                     if (nft.source === 'local' || !nft.source) {
-                        contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
+                        contractAddr = contractAddress;
                     } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                         contractAddr = nft.collection;
                     }
@@ -639,7 +646,7 @@ const Profile = () => {
                       
                       let contractAddr = '';
                       if (nft.source === 'local' || !nft.source) {
-                          contractAddr = import.meta.env.VITE_CONTRACT_ADDRESS;
+                          contractAddr = contractAddress;
                       } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
                           contractAddr = nft.collection;
                       }

@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { getCollateralLendingAddress } from './configService';
 
 // ABI for NFTCollateralLendingIntegrated
 const COLLATERAL_LENDING_ABI = [
@@ -54,11 +55,15 @@ export class CollateralLendingService {
   private contract: ethers.Contract | null = null;
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.JsonRpcSigner | null = null;
+  private contractAddress: string = '';
 
-  async initialize(provider: ethers.BrowserProvider, address: string = import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS) {
+  async initialize(provider: ethers.BrowserProvider, address?: string) {
     this.provider = provider;
     this.signer = await provider.getSigner();
-    this.contract = new ethers.Contract(address, COLLATERAL_LENDING_ABI, this.signer);
+    
+    // Get contract address from backend config if not provided
+    this.contractAddress = address || await getCollateralLendingAddress();
+    this.contract = new ethers.Contract(this.contractAddress, COLLATERAL_LENDING_ABI, this.signer);
   }
 
   private checkInitialized() {
@@ -78,7 +83,7 @@ export class CollateralLendingService {
   async approveNFT(nftContractAddress: string, tokenId: string) {
     this.checkInitialized();
     const nftContract = new ethers.Contract(nftContractAddress, ERC721_ABI, this.signer);
-    const tx = await nftContract.approve(import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS, tokenId);
+    const tx = await nftContract.approve(this.contractAddress, tokenId);
     return await tx.wait();
   }
 
@@ -182,7 +187,7 @@ export class CollateralLendingService {
   async getPendingETHWithdrawal(address: string): Promise<string> {
     this.checkInitialized();
     const contract = new ethers.Contract(
-      import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS, 
+      this.contractAddress, 
       ["function pendingETHWithdrawals(address) external view returns (uint256)"],
       this.provider
     );
@@ -194,12 +199,17 @@ export class CollateralLendingService {
   async withdrawETH() {
     this.checkInitialized();
     const contract = new ethers.Contract(
-      import.meta.env.VITE_COLLATERAL_CONTRACT_ADDRESS,
+      this.contractAddress,
       ["function withdrawETH() external"],
       this.signer
     );
     const tx = await contract.withdrawETH();
     return await tx.wait();
+  }
+
+  // Get the contract address (useful for external access)
+  getContractAddress(): string {
+    return this.contractAddress;
   }
 }
 
