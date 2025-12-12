@@ -12,11 +12,12 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721URIStorageUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "./FeeManager.sol";
 
-contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeable, AccessControlUpgradeable, UUPSUpgradeable {
+contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeable, AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     bytes32 public constant ADMIN_ROLE = DEFAULT_ADMIN_ROLE;
 
     struct WrappedInfo {
@@ -39,12 +40,13 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         __ERC721URIStorage_init();
         __ReentrancyGuard_init();
         __AccessControl_init();
+        __Pausable_init();
         __UUPSUpgradeable_init();
         _grantRole(ADMIN_ROLE, admin_);
         feeManager = FeeManager(feeManager_);
     }
 
-    function wrap(address nft, uint256 tokenId, address renter, uint256 durationSeconds, string calldata metadataURI) external payable nonReentrant returns (uint256) {
+    function wrap(address nft, uint256 tokenId, address renter, uint256 durationSeconds, string calldata metadataURI) external payable nonReentrant whenNotPaused returns (uint256) {
         require(renter != address(0), "invalid renter");
         require(durationSeconds > 0, "duration>0");
 
@@ -72,7 +74,7 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         return wId;
     }
 
-    function unwrap(uint256 wId) external nonReentrant {
+    function unwrap(uint256 wId) external nonReentrant whenNotPaused {
         WrappedInfo storage info = wrapped[wId];
         require(info.active, "not active");
         require(msg.sender == info.owner || block.timestamp > info.validUntil || hasRole(ADMIN_ROLE, msg.sender), "not allowed");
@@ -89,14 +91,14 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
     }
 
     // extend lease (only admin for safety)
-    function extendLease(uint256 wId, uint256 extraSeconds) external onlyRole(ADMIN_ROLE) {
+    function extendLease(uint256 wId, uint256 extraSeconds) external onlyRole(ADMIN_ROLE) whenNotPaused {
         WrappedInfo storage info = wrapped[wId];
         require(info.active, "not active");
         info.validUntil += extraSeconds;
     }
 
     // prevent transfers if lease expired - override transferFrom (safeTransferFrom calls transferFrom internally)
-    function transferFrom(address from, address to, uint256 tokenId) public virtual override(ERC721Upgradeable, IERC721) {
+    function transferFrom(address from, address to, uint256 tokenId) public virtual override(ERC721Upgradeable, IERC721) whenNotPaused {
         if (from != address(0) && to != address(0)) {
             WrappedInfo storage info = wrapped[tokenId];
             require(info.active, "not active");
@@ -130,6 +132,14 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
     // Allow contract to receive NFTs via safeTransferFrom
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return this.onERC721Received.selector;
+    }
+
+    function pause() external onlyRole(ADMIN_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(ADMIN_ROLE) {
+        _unpause();
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(ADMIN_ROLE) {}

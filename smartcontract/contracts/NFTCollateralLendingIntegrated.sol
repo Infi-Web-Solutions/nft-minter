@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface IWrappedLeasing {
     function getLeaseStatus(uint256 wId) external view returns (bool isActive, uint256 timeRemaining);
@@ -15,7 +16,7 @@ interface IWrappedLeasing {
  * @title NFTCollateralLendingIntegrated
  * @dev Lending contract supporting marketplace NFTs and other ERC721 NFTs
  */
-contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
+contract NFTCollateralLendingIntegrated is ReentrancyGuard, Pausable, Ownable {
     using SafeERC20 for IERC20;
 
     uint256 public constant BASIS_POINTS = 10000;
@@ -37,11 +38,17 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         bool isMarketplaceNFT;
     }
 
+    struct NFTInfo {
+        address nftContract;
+        uint256 tokenId;
+    }
+
     uint256 public nextLoanId;
     mapping(uint256 => Loan) public loans;
 
     mapping(address => uint256) public pendingETHWithdrawals;
     mapping(address => mapping(address => uint256)) public pendingERC20Withdrawals;
+    mapping(address => NFTInfo[]) public pendingNFTs;
 
     // Optional whitelist for trusted NFTs
     mapping(address => bool) public nftWhitelist;
@@ -114,7 +121,7 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         uint256 interestBps,
         uint256 duration,
         uint256 maxLTV
-    ) external nonReentrant returns (uint256) {
+    ) external nonReentrant whenNotPaused returns (uint256) {
         require(principal > 0, "Principal > 0");
         require(duration > 0, "InvalidDuration");
         require(interestBps > 0, "InvalidInterest");
@@ -172,7 +179,7 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         emit LoanCancelled(loanId, msg.sender);
     }
 
-    function fundLoan(uint256 loanId) external payable nonReentrant {
+    function fundLoan(uint256 loanId) external payable nonReentrant whenNotPaused {
         Loan storage L = loans[loanId];
         require(L.status == LoanStatus.Requested, "AlreadyFunded");
         require(L.borrower != msg.sender, "BorrowerCannotFundOwnLoan");
@@ -193,7 +200,7 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         emit LoanFunded(loanId, msg.sender);
     }
 
-    function repayLoan(uint256 loanId) external payable nonReentrant {
+    function repayLoan(uint256 loanId) external payable nonReentrant whenNotPaused {
         Loan storage L = loans[loanId];
         require(L.status == LoanStatus.Funded, "LoanNotFunded");
         require(msg.sender == L.borrower, "NotBorrower");
@@ -217,20 +224,42 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         emit LoanRepaid(loanId, msg.sender, repayAmount);
     }
 
-    function liquidateLoan(uint256 loanId) external nonReentrant {
-        Loan storage L = loans[loanId];
-        require(L.status == LoanStatus.Funded, "LoanNotActive");
-        require(msg.sender == L.lender, "NotLender");
-        require(block.timestamp > L.startTime + L.duration, "NotExpired");
-        require(!L.isMarketplaceNFT, "MarketplaceNFTNoLiquidation");
+    function liquidateLoan(uint256 loanId) external nonReentrant whenNotPaused {
+    Loan storage L = loans[loanId];
 
-        // NFT remains with marketplace for marketplace NFTs
-        if (!L.isMarketplaceNFT) {
-            IERC721(L.nftContract).safeTransferFrom(address(this), L.lender, L.tokenId);
-        }
+    // 1️⃣ Ensure loan is active
+    require(L.status == LoanStatus.Funded, "LoanNotActive");
 
-        L.status = LoanStatus.Liquidated;
-        emit LoanLiquidated(loanId, msg.sender);
+    // 2️⃣ Only the lender can liquidate
+    require(msg.sender == L.lender, "NotLender");
+
+    // 3️⃣ Check that loan has expired
+    require(block.timestamp > L.startTime + L.duration, "NotExpired");
+
+    // 4️⃣ Marketplace NFTs cannot be liquidated
+    require(!L.isMarketplaceNFT, "MarketplaceNFTNoLiquidation");
+
+    // 5️⃣ Handle Wrapped Leasing NFTs if applicable
+    if (wrappedLeasingContracts[L.nftContract]) {
+        // Check lease status
+        (bool isActive, uint256 timeRemaining) = IWrappedLeasing(L.nftContract).getLeaseStatus(L.tokenId);
+        require(!isActive || timeRemaining == 0, "Lease not expired yet");
+    }
+
+    // 6️⃣ Transfer NFT to lender
+    try IERC721(L.nftContract).safeTransferFrom(address(this), L.lender, L.tokenId) {
+        // Transfer succeeded
+    } catch {
+        // If transfer fails, mark NFT as pending for withdrawal
+        pendingNFTs[L.lender].push(NFTInfo({
+            nftContract: L.nftContract,
+            tokenId: L.tokenId
+        }));
+    }
+
+    // 7️⃣ Update loan status & emit event
+    L.status = LoanStatus.Liquidated;
+    emit LoanLiquidated(loanId, msg.sender);
     }
 
     /* ==========================
@@ -251,6 +280,24 @@ contract NFTCollateralLendingIntegrated is ReentrancyGuard, Ownable {
         pendingERC20Withdrawals[msg.sender][token] = 0;
         IERC20(token).safeTransfer(msg.sender, amount);
         emit WithdrawnERC20(msg.sender, token, amount);
+    }
+
+    function withdrawPendingNFTs() external nonReentrant {
+        NFTInfo[] storage arr = pendingNFTs[msg.sender];
+        uint256 len = arr.length;
+        require(len > 0, "No pending NFTs");
+        for (uint256 i = 0; i < len; i++) {
+            IERC721(arr[i].nftContract).safeTransferFrom(address(this), msg.sender, arr[i].tokenId);
+        }
+        delete pendingNFTs[msg.sender];
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     /* ==========================
