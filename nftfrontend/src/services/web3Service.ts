@@ -62,7 +62,12 @@ export class Web3Service {
     
     // Get contract address from backend config
     this.contractAddress = await getNFTMarketplaceAddress();
-    this.contract = new ethers.Contract(this.contractAddress, NFT_MARKETPLACE_ABI, this.signer);
+    
+    if (this.contractAddress && this.contractAddress !== ethers.ZeroAddress) {
+      this.contract = new ethers.Contract(this.contractAddress, NFT_MARKETPLACE_ABI, this.signer);
+    } else {
+      console.warn('NFT Marketplace contract address not found in configuration');
+    }
   }
 
   // Check if service is initialized

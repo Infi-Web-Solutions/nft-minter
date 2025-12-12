@@ -501,11 +501,13 @@ const Profile = () => {
                     const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
                     
                     // Determine loan status
-                    let contractAddr = '';
-                    if (nft.source === 'local' || !nft.source) {
-                        contractAddr = contractAddress;
-                    } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                        contractAddr = nft.collection;
+                    let contractAddr = nft.contract_address || '';
+                    if (!contractAddr) {
+                        if (nft.source === 'local' || !nft.source) {
+                            contractAddr = contractAddress;
+                        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                            contractAddr = nft.collection;
+                        }
                     }
                     
                     const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
@@ -567,11 +569,13 @@ const Profile = () => {
                     const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
                     
                     // Determine loan status
-                    let contractAddr = '';
-                    if (nft.source === 'local' || !nft.source) {
-                        contractAddr = contractAddress;
-                    } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                        contractAddr = nft.collection;
+                    let contractAddr = nft.contract_address || '';
+                    if (!contractAddr) {
+                        if (nft.source === 'local' || !nft.source) {
+                            contractAddr = contractAddress;
+                        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                            contractAddr = nft.collection;
+                        }
                     }
                     
                     const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
@@ -644,11 +648,13 @@ const Profile = () => {
                     .map((nft: any) => {
                       const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
                       
-                      let contractAddr = '';
-                      if (nft.source === 'local' || !nft.source) {
-                          contractAddr = contractAddress;
-                      } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                          contractAddr = nft.collection;
+                      let contractAddr = nft.contract_address || '';
+                      if (!contractAddr) {
+                          if (nft.source === 'local' || !nft.source) {
+                              contractAddr = contractAddress;
+                          } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                              contractAddr = nft.collection;
+                          }
                       }
 
                       return (

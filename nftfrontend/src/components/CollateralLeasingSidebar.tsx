@@ -69,6 +69,11 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const [wrappedLoading, setWrappedLoading] = useState(false);
   const [wrappedContractAddress, setWrappedContractAddress] = useState<string>('');
   const [selectedWrappedNFT, setSelectedWrappedNFT] = useState<WrappedNFT | null>(null);
+  
+  // FeeManager Configuration State
+  const [feeManagerConfigured, setFeeManagerConfigured] = useState<boolean | null>(null);
+  const [isUserAdmin, setIsUserAdmin] = useState<boolean>(false);
+  const [configuringFeeManager, setConfiguringFeeManager] = useState(false);
 
   // Initialize services
   useEffect(() => {
@@ -88,6 +93,23 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
             const wrappedAddr = wrappedLeasingService.getContractAddress();
             if (wrappedAddr) {
               setWrappedContractAddress(wrappedAddr);
+            }
+            
+            // Check FeeManager configuration status
+            try {
+              const isConfigured = await wrappedLeasingService.isFeeManagerConfigured();
+              setFeeManagerConfigured(isConfigured);
+              
+              // Check if user is admin
+              const adminCheck = await wrappedLeasingService.isAdmin();
+              setIsUserAdmin(adminCheck);
+              
+              if (!isConfigured) {
+                console.log('FeeManager not configured. User is admin:', adminCheck);
+              }
+            } catch (configError) {
+              console.error('Error checking FeeManager config:', configError);
+              setFeeManagerConfigured(false);
             }
           }
         } catch (error) {
@@ -615,20 +637,24 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setProcessing(true);
     try {
       // Step 1: Approve NFT
+      console.log('Approving NFT for wrapping:', contractAddress, tokenId);
       toast.loading('Approving NFT for wrapping...', { id: 'wrap' });
       await wrappedLeasingService.approveNFTForWrapping(contractAddress, tokenId);
+       console.log('Approving NFT for wrapping:ssssssss', contractAddress, tokenId);
       toast.dismiss('wrap');
 
       // Step 2: Wrap the NFT
+      console.log('wrappedLeasingService.wrapNFT', contractAddress, tokenId, renterAddress, durationDays);
       toast.loading('Wrapping NFT...', { id: 'wrap' });
       const result = await wrappedLeasingService.wrapNFT(
         contractAddress,
         tokenId,
         renterAddress,
         parseFloat(durationDays),
-        '', // metadata URI empty for now
-        '0' // fee
+        '',
+        '0' 
       );
+      console.log('wrappedLeasingService.wrapNFT result', result);
       toast.dismiss('wrap');
 
       toast.success(`NFT Wrapped Successfully! wID: ${result.wId}`);
@@ -666,6 +692,43 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       handleTransactionError(error, 'Failed to unwrap NFT');
     } finally {
       setProcessing(false);
+    }
+  };
+
+  // Handler to configure FeeManager (admin only)
+  const handleConfigureFeeManager = async () => {
+    if (!isUserAdmin) {
+      toast.error('Only admin can configure FeeManager');
+      return;
+    }
+
+    setConfiguringFeeManager(true);
+    try {
+      // Get FeeManager address from backend config
+      const { getFeeManagerAddress } = await import('@/services/configService');
+      const feeManagerAddr = await getFeeManagerAddress();
+      
+      if (!feeManagerAddr) {
+        toast.error('FeeManager address not found in backend configuration');
+        return;
+      }
+
+      toast.loading('Configuring FeeManager on WrappedLeasing...', { id: 'feemanager' });
+      
+      const result = await wrappedLeasingService.setFeeManager(feeManagerAddr);
+      
+      toast.dismiss('feemanager');
+      toast.success('FeeManager configured successfully!');
+      console.log('FeeManager configured:', result);
+      
+      // Update state
+      setFeeManagerConfigured(true);
+    } catch (error: any) {
+      toast.dismiss('feemanager');
+      console.error('Error configuring FeeManager:', error);
+      toast.error(error.message || 'Failed to configure FeeManager');
+    } finally {
+      setConfiguringFeeManager(false);
     }
   };
 
@@ -838,6 +901,50 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                       </CardContent>
                     </Card>
 
+                    {/* FeeManager Configuration Warning */}
+                    {feeManagerConfigured === false && (
+                      <Card className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-amber-500/30">
+                        <CardContent className="p-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                            <div className="flex-1">
+                              <p className="text-xs font-medium text-amber-600 mb-1">
+                                Configuration Required
+                              </p>
+                              <p className="text-xs text-muted-foreground mb-2">
+                                The WrappedLeasing contract needs to be configured before wrapping can work.
+                              </p>
+                              {isUserAdmin ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs border-amber-500/50 hover:bg-amber-500/10"
+                                  onClick={handleConfigureFeeManager}
+                                  disabled={configuringFeeManager}
+                                >
+                                  {configuringFeeManager ? (
+                                    <>
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                      Configuring...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ShieldCheck className="mr-1 h-3 w-3" />
+                                      Configure FeeManager
+                                    </>
+                                  )}
+                                </Button>
+                              ) : (
+                                <p className="text-xs text-amber-500">
+                                  Only the contract admin can configure this. Please contact the administrator.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
                     {/* NFT Contract & Token ID */}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
@@ -1008,6 +1115,30 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                   You do not own this NFT
                               </div>
                           )}
+                        </div>
+                        <div className="bg-card/50 rounded-lg p-3 col-span-2">
+                          <div className="text-sm text-muted-foreground mb-1">Contract Address</div>
+                          <div className="flex items-center gap-2">
+                            <code className="text-xs bg-black/20 p-1 rounded flex-1 truncate">
+                              {contractAddress || nftData.contract_address || 'N/A'}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(contractAddress || nftData.contract_address)}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => window.open(`https://sepolia.etherscan.io/address/${contractAddress || nftData.contract_address}`, '_blank')}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
 

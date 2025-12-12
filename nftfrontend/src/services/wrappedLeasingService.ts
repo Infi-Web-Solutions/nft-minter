@@ -1,7 +1,8 @@
 // Wrapped Leasing Service - Interact with WrappedLeasing smart contract
 import { ethers } from 'ethers';
 import wrappedLeasingABI from '../contracts/WrappedLeasing.json';
-import { getWrappedLeasingAddress } from './configService';
+import { getWrappedLeasingAddress, getFeeManagerAddress } from './configService';
+import { Console } from 'console';
 
 class WrappedLeasingService {
   private contract: ethers.Contract | null = null;
@@ -38,7 +39,7 @@ class WrappedLeasingService {
       console.log('Contract Address:', this.contractAddress);
       
       const feeManagerAddr = await this.contract.feeManager();
-      console.log('FeeManager Address:', feeManagerAddr);
+      console.log('FeeManager Address on contract:', feeManagerAddr);
       
       if (feeManagerAddr && feeManagerAddr !== ethers.ZeroAddress) {
         // Try to call feeManager to check if it's valid
@@ -60,7 +61,24 @@ class WrappedLeasingService {
           }
         }
       } else {
-        console.log('FeeManager address is zero/invalid!');
+        console.warn('⚠️ FeeManager address is zero/invalid on the WrappedLeasing contract!');
+        console.warn('⚠️ NFT wrapping will NOT work until FeeManager is configured.');
+        console.log('');
+        console.log('HOW TO FIX:');
+        console.log('1. Run: node initialize-fee-manager.js <ADMIN_ADDRESS>');
+        console.log('   (from the nft-minter-backend-node folder)');
+        console.log('2. Or redeploy using: npx hardhat run scripts/deploy-wrapped-only.js --network testnet');
+        console.log('');
+        
+        try {
+          const backendFeeManagerAddr = await getFeeManagerAddress();
+          if (backendFeeManagerAddr && backendFeeManagerAddr !== ethers.ZeroAddress) {
+            console.log('FeeManager address available from backend:', backendFeeManagerAddr);
+            console.log('This address needs to be set on the WrappedLeasing contract by an admin.');
+          }
+        } catch (configError) {
+          console.log('Could not fetch FeeManager address from backend.');
+        }
       }
       
       const wCounter = await this.contract.wCounter();
@@ -89,54 +107,131 @@ class WrappedLeasingService {
     feeInEth: string = '0'
   ) {
     if (!this.contract) throw new Error('Service not initialized');
+    if (!this.signer) throw new Error('Signer not available');
 
     // Convert to seconds and ensure it's an integer (smart contract requires uint256)
     const durationSeconds = Math.max(1, Math.floor(durationDays * 24 * 60 * 60));
     
-    console.log('Wrapping NFT with params:', {
-      nftContract,
-      tokenId,
-      renterAddress,
-      durationSeconds,
-      metadataURI
-    });
+    console.log('=== Wrapping NFT ===');
+    console.log('NFT Contract:', nftContract);
+    console.log('Token ID:', tokenId);
+    console.log('Renter:', renterAddress);
+    console.log('Duration (seconds):', durationSeconds);
 
-    // Use a small fee to cover any potential fee requirements
-    // The contract will only take what it needs
-    let requiredFee = ethers.parseEther('0.0001'); // Small buffer for fees
-    
+    // Step 1: Verify ownership BEFORE attempting wrap
+    const signerAddress = await this.signer.getAddress();
+    console.log('Signer Address:', signerAddress);
+    const nftAbi = [
+      'function ownerOf(uint256 tokenId) public view returns (address)',
+      'function getApproved(uint256 tokenId) public view returns (address)',
+      'function isApprovedForAll(address owner, address operator) public view returns (bool)'
+    ];
+    const nftContractInstance = new ethers.Contract(nftContract, nftAbi, this.signer.provider!);
+
     try {
-      // Try to get the actual fee from FeeManager
-      const feeManagerAddress = await this.contract.feeManager();
-      console.log('FeeManager address:', feeManagerAddress);
+      const owner = await nftContractInstance.ownerOf(tokenId);
+      console.log('NFT Owner:', owner);
+      console.log('Signer Address:', signerAddress);
       
-      if (feeManagerAddress && feeManagerAddress !== ethers.ZeroAddress) {
-        const feeManagerAbi = [
-          'function leasingFeeBps() external view returns (uint16)',
-          'function calcBps(uint256 amount, uint16 bps) external pure returns (uint256)'
-        ];
-        const provider = this.signer!.provider;
-        const feeManager = new ethers.Contract(feeManagerAddress, feeManagerAbi, provider!);
-        
-        const leasingFeeBps = await feeManager.leasingFeeBps();
-        // Use BigInt for the calculation to avoid floating point issues
-        const calculatedFee = await feeManager.calcBps(BigInt(durationSeconds), leasingFeeBps);
-        
-        console.log(`Leasing fee: ${leasingFeeBps} bps, calculated fee: ${calculatedFee} wei`);
-        
-        // Use the larger of the calculated fee or the buffer
-        if (calculatedFee > requiredFee) {
-          requiredFee = calculatedFee;
-        }
+      if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
+        throw new Error(`You don't own this NFT. The owner is ${owner.slice(0, 6)}...${owner.slice(-4)}`);
       }
-    } catch (error) {
-      console.log('Could not calculate fee from FeeManager, using default fee:', error);
+    } catch (error: any) {
+      if (error.message?.includes("don't own")) throw error;
+      if (error.message?.includes('ERC721NonexistentToken') || error.code === 'CALL_EXCEPTION') {
+        throw new Error(`Token ID ${tokenId} does not exist in this contract.`);
+      }
+      console.error('Ownership check failed:', error);
+      throw new Error('Failed to verify NFT ownership. Please check the contract address and token ID.');
     }
 
-    console.log('Sending transaction with fee:', requiredFee.toString(), 'wei');
-
-    // Call wrap with the required fee
+    // Step 2: Verify approval
     try {
+      const approved = await nftContractInstance.getApproved(tokenId);
+      const approvedForAll = await nftContractInstance.isApprovedForAll(signerAddress, this.contractAddress);
+      
+      console.log('Approved address:', approved);
+      console.log('ApprovedForAll:', approvedForAll);
+      console.log('WrappedLeasing contract:', this.contractAddress);
+      
+      if (approved.toLowerCase() !== this.contractAddress.toLowerCase() && !approvedForAll) {
+        throw new Error('NFT is not approved for the Wrapped Leasing contract. Please approve it first.');
+      }
+    } catch (error: any) {
+      if (error.message?.includes('not approved')) throw error;
+      console.error('Approval check error:', error);
+      throw new Error('Failed to verify NFT approval. Please try approving the NFT again.');
+    }
+
+    // Step 3: Check FeeManager and calculate required fee
+    let requiredFee = BigInt(0);
+    let feeManagerAddress: string;
+    
+    try {
+      feeManagerAddress = await this.contract.feeManager();
+      console.log('FeeManager address on contract:', feeManagerAddress);
+      
+      // CRITICAL: If FeeManager is zero address, try to auto-configure it
+      if (!feeManagerAddress || feeManagerAddress === ethers.ZeroAddress) {
+        console.warn('⚠️ FeeManager is not configured on WrappedLeasing contract!');
+        
+        // Try to get FeeManager address from backend config
+        const backendFeeManagerAddr = await getFeeManagerAddress();
+        console.log('FeeManager address from backend:', backendFeeManagerAddr);
+        
+        if (backendFeeManagerAddr && backendFeeManagerAddr !== ethers.ZeroAddress) {
+          throw new Error(
+            'WrappedLeasing contract is not properly configured. ' +
+            'FeeManager address needs to be set by the admin. ' +
+            'Please run: node initialize-fee-manager.js <ADMIN_ADDRESS> from the backend folder.'
+          );
+        } else {
+          throw new Error(
+            'WrappedLeasing contract is not properly configured. ' +
+            'FeeManager address is not set. Please contact the administrator.'
+          );
+        }
+      }
+      
+      const feeManagerAbi = [
+        'function leasingFeeBps() external view returns (uint16)',
+        'function calcBps(uint256 amount, uint16 bps) external pure returns (uint256)'
+      ];
+      const feeManager = new ethers.Contract(feeManagerAddress, feeManagerAbi, this.signer.provider!);
+      
+      const leasingFeeBps = await feeManager.leasingFeeBps();
+      console.log('Leasing fee BPS:', leasingFeeBps);
+      
+      // Calculate fee: calcBps(durationSeconds, leasingFeeBps)
+      const calculatedFee = await feeManager.calcBps(BigInt(durationSeconds), leasingFeeBps);
+      console.log('Calculated fee (wei):', calculatedFee.toString());
+      
+      requiredFee = calculatedFee;
+    } catch (error: any) {
+      // Re-throw if it's our own error about FeeManager not being configured
+      if (error.message?.includes('FeeManager') || error.message?.includes('admin')) throw error;
+      console.error('Error calculating fee from FeeManager:', error);
+      throw new Error('Failed to calculate fee from FeeManager. The contract may not be properly configured.');
+    }
+
+    // Add a small buffer to cover any gas price variations (10% more)
+    const feeWithBuffer = requiredFee > BigInt(0) 
+      ? (requiredFee * BigInt(110)) / BigInt(100) 
+      : ethers.parseEther('0.0001'); // Minimum fee if calculated fee is 0
+    
+    console.log('Fee with buffer (wei):', feeWithBuffer.toString());
+
+
+    // Step 4: Execute the wrap transaction
+    try {
+      console.log('Calling wrap() with:');
+      console.log('  nft:', nftContract);
+      console.log('  tokenId:', tokenId);
+      console.log('  renter:', renterAddress);
+      console.log('  durationSeconds:', durationSeconds);
+      console.log('  metadataURI:', metadataURI);
+      console.log('  value:', feeWithBuffer.toString());
+
       const tx = await this.contract.wrap(
         nftContract,
         tokenId,
@@ -144,11 +239,13 @@ class WrappedLeasingService {
         durationSeconds,
         metadataURI,
         {
-          value: requiredFee
+          value: feeWithBuffer
         }
       );
 
+      console.log('Transaction sent:', tx.hash);
       const receipt = await tx.wait();
+      console.log('Transaction confirmed:', receipt.hash);
       
       // Extract wId from Wrapped event
       const wrappedEvent = receipt.logs.find((log: any) => {
@@ -162,6 +259,7 @@ class WrappedLeasingService {
 
       if (wrappedEvent) {
         const parsed = this.contract.interface.parseLog(wrappedEvent);
+        console.log('Wrapped event found, wId:', parsed?.args.wId.toString());
         return {
           wId: parsed?.args.wId.toString(),
           transactionHash: receipt.hash
@@ -173,17 +271,30 @@ class WrappedLeasingService {
         transactionHash: receipt.hash
       };
     } catch (error: any) {
-      console.error('Wrap error:', error);
+      console.error('Wrap transaction error:', error);
       
-      // Provide more specific error messages
+      // Parse specific error messages
       if (error.message?.includes('insufficient fee')) {
-        throw new Error('Insufficient fee. Please try again with a higher value.');
+        throw new Error('Insufficient fee provided. Please try again.');
       }
-      if (error.message?.includes('ERC721: caller is not token owner')) {
-        throw new Error('You do not own this NFT or the NFT is not approved.');
+      if (error.message?.includes('ERC721InsufficientApproval') || error.data?.includes('7e273289')) {
+        throw new Error('The NFT is not approved for the Wrapped Leasing contract. Please approve it first.');
+      }
+      if (error.message?.includes('ERC721IncorrectOwner') || error.message?.includes('caller is not token owner')) {
+        throw new Error('You do not own this NFT or ownership changed.');
+      }
+      if (error.message?.includes('invalid renter')) {
+        throw new Error('Invalid renter address provided.');
+      }
+      if (error.message?.includes('duration>0')) {
+        throw new Error('Duration must be greater than 0.');
+      }
+      if (error.code === 4001 || error.code === 'ACTION_REJECTED') {
+        throw new Error('Transaction was rejected by user.');
       }
       if (error.message?.includes('missing revert data') || error.code === 'CALL_EXCEPTION') {
-        throw new Error('Transaction failed. Make sure you own the NFT and it is approved for the Wrapped Leasing contract.');
+        // Try to get more specific error
+        throw new Error('Transaction failed. Please verify: 1) You own the NFT, 2) NFT is approved for WrappedLeasing contract, 3) Wallet has sufficient ETH for gas + fees.');
       }
       
       throw error;
@@ -256,7 +367,10 @@ class WrappedLeasingService {
   async approveNFTForWrapping(nftContract: string, tokenId: string) {
     if (!this.signer) throw new Error('Signer not available');
 
-    console.log('Approving NFT:', { nftContract, tokenId, wrappedLeasingAddress: this.contractAddress });
+    console.log('=== Approving NFT for Wrapping ===');
+    console.log('NFT Contract:', nftContract);
+    console.log('Token ID:', tokenId);
+    console.log('WrappedLeasing Address:', this.contractAddress);
 
     const nftAbi = [
       'function approve(address to, uint256 tokenId) public',
@@ -269,28 +383,38 @@ class WrappedLeasingService {
     const nftContractInstance = new ethers.Contract(nftContract, nftAbi, this.signer);
     const signerAddress = await this.signer.getAddress();
 
-    // Check who owns the token
+    // Step 1: Verify ownership
+    let owner: string;
     try {
-      const owner = await nftContractInstance.ownerOf(tokenId);
-      console.log('Token owner:', owner, 'Signer:', signerAddress);
+      owner = await nftContractInstance.ownerOf(tokenId);
+      console.log('Token owner:', owner);
+      console.log('Signer:', signerAddress);
+      
       if (owner.toLowerCase() !== signerAddress.toLowerCase()) {
-        throw new Error(`You don't own this token. Owner is ${owner}`);
+        throw new Error(`You don't own this NFT. The owner is ${owner.slice(0, 6)}...${owner.slice(-4)}`);
       }
     } catch (error: any) {
-      if (error.message.includes("don't own")) throw error;
-      console.log('Could not check ownership:', error.message);
+      if (error.message?.includes("don't own")) throw error;
+      if (error.message?.includes('ERC721NonexistentToken') || error.code === 'CALL_EXCEPTION') {
+        throw new Error(`Token ID ${tokenId} does not exist in this contract.`);
+      }
+      console.error('Ownership check failed:', error);
+      throw new Error('Failed to verify NFT ownership. Please check the contract address and token ID.');
     }
 
-    // Check if already approved first
+    // Step 2: Check if already approved
     try {
       const currentApproval = await nftContractInstance.getApproved(tokenId);
-      console.log('Current approval:', currentApproval, 'Expected:', this.contractAddress);
+      console.log('Current approval:', currentApproval);
+      
       if (currentApproval.toLowerCase() === this.contractAddress.toLowerCase()) {
         console.log('NFT already approved for wrapping');
         return true;
       }
 
       const approvedForAll = await nftContractInstance.isApprovedForAll(signerAddress, this.contractAddress);
+      console.log('ApprovedForAll:', approvedForAll);
+      
       if (approvedForAll) {
         console.log('NFT already approved (approvedForAll)');
         return true;
@@ -299,20 +423,48 @@ class WrappedLeasingService {
       console.log('Could not check current approval, proceeding with approve...');
     }
 
-    // Try to approve
+    // Step 3: Execute approval transaction
     try {
+      console.log('Sending approval transaction...');
       const tx = await nftContractInstance.approve(this.contractAddress, tokenId);
-      await tx.wait();
+      console.log('Approval transaction sent:', tx.hash);
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      console.log('Approval transaction confirmed:', receipt.hash);
+      
+      // Wait a moment for the state to be reflected
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Step 4: Verify approval was successful
+      try {
+        const newApproval = await nftContractInstance.getApproved(tokenId);
+        console.log('New approval after transaction:', newApproval);
+        
+        if (newApproval.toLowerCase() !== this.contractAddress.toLowerCase()) {
+          console.warn('Approval transaction confirmed but approval not reflected yet');
+          // Don't throw error - the transaction was confirmed so it should be fine
+        }
+      } catch (verifyError) {
+        console.log('Could not verify approval, but transaction was confirmed');
+      }
+      
       return true;
     } catch (error: any) {
       console.error('Approval error:', error);
       
       // Parse common errors
+      if (error.code === 4001 || error.code === 'ACTION_REJECTED') {
+        throw new Error('Approval transaction was rejected by user.');
+      }
       if (error.message?.includes('ERC721NonexistentToken') || error.data?.includes('7e273289')) {
         throw new Error(`Token ID ${tokenId} does not exist. Please check the token ID.`);
       }
       if (error.message?.includes('ERC721InvalidApprover') || error.message?.includes('not owner')) {
         throw new Error(`You do not own Token ID ${tokenId}. Only the owner can approve.`);
+      }
+      if (error.message?.includes('insufficient funds') || error.code === 'INSUFFICIENT_FUNDS') {
+        throw new Error('Insufficient funds to pay for gas.');
       }
       
       throw error;
@@ -354,6 +506,102 @@ class WrappedLeasingService {
   getContractAddress(): string {
     return this.contractAddress;
   }
+
+  /**
+   * Get the current FeeManager address
+   */
+  async getFeeManagerAddress(): Promise<string> {
+    if (!this.contract) throw new Error('Service not initialized');
+    return await this.contract.feeManager();
+  }
+
+  /**
+   * Check if FeeManager is properly configured
+   */
+  async isFeeManagerConfigured(): Promise<boolean> {
+    try {
+      const feeManagerAddress = await this.getFeeManagerAddress();
+      return feeManagerAddress && feeManagerAddress !== ethers.ZeroAddress;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Set the FeeManager address (admin only)
+   * @param feeManagerAddress - Address of the FeeManager contract
+   */
+  async setFeeManager(feeManagerAddress: string): Promise<{ success: boolean; transactionHash: string }> {
+    if (!this.contract) throw new Error('Service not initialized');
+    if (!this.signer) throw new Error('Signer not available');
+
+    console.log('Setting FeeManager to:', feeManagerAddress);
+
+    try {
+      // Call setFeeManager on the WrappedLeasing contract
+      const tx = await this.contract.setFeeManager(feeManagerAddress);
+      console.log('setFeeManager transaction sent:', tx.hash);
+      
+      const receipt = await tx.wait();
+      console.log('setFeeManager transaction confirmed:', receipt.hash);
+
+      return {
+        success: true,
+        transactionHash: receipt.hash
+      };
+    } catch (error: any) {
+      console.error('Error setting FeeManager:', error);
+      
+      if (error.code === 4001 || error.code === 'ACTION_REJECTED') {
+        throw new Error('Transaction was rejected by user.');
+      }
+      if (error.message?.includes('AccessControlUnauthorizedAccount') || error.message?.includes('only admin')) {
+        throw new Error('Only admin can set the FeeManager. You do not have admin permissions.');
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Check if the current user has admin role
+   */
+  async isAdmin(): Promise<boolean> {
+    if (!this.contract) {
+      console.error('isAdmin: Service not initialized - contract is null');
+      return false;
+    }
+    if (!this.signer) {
+      console.error('isAdmin: Signer is null');
+      return false;
+    }
+
+    try {
+      const signerAddress = await this.signer.getAddress();
+      console.log('=== isAdmin() Debug ===');
+      console.log('Contract Address:', this.contractAddress);
+      console.log('Signer Address:', signerAddress);
+      
+      // ADMIN_ROLE is DEFAULT_ADMIN_ROLE which is bytes32(0)
+      const adminRole = '0x0000000000000000000000000000000000000000000000000000000000000000';
+      console.log('Calling hasRole with role:', adminRole, );
+      
+      const result = await this.contract.hasRole(adminRole, signerAddress);
+      console.log('hasRole result:', result);
+      console.log('=== End isAdmin() Debug ===');
+      
+      return result;
+    } catch (error: any) {
+      console.error('=== isAdmin() ERROR ===');
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error code:', error.code);
+      console.error('Full error:', error);
+      console.error('=== End Error ===');
+      return false;
+    }
+  }
 }
 
 export const wrappedLeasingService = new WrappedLeasingService();
+
