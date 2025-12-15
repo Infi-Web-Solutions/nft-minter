@@ -74,5 +74,10 @@ contract FeeManager is AccessControlUpgradeable, PausableUpgradeable, UUPSUpgrad
         _unpause();
     }
 
+    // Reject direct ETH transfers
+    receive() external payable {
+        revert("no direct eth");
+    }
+
     function _authorizeUpgrade(address) internal override onlyRole(FEE_ADMIN) {}
 }
