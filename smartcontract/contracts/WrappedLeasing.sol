@@ -32,11 +32,13 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
     uint256 public wCounter;
     mapping(uint256 => WrappedInfo) public wrapped;
     uint256 public pendingTreasury;
+    uint256 public gracePeriod; // seconds after expiry before forceExpire is allowed
 
     event Wrapped(uint256 indexed wId, address indexed owner, address nft, uint256 tokenId, uint256 validUntil);
     event Unwrapped(uint256 indexed wId);
     event LeaseExtended(uint256 indexed wId, uint256 newValidUntil);
     event FeeRouted(address indexed treasury, uint256 amount, bool paid);
+    event LeaseForceExpired(uint256 indexed wId, address indexed caller);
 
     function initialize(address admin_, address feeManager_) external initializer {
         __ERC721_init("Wrapped Lease NFT", "wNFTL");
@@ -47,6 +49,7 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         __UUPSUpgradeable_init();
         _grantRole(ADMIN_ROLE, admin_);
         feeManager = FeeManager(payable(feeManager_));
+        gracePeriod = 1 days;
     }
 
     function wrap(address nft, uint256 tokenId, address renter, uint256 durationSeconds, string calldata metadataURI) external payable nonReentrant whenNotPaused returns (uint256) {
@@ -107,6 +110,19 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         emit LeaseExtended(wId, info.validUntil);
     }
 
+    /// Force expire after grace period; returns NFT to original owner and burns wNFT
+    function forceExpire(uint256 wId) external whenNotPaused {
+        WrappedInfo storage info = wrapped[wId];
+        require(info.active, "not active");
+        require(block.timestamp > info.validUntil + gracePeriod, "grace not passed");
+
+        info.active = false;
+        _burn(wId);
+        IERC721(info.originalNft).transferFrom(address(this), info.owner, info.originalTokenId);
+
+        emit LeaseForceExpired(wId, msg.sender);
+    }
+
     // prevent transfers if lease expired - override transferFrom (safeTransferFrom calls transferFrom internally)
     function transferFrom(address from, address to, uint256 tokenId) public virtual override(ERC721Upgradeable, IERC721) whenNotPaused {
         if (from != address(0) && to != address(0)) {
@@ -139,6 +155,11 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
 
     function setFeeManager(address newManager) external onlyRole(ADMIN_ROLE) {
         feeManager = FeeManager(payable(newManager));
+    }
+
+    function setGracePeriod(uint256 newGrace) external onlyRole(ADMIN_ROLE) {
+        require(newGrace <= 30 days, "grace too long");
+        gracePeriod = newGrace;
     }
 
     // Helper to check lease status

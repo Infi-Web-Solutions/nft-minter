@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 contract FeeManager is AccessControlUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     bytes32 public constant FEE_ADMIN = DEFAULT_ADMIN_ROLE;
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint16 private _marketplaceFeeBps;  
     uint16 private _lendingAprBps;       
@@ -24,6 +25,7 @@ contract FeeManager is AccessControlUpgradeable, PausableUpgradeable, UUPSUpgrad
         __Pausable_init();
         __UUPSUpgradeable_init();
         _grantRole(FEE_ADMIN, admin_);
+        _grantRole(PAUSER_ROLE, admin_);
         _setMarketplaceFeeBps(marketplaceFeeBps_);
         _setLendingAprBps(lendingAprBps_);
         _setLeasingFeeBps(leasingFeeBps_);
@@ -66,11 +68,11 @@ contract FeeManager is AccessControlUpgradeable, PausableUpgradeable, UUPSUpgrad
         return (amount * bps) / 10000;
     }
 
-    function pause() external onlyRole(FEE_ADMIN) {
+    function pause() external onlyRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyRole(FEE_ADMIN) {
+    function unpause() external onlyRole(PAUSER_ROLE) {
         _unpause();
     }
 

@@ -164,6 +164,36 @@ describe("LeasingMarketplace", function () {
     expect(await market.pendingBalances(treasury.address)).to.equal(platformFee);
   });
 
+  it("getTotalCost matches rent calculation", async () => {
+    await nft.mint(owner.address, 5);
+    await nft.connect(owner).approve(market.target, 5);
+    const pricePerSecond = ethers.parseEther("0.0002");
+    const duration = 2000;
+    await market.connect(owner).listForRent(nft.target, 5, pricePerSecond, 1000, 4000);
+
+    const res = await market.getTotalCost(1, duration); // listingId = 1 in this test scope
+    const rentAmount = pricePerSecond * BigInt(duration);
+    const deposit = rentAmount / 2n; // default 50%
+    const platformFee = (rentAmount * BigInt(leasingFeeBps)) / 10000n;
+    const wrapFee = (BigInt(duration) * BigInt(leasingFeeBps)) / 10000n;
+    const total = rentAmount + deposit + platformFee + wrapFee;
+
+    expect(res[0]).to.equal(rentAmount);
+    expect(res[1]).to.equal(deposit);
+    expect(res[2]).to.equal(platformFee);
+    expect(res[3]).to.equal(wrapFee);
+    expect(res[4]).to.equal(total);
+  });
+
+  it("emergencyWithdraw returns NFT when not rented", async () => {
+    await nft.mint(owner.address, 6);
+    await nft.connect(owner).approve(market.target, 6);
+    await market.connect(owner).listForRent(nft.target, 6, ethers.parseEther("0.0001"), 100, 200);
+
+    await market.connect(admin).emergencyWithdraw(1, owner.address); // listingId = 1 in this test scope
+    expect(await nft.ownerOf(6)).to.equal(owner.address);
+  });
+
   it("pauses rent/list when paused", async () => {
     await market.connect(admin).pause();
     await expect(

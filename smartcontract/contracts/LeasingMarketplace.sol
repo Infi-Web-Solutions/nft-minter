@@ -74,6 +74,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     event DepositRefunded(uint256 indexed listingId, address indexed to, uint256 amount);
     event LeaseCompleted(uint256 indexed listingId, uint256 wId);
     event ProceedsWithdrawn(address indexed to, uint256 amount);
+    event EmergencyWithdraw(address indexed operator, address indexed to, address indexed nft, uint256 tokenId, uint256 listingId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -235,6 +236,18 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     function setDepositBps(uint16 newDepositBps) external onlyRole(ADMIN_ROLE) {
         require(newDepositBps <= 10000, "deposit too high");
         depositBps = newDepositBps;
+    }
+
+    /// Admin emergency withdrawal for non-rented listings (custody recovery)
+    function emergencyWithdraw(uint256 listingId, address to) external onlyRole(ADMIN_ROLE) nonReentrant {
+        LeaseListing storage ls = listings[listingId];
+        require(ls.status != ListingStatus.Rented, "cannot withdraw rented");
+        require(ls.status != ListingStatus.None, "invalid listing");
+        address recipient = to == address(0) ? ls.owner : to;
+
+        ls.status = ListingStatus.Cancelled;
+        IERC721(ls.nft).transferFrom(address(this), recipient, ls.tokenId);
+        emit EmergencyWithdraw(msg.sender, recipient, ls.nft, ls.tokenId, listingId);
     }
 
     /// View helper: total cost breakdown for a listing and duration

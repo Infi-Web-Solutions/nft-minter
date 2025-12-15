@@ -68,5 +68,12 @@ describe("FeeManager", function () {
     await feeManager.connect(admin).setMarketplaceFeeBps(300);
     expect(await feeManager.marketplaceFeeBps()).to.equal(300);
   });
+
+  it("only pauser can pause/unpause", async () => {
+    await expect(feeManager.connect(other).pause()).to.be.revertedWithCustomError(feeManager, "AccessControlUnauthorizedAccount");
+    await feeManager.connect(admin).pause();
+    await expect(feeManager.connect(other).unpause()).to.be.revertedWithCustomError(feeManager, "AccessControlUnauthorizedAccount");
+    await feeManager.connect(admin).unpause();
+  });
 });
 
