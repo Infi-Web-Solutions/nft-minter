@@ -72,7 +72,9 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint256 expiresAt
     );
     event DepositRefunded(uint256 indexed listingId, address indexed to, uint256 amount);
+    event LeaseCompleted(uint256 indexed listingId, uint256 wId);
     event ProceedsWithdrawn(address indexed to, uint256 amount);
+    event EmergencyWithdraw(address indexed operator, address indexed to, address indexed nft, uint256 tokenId, uint256 listingId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -85,7 +87,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         __Pausable_init();
         __UUPSUpgradeable_init();
         _grantRole(ADMIN_ROLE, admin_);
-        feeManager = FeeManager(feeManager_);
+        feeManager = FeeManager(payable(feeManager_));
         wrappedContract = WrappedLeasing(wrapped_);
         platformFeeBps = 0; // use feeManager.leasingFeeBps by default
         wrapFeeBps = 0;     // use feeManager.leasingFeeBps by default
@@ -126,6 +128,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     function cancelListing(uint256 listingId) external nonReentrant whenNotPaused {
         LeaseListing storage ls = listings[listingId];
         require(ls.status == ListingStatus.Active, "not active");
+        require(ls.status != ListingStatus.Rented, "already rented");
         require(ls.owner == msg.sender || hasRole(ADMIN_ROLE, msg.sender), "not allowed");
 
         ls.status = ListingStatus.Cancelled;
@@ -138,6 +141,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         LeaseListing storage ls = listings[listingId];
         require(ls.status == ListingStatus.Active, "not rentable");
         require(durationSeconds >= ls.minDuration && durationSeconds <= ls.maxDuration, "duration out of range");
+        require(msg.sender != ls.owner, "owner cannot rent");
 
         uint256 rentAmount = ls.pricePerSecond * durationSeconds;
         uint16 platformBps = platformFeeBps == 0 ? feeManager.leasingFeeBps() : platformFeeBps;
@@ -196,6 +200,12 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         pendingBalances[r.renter] += amt;
 
         emit DepositRefunded(listingId, r.renter, amt);
+        // mark lifecycle completion
+        LeaseListing storage ls = listings[listingId];
+        if (ls.status == ListingStatus.Rented) {
+            ls.status = ListingStatus.Completed;
+            emit LeaseCompleted(listingId, r.wId);
+        }
     }
 
     /// Withdraw any owed balance (owner proceeds, treasury fees, renter deposit refunds)
@@ -214,7 +224,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     }
 
     function setFeeManager(address newManager) external onlyRole(ADMIN_ROLE) {
-        feeManager = FeeManager(newManager);
+        feeManager = FeeManager(payable(newManager));
     }
 
     function setFees(uint16 newPlatformBps, uint16 newWrapBps) external onlyRole(ADMIN_ROLE) {
@@ -226,6 +236,39 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     function setDepositBps(uint16 newDepositBps) external onlyRole(ADMIN_ROLE) {
         require(newDepositBps <= 10000, "deposit too high");
         depositBps = newDepositBps;
+    }
+
+    /// Admin emergency withdrawal for non-rented listings (custody recovery)
+    function emergencyWithdraw(uint256 listingId, address to) external onlyRole(ADMIN_ROLE) nonReentrant {
+        LeaseListing storage ls = listings[listingId];
+        require(ls.status != ListingStatus.Rented, "cannot withdraw rented");
+        require(ls.status != ListingStatus.None, "invalid listing");
+        address recipient = to == address(0) ? ls.owner : to;
+
+        ls.status = ListingStatus.Cancelled;
+        IERC721(ls.nft).transferFrom(address(this), recipient, ls.tokenId);
+        emit EmergencyWithdraw(msg.sender, recipient, ls.nft, ls.tokenId, listingId);
+    }
+
+    /// View helper: total cost breakdown for a listing and duration
+    function getTotalCost(uint256 listingId, uint256 durationSeconds) external view returns (
+        uint256 rentAmount,
+        uint256 deposit,
+        uint256 platformFee,
+        uint256 wrapFee,
+        uint256 totalRequired
+    ) {
+        LeaseListing storage ls = listings[listingId];
+        require(ls.status == ListingStatus.Active, "not rentable");
+        require(durationSeconds >= ls.minDuration && durationSeconds <= ls.maxDuration, "duration out of range");
+
+        rentAmount = ls.pricePerSecond * durationSeconds;
+        uint16 platformBps = platformFeeBps == 0 ? feeManager.leasingFeeBps() : platformFeeBps;
+        uint16 wrapBps = wrapFeeBps == 0 ? feeManager.leasingFeeBps() : wrapFeeBps;
+        deposit = feeManager.calcBps(rentAmount, depositBps);
+        platformFee = feeManager.calcBps(rentAmount, platformBps);
+        wrapFee = feeManager.calcBps(durationSeconds, wrapBps);
+        totalRequired = rentAmount + deposit + platformFee + wrapFee;
     }
 
     function pause() external onlyRole(ADMIN_ROLE) {

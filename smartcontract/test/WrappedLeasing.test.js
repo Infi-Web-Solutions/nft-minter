@@ -118,6 +118,30 @@ describe("WrappedLeasing", function () {
         );
     });
 
+    it("force expires after grace and returns NFT", async function () {
+        await feeManager.connect(admin).setLeasingFeeBps(0);
+        await wrapped.connect(admin).setGracePeriod(2);
+
+        await nft.connect(owner).approve(wrapped.target, 1);
+        const wrapTx = await wrapped.connect(owner).wrap(
+            nft.target,
+            1,
+            renter.address,
+            1, // 1s duration
+            "",
+            { value: 0 }
+        );
+        const rcpt = await wrapTx.wait();
+        const wId = rcpt.logs.find(l => l.fragment && l.fragment.name === "Wrapped").args.wId;
+
+        // wait past expiry + grace
+        await ethers.provider.send("evm_increaseTime", [5]);
+        await ethers.provider.send("evm_mine");
+
+        await wrapped.connect(other).forceExpire(wId);
+        expect(await nft.ownerOf(1)).to.equal(owner.address);
+    });
+
     // -------------------------
     // 3. UNWRAP AFTER EXPIRY
     // -------------------------
