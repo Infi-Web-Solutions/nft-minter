@@ -10,7 +10,8 @@ import { apiUrl } from '@/config';
 import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { collateralLendingService, LoanStatus, LoanDetails } from '@/services/collateralLendingService';
-import { wrappedLeasingService } from '@/services/wrappedLeasingService';
+
+import { wrappedLeasingApiService } from '../services/wrappedLeasingApiService';
 import { ethers } from 'ethers';
 import { web3Service } from '@/services/web3Service';
 
@@ -38,7 +39,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   initialContractAddress,
   initialTokenId
 }) => {
-  const { isConnected, provider, address } = useWallet();
+
+  const { isConnected, provider, address, signer } = useWallet();
   const [activeTab, setActiveTab] = useState('new');
   const [leasingType, setLeasingType] = useState('collateral');
   
@@ -75,42 +77,41 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const [isUserAdmin, setIsUserAdmin] = useState<boolean>(false);
   const [configuringFeeManager, setConfiguringFeeManager] = useState(false);
 
+
+
   // Initialize services
   useEffect(() => {
     const initializeServices = async () => {
-      if (isConnected && provider) {
+      if (isConnected && provider && signer) {
         try {
           await collateralLendingService.initialize(provider);
           await checkPendingWithdrawal();
           
-          // Also initialize wrapped leasing service
-          if (window.ethereum) {
-            const ethProvider = new ethers.BrowserProvider(window.ethereum as any);
-            const signer = await ethProvider.getSigner();
-            await wrappedLeasingService.initialize(ethProvider, signer);
+          // Initialize wrapped leasing service with user's wallet
+          await wrappedLeasingApiService.initialize(provider, signer);
+          
+          // Get contract info for display
+          try {
+            const contractInfo = await wrappedLeasingApiService.getContractInfo();
+            setWrappedContractAddress(contractInfo.wrappedLeasingAddress);
+          } catch (error) {
+            console.error('Error getting contract info:', error);
+          }
+          
+          // Check FeeManager configuration status
+          try {
+            const isConfigured = await wrappedLeasingApiService.isFeeManagerConfigured();
+            setFeeManagerConfigured(isConfigured);
             
-            // Get the wrapped leasing contract address
-            const wrappedAddr = wrappedLeasingService.getContractAddress();
-            if (wrappedAddr) {
-              setWrappedContractAddress(wrappedAddr);
-            }
+            // For demo purposes, assume user is admin if connected (in real app, check properly)
+            setIsUserAdmin(!!address);
             
-            // Check FeeManager configuration status
-            try {
-              const isConfigured = await wrappedLeasingService.isFeeManagerConfigured();
-              setFeeManagerConfigured(isConfigured);
-              
-              // Check if user is admin
-              const adminCheck = await wrappedLeasingService.isAdmin();
-              setIsUserAdmin(adminCheck);
-              
-              if (!isConfigured) {
-                console.log('FeeManager not configured. User is admin:', adminCheck);
-              }
-            } catch (configError) {
-              console.error('Error checking FeeManager config:', configError);
-              setFeeManagerConfigured(false);
+            if (!isConfigured) {
+              console.log('FeeManager not configured.');
             }
+          } catch (configError) {
+            console.error('Error checking FeeManager config:', configError);
+            setFeeManagerConfigured(false);
           }
         } catch (error) {
           console.error('Error initializing services:', error);
@@ -118,7 +119,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       }
     };
     initializeServices();
-  }, [isConnected, provider, address, open]);
+  }, [isConnected, provider, signer, address, open]);
 
   // Handle initial data when opening
   useEffect(() => {
@@ -593,33 +594,12 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
   // ===== WRAPPED LEASING FUNCTIONS =====
   
+
   const loadWrappedNFTs = async () => {
     if (!address) return;
     setWrappedLoading(true);
     try {
-      const counter = await wrappedLeasingService.getWCounter();
-      const nfts: WrappedNFT[] = [];
-      
-      // Load last 20 wrapped NFTs
-      const start = Math.max(1, counter - 19);
-      for (let i = counter; i >= start; i--) {
-        try {
-          const info = await wrappedLeasingService.getWrappedInfo(i.toString());
-          const status = await wrappedLeasingService.getLeaseStatus(i.toString());
-          
-          // Only show NFTs owned by current user
-          if (info.owner.toLowerCase() === address?.toLowerCase()) {
-            nfts.push({
-              wId: i.toString(),
-              ...info,
-              ...status
-            });
-          }
-        } catch (error) {
-          continue;
-        }
-      }
-      
+      const nfts = await wrappedLeasingApiService.getUserWrappedNFTs(address);
       setWrappedNFTs(nfts);
     } catch (error) {
       console.error('Error loading wrapped NFTs:', error);
@@ -628,33 +608,79 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
   };
 
+
+
   const handleWrapNFT = async () => {
     if (!contractAddress || !tokenId || !renterAddress || !durationDays) {
       toast.error('Please fill all fields');
       return;
     }
 
+    if (!address) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+
     setProcessing(true);
     try {
-      // Step 1: Approve NFT
-      console.log('Approving NFT for wrapping:', contractAddress, tokenId);
-      toast.loading('Approving NFT for wrapping...', { id: 'wrap' });
-      await wrappedLeasingService.approveNFTForWrapping(contractAddress, tokenId);
-       console.log('Approving NFT for wrapping:ssssssss', contractAddress, tokenId);
-      toast.dismiss('wrap');
+      console.log('wrapNFT via API:', contractAddress, tokenId, renterAddress, durationDays);
+      
+      // Step 1: Check if NFT needs approval
+      toast.loading('Checking NFT approval...', { id: 'wrap' });
+      
+      try {
+        const validation = await wrappedLeasingApiService.validateNFT(contractAddress, tokenId, address);
+        
+        if (validation.needsApproval) {
+          toast.dismiss('wrap');
+          toast.loading('NFT needs approval. Requesting approval...', { id: 'wrap' });
+          
+          // Approve the NFT
+          try {
+            const approvalResult = await wrappedLeasingApiService.approveNFTForWrapping(contractAddress, tokenId);
+            
+            if (approvalResult.alreadyApproved) {
+              toast.dismiss('wrap');
+              toast.info('NFT is already approved');
+            } else {
+              toast.dismiss('wrap');
+              toast.success('NFT approved successfully!');
+            }
+          } catch (approvalError: any) {
+            toast.dismiss('wrap');
+            
+            // Check for user rejection
+            if (approvalError?.message?.includes('User denied') || 
+                approvalError?.message?.includes('user rejected') ||
+                approvalError?.code === 4001) {
+              toast.error('Approval cancelled by user');
+              setProcessing(false);
+              return;
+            }
+            
+            throw new Error(`Failed to approve NFT: ${approvalError.message}`);
+          }
+        }
+      } catch (validationError: any) {
+        // If validation fails due to ownership, show clear error
+        if (validationError?.message?.includes("don't own")) {
+          toast.dismiss('wrap');
+          toast.error("You don't own this NFT. You can only wrap NFTs you own.");
+          setProcessing(false);
+          return;
+        }
+        throw validationError;
+      }
 
       // Step 2: Wrap the NFT
-      console.log('wrappedLeasingService.wrapNFT', contractAddress, tokenId, renterAddress, durationDays);
       toast.loading('Wrapping NFT...', { id: 'wrap' });
-      const result = await wrappedLeasingService.wrapNFT(
+      const result = await wrappedLeasingApiService.wrapNFT(
         contractAddress,
         tokenId,
         renterAddress,
-        parseFloat(durationDays),
-        '',
-        '0' 
+        parseFloat(durationDays)
       );
-      console.log('wrappedLeasingService.wrapNFT result', result);
+      console.log('wrapNFT result', result);
       toast.dismiss('wrap');
 
       toast.success(`NFT Wrapped Successfully! wID: ${result.wId}`);
@@ -677,13 +703,14 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
   };
 
+
   const handleUnwrapNFT = async (wId: string) => {
     if (!window.confirm('Are you sure you want to unwrap this NFT?')) return;
 
     setProcessing(true);
     try {
       toast.loading('Unwrapping NFT...', { id: 'unwrap' });
-      await wrappedLeasingService.unwrapNFT(wId);
+      await wrappedLeasingApiService.unwrapNFT(wId);
       toast.dismiss('unwrap');
       toast.success('NFT Unwrapped Successfully!');
       await loadWrappedNFTs();
@@ -694,6 +721,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       setProcessing(false);
     }
   };
+
 
   // Handler to configure FeeManager (admin only)
   const handleConfigureFeeManager = async () => {
@@ -715,7 +743,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
       toast.loading('Configuring FeeManager on WrappedLeasing...', { id: 'feemanager' });
       
-      const result = await wrappedLeasingService.setFeeManager(feeManagerAddr);
+      const result = await wrappedLeasingApiService.setFeeManager(feeManagerAddr);
       
       toast.dismiss('feemanager');
       toast.success('FeeManager configured successfully!');
@@ -732,13 +760,14 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
   };
 
+
   const handleSearchWId = async () => {
     if (!searchWId) return;
 
     setWrappedLoading(true);
     try {
-      const info = await wrappedLeasingService.getWrappedInfo(searchWId);
-      const status = await wrappedLeasingService.getLeaseStatus(searchWId);
+      const info = await wrappedLeasingApiService.getWrappedInfo(searchWId);
+      const status = await wrappedLeasingApiService.getLeaseStatus(searchWId);
       
       setWrappedNFTs([{
         wId: searchWId,

@@ -35,6 +35,7 @@ interface NFTCardProps {
   loanBorrower?: string;
   onRequestLoan?: () => void;
   disableRequestLoan?: boolean;
+  isWrapped?: boolean;
 }
 
 const getImageUrl = (url: string) => {
@@ -69,6 +70,7 @@ const NFTCard = ({
   loanBorrower,
   onRequestLoan,
   disableRequestLoan = false,
+  isWrapped = false,
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
   const { address } = useWallet();
@@ -527,7 +529,18 @@ const NFTCard = ({
                 </Button>
               ) : (
                 <>
-                  {loanStatus === 'Requested' && !isOwner && (
+                  {isWrapped && (
+                    <Button
+                      size="sm"
+                      className="bg-purple-500/80 whitespace-nowrap text-xs px-2 cursor-not-allowed"
+                      disabled
+                      title="This NFT is currently wrapped"
+                    >
+                      🎁 Wrapped
+                    </Button>
+                  )}
+
+                  {loanStatus === 'Requested' && !isOwner && !isWrapped && (
                      <Button
                       size="sm"
                       className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
@@ -540,7 +553,7 @@ const NFTCard = ({
                       {isLoanBorrower ? "Requested Loan" : "Fund Loan"}
                     </Button>
                   )}
-                  {loanStatus === 'Requested' && isOwner &&(
+                  {loanStatus === 'Requested' && isOwner && !isWrapped &&(
                      <Button
                       size="sm"
                       className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
@@ -555,7 +568,7 @@ const NFTCard = ({
                   )}
                   
                   {/* NFT is actively loaned - show collateral badge instead of buy button */}
-                  {loanStatus === 'Funded' && (
+                  {loanStatus === 'Funded' && !isWrapped && (
                     <Button
                       size="sm"
                       className="bg-orange-500/80 whitespace-nowrap text-xs px-2 cursor-not-allowed"
@@ -566,7 +579,7 @@ const NFTCard = ({
                     </Button>
                   )}
                   
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && !isWrapped && (
                     <Button
                       size="sm"
                       className={`whitespace-nowrap text-xs px-2 text-white ${(disableRequestLoan || !onRequestLoan) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700'}`}
@@ -580,7 +593,7 @@ const NFTCard = ({
                       Request Loan
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !is_listed && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !is_listed && !isWrapped && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-gray-400 to-gray-600 whitespace-nowrap text-xs px-2"
@@ -590,7 +603,7 @@ const NFTCard = ({
                       Not for Sale
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && is_listed && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && is_listed && !isWrapped && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2"

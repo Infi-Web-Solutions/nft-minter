@@ -27,7 +27,7 @@ class NFTMarketplaceWeb3 {
         this.leasingMarketplaceAddress = process.env.LeasingMarketplace_Address || process.env.LEASING_MARKETPLACE_ADDRESS || null;
 
         // FeeManager contract address
-        this.feeManagerAddress = process.env.FeeManager_Address || process.env.FEE_MANAGER_ADDRESS || null;
+        this.feeManagerAddress = process.env.FeeManager_Address || process.env.FeeManager_Address || null;
 
         this.ALCHEMY_API_URL = process.env.ALCHEMY_API_URL || null;
 

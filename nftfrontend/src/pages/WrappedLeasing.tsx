@@ -9,11 +9,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Loader2, Gift, Package, Clock, CheckCircle2, AlertCircle, Info
 } from 'lucide-react';
+
+
 import { useWallet } from '@/contexts/WalletContext';
-import { wrappedLeasingService } from '@/services/wrappedLeasingService';
-import { ethers } from 'ethers';
+import { wrappedLeasingApiService } from '@/services/wrappedLeasingApiService';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
+import { ethers } from 'ethers';
 
 interface WrappedNFT {
   wId: string;
@@ -26,8 +28,9 @@ interface WrappedNFT {
   timeRemaining?: number;
 }
 
+
 const WrappedLeasing = () => {
-  const { isConnected, address } = useWallet();
+  const { isConnected, address, provider, signer } = useWallet();
   const [activeTab, setActiveTab] = useState<'wrap' | 'manage'>('wrap');
   
   // Wrap form state
@@ -39,60 +42,42 @@ const WrappedLeasing = () => {
   
   // Manage state
   const [wrappedNFTs, setWrappedNFTs] = useState<WrappedNFT[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [searchWId, setSearchWId] = useState('');
 
-  useEffect(() => {
-    if (isConnected && address && window.ethereum) {
-      initializeService();
-    }
-  }, [isConnected, address]);
-
-  const initializeService = async () => {
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum as any);
-      const signer = await provider.getSigner();
-      await wrappedLeasingService.initialize(provider, signer);
-      await loadWrappedNFTs();
-    } catch (error) {
-      console.error('Error initializing service:', error);
-    }
-  };
-
   const loadWrappedNFTs = async () => {
+    if (!address) return;
+    
     setLoading(true);
     try {
-      const counter = await wrappedLeasingService.getWCounter();
-      const nfts: WrappedNFT[] = [];
-      
-      // Load last 20 wrapped NFTs for demo (you can optimize this)
-     const start = Math.max(1, counter - 19);
-      for (let i = counter; i >= start; i--) {
-        try {
-          const info = await wrappedLeasingService.getWrappedInfo(i.toString());
-          const status = await wrappedLeasingService.getLeaseStatus(i.toString());
-          
-          // Only show NFTs owned by current user
-          if (info.owner.toLowerCase() === address?.toLowerCase()) {
-            nfts.push({
-              wId: i.toString(),
-              ...info,
-              ...status
-            });
-          }
-        } catch (error) {
-          // Skip if NFT doesn't exist
-          continue;
-        }
-      }
-      
+      const nfts = await wrappedLeasingApiService.getUserWrappedNFTs(address);
       setWrappedNFTs(nfts);
     } catch (error) {
       console.error('Error loading wrapped NFTs:', error);
+      toast.error('Failed to load wrapped NFTs');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const initializeService = async () => {
+      if (isConnected && address && provider && signer) {
+        try {
+          // Initialize the wrapped leasing service with user's wallet
+          await wrappedLeasingApiService.initialize(provider as ethers.Provider, signer);
+          await loadWrappedNFTs();
+        } catch (error) {
+          console.error('Failed to initialize wrapped leasing service:', error);
+          toast.error('Failed to initialize service. Please refresh the page.');
+        }
+      }
+    };
+
+    initializeService();
+  }, [isConnected, address, provider, signer]);
+
 
   const handleWrapNFT = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,19 +88,13 @@ const WrappedLeasing = () => {
 
     setWrapping(true);
     try {
-      // Step 1: Approve NFT
-      toast.info('Approving NFT for wrapping...');
-      await wrappedLeasingService.approveNFTForWrapping(nftContract, tokenId);
-
-      // Step 2: Wrap the NFT
+      // Step 1: Wrap the NFT via backend API
       toast.info('Wrapping NFT...');
-      const result = await wrappedLeasingService.wrapNFT(
+      const result = await wrappedLeasingApiService.wrapNFT(
         nftContract,
         tokenId,
         renterAddress,
-        parseInt(durationDays),
-        '', // metadata URI empty for now
-        '0' // fee - should calculate from contract
+        parseFloat(durationDays)
       );
 
       toast.success(`NFT Wrapped Successfully! wID: ${result.wId}`);
@@ -137,12 +116,13 @@ const WrappedLeasing = () => {
     }
   };
 
+
   const handleUnwrapNFT = async (wId: string) => {
     if (!window.confirm('Are you sure you want to unwrap this NFT?')) return;
 
     try {
       toast.info('Unwrapping NFT...');
-      await wrappedLeasingService.unwrapNFT(wId);
+      await wrappedLeasingApiService.unwrapNFT(wId);
       toast.success('NFT Unwrapped Successfully!');
       await loadWrappedNFTs();
     } catch (error: any) {
@@ -156,8 +136,8 @@ const WrappedLeasing = () => {
 
     setLoading(true);
     try {
-      const info = await wrappedLeasingService.getWrappedInfo(searchWId);
-      const status = await wrappedLeasingService.getLeaseStatus(searchWId);
+      const info = await wrappedLeasingApiService.getWrappedInfo(searchWId);
+      const status = await wrappedLeasingApiService.getLeaseStatus(searchWId);
       
       setWrappedNFTs([{
         wId: searchWId,

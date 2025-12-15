@@ -1,3 +1,4 @@
+
 import dotenv from 'dotenv';
 const result = dotenv.config();
 // console.log('Dotenv config result:', result);
@@ -6,11 +7,15 @@ const result = dotenv.config();
 import mongoose from 'mongoose';
 import app from './app.js';
 import loanAutoLiquidationService from './services/loanAutoLiquidationService.js';
+import wrappedLeasingRoutes from './routes/wrappedLeasingRoutes.js';
 
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/nft-minter';
 
 console.log('Connecting to MongoDB at:', MONGODB_URI);
+
+// Register routes before starting server
+app.use('/api/wrapped-leasing', wrappedLeasingRoutes);
 
 mongoose.connect(MONGODB_URI, {
     useNewUrlParser: true,
@@ -31,6 +36,7 @@ mongoose.connect(MONGODB_URI, {
     
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
+        console.log(`Wrapped Leasing API available at: http://localhost:${PORT}/api/wrapped-leasing`);
     });
 })
 .catch(err => {
