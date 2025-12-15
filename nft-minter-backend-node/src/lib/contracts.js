@@ -30,4 +30,5 @@ export const leasingMarketplace = new ethers.Contract(
   process.env.LEASING_MARKETPLACE_ADDRESS,
   LeasingABI,
   adminWallet
+  
 );
