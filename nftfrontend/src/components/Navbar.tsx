@@ -184,13 +184,13 @@ const Navbar = () => {
                     <NavigationMenuContent>
                       <div className="grid gap-3 p-6 w-[300px]">
                         <NavigationMenuLink asChild>
-                          <button
-                            onClick={() => toast.info('Wrapped Leasing coming soon!')}
-                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground text-left w-full"
+                          <Link
+                            to="/wrapped-leasing"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
                           >
                             <div className="text-sm font-medium">Wrapped Leasing</div>
                             <p className="text-sm text-muted-foreground">Wrap and lease your NFTs</p>
-                          </button>
+                          </Link>
                         </NavigationMenuLink>
                         <NavigationMenuLink asChild>
                           <button
@@ -358,7 +358,7 @@ const Navbar = () => {
               <div className="text-sm font-semibold mb-2 text-muted-foreground">Leasing</div>
               <button
                 onClick={() => {
-                  toast.info('Wrapped Leasing coming soon!');
+                  navigate('/wrapped-leasing');
                   setMobileMenuOpen(false);
                 }}
                 className="text-left w-full p-2 rounded hover:bg-accent hover:text-accent-foreground"

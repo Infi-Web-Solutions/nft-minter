@@ -99,7 +99,7 @@ const CollectionDetails = () => {
                     id={nft.id}
                     price={nft.price ? nft.price.toString() : '0'}
                     title={nft.name}
-                    collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
+                    collection={collection.name}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
                     onClick={() => {

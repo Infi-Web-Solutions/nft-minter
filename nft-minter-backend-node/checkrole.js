@@ -33,5 +33,5 @@ async function main() {
     console.log(addr, " → ", has ? "✔ HAS ADMIN" : "❌ NO ADMIN");
   }
 }
-
+ 
 main();
