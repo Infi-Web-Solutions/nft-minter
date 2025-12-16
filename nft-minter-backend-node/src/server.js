@@ -7,6 +7,7 @@ const result = dotenv.config();
 import mongoose from 'mongoose';
 import app from './app.js';
 import loanAutoLiquidationService from './services/loanAutoLiquidationService.js';
+import { leasingListenerService } from './services/leasingListenerService.js';
 import wrappedLeasingRoutes from './routes/wrappedLeasingRoutes.js';
 
 const PORT = process.env.PORT || 5000;
@@ -29,6 +30,10 @@ mongoose.connect(MONGODB_URI, {
         await loanAutoLiquidationService.initialize();
         loanAutoLiquidationService.start();
         console.log('Loan auto-liquidation service started');
+
+        // Start Leasing Listener
+        leasingListenerService.start();
+        console.log('Leasing listener service started');
     } catch (error) {
         console.error('Failed to start auto-liquidation service:', error.message);
         // Don't fail the server startup if this service fails

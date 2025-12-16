@@ -202,6 +202,15 @@ const Navbar = () => {
                           </button>
                         </NavigationMenuLink>
                         <NavigationMenuLink asChild>
+                          <Link
+                            to="/rental-history"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <div className="text-sm font-medium">Rental History</div>
+                            <p className="text-sm text-muted-foreground">View all rental transactions</p>
+                          </Link>
+                        </NavigationMenuLink>
+                        <NavigationMenuLink asChild>
                           <button
                             onClick={() => toast.info('Leasing Program coming soon!')}
                             className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground text-left w-full"
@@ -373,6 +382,15 @@ const Navbar = () => {
                 className="text-left w-full p-2 rounded hover:bg-accent hover:text-accent-foreground"
               >
                 Collateral Leasing
+              </button>
+              <button
+                onClick={() => {
+                  navigate('/rental-history');
+                  setMobileMenuOpen(false);
+                }}
+                className="text-left w-full p-2 rounded hover:bg-accent hover:text-accent-foreground"
+              >
+                Rental History
               </button>
               <button
                 onClick={() => {

@@ -20,7 +20,8 @@ import {
     getNftStats,
     trackNftView,
     getCollections,
-    getExternalNft
+    getExternalNft,
+    setNftRentable
 } from '../controllers/nftController.js';
 
 const router = express.Router();
@@ -56,5 +57,6 @@ router.get('/:nft_id/stats/', getNftStats);
 router.post('/:nft_id/track-view/', trackNftView);
 router.post('/:nft_id/toggle-like/', toggleNftLike);
 router.post('/:token_id/set_listed/', setNftListed);
+router.post('/:token_id/set_rentable/', setNftRentable);
 
 export default router;

@@ -4,7 +4,7 @@ import FeeManagerABI from "../abi/FeeManager.abi.js";
 import WrappedABI from "../abi/Wrapped.abi.js";
 import LeasingABI from "../abi/Leasing.abi.js";
 
-export const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+export const provider = new ethers.JsonRpcProvider(process.env.sepoliaUrl);
 
 export const adminWallet = new ethers.Wallet(
   process.env.ADMIN_PRIVATE_KEY,
@@ -13,21 +13,21 @@ export const adminWallet = new ethers.Wallet(
 
 // FeeManager (ADMIN ONLY)
 export const feeManager = new ethers.Contract(
-  process.env.FEE_MANAGER_ADDRESS,
+  process.env.FeeManager_Address,
   FeeManagerABI,
   adminWallet
 );
 
 // Wrapped (read-only)
 export const wrappedLeasing = new ethers.Contract(
-  process.env.WRAPPED_LEASING_ADDRESS,
+  process.env.WrappedLeasing_Address,
   WrappedABI,
   provider
 );
 
 // Leasing (ADMIN if needed)
 export const leasingMarketplace = new ethers.Contract(
-  process.env.LEASING_MARKETPLACE_ADDRESS,
+  process.env.LeasingMarketplace_Address,
   LeasingABI,
   adminWallet
   

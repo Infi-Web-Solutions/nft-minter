@@ -811,6 +811,30 @@ export const setNftListed = async (req, res) => {
     }
 };
 
+export const setNftRentable = async (req, res) => {
+    try {
+        const { token_id } = req.params;
+        const { is_rentable } = req.body;
+        
+        const nft = await NFT.findOne({ token_id });
+        if (!nft) {
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
+        
+        nft.is_rentable = is_rentable;
+        // If rentable, it's technically not "listed for sale" in the traditional sense, 
+        // but we might want to keep is_listed false to avoid confusion in the marketplace
+        if (is_rentable) {
+            nft.is_listed = false; 
+        }
+        
+        await nft.save();
+        return res.json({ success: true, is_rentable: nft.is_rentable });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 export const toggleNftLike = async (req, res) => {
     try {
         const { nft_id } = req.params;

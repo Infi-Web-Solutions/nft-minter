@@ -54,10 +54,11 @@ const Profile = () => {
   const [selectedTab, setSelectedTab] = useState('collected');
   const [createdNFTs, setCreatedNFTs] = useState([]);
   const [combinedNFTs, setCombinedNFTs] = useState([]);
+  const [lendedNFTs, setLendedNFTs] = useState([]);
   const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
-  const [activeLoans, setActiveLoans] = useState<Map<string, string>>(new Map());
+  const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string, loanId: string }>>(new Map());
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
-  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string} | null>(null);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string} | null>(null);
   const [contractAddress, setContractAddress] = useState<string>('');
 
   // Load contract address from config
@@ -94,12 +95,41 @@ const Profile = () => {
             const res = await fetch(apiUrl('/loans/open'));
             const data = await res.json();
             if (data.success) {
-                const loanMap = new Map<string, string>();
-                data.data.forEach((loan: any) => {
+                const loanMap = new Map<string, { status: string, borrower: string, loanId: string, lender: string }>();
+                const myLended: any[] = [];
+
+                await Promise.all(data.data.map(async (loan: any) => {
                     const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
-                    loanMap.set(key, loan.status);
-                });
+                    loanMap.set(key, { status: loan.status, borrower: loan.borrower, loanId: loan.loanId, lender: loan.lender });
+                    
+                    // If current user is the lender, fetch NFT details
+                    if (address && loan.lender && loan.lender.toLowerCase() === address.toLowerCase()) {
+                         try {
+                             // Try to fetch from backend first
+                             let nftData = null;
+                             const nftRes = await fetch(apiUrl(`/nfts/external/${loan.nftContract}/${loan.tokenId}`));
+                             const nftResData = await nftRes.json();
+                             if (nftResData.success) {
+                                 nftData = nftResData.data;
+                             }
+                             
+                             if (nftData) {
+                                 myLended.push({
+                                     ...nftData,
+                                     loanId: loan.loanId,
+                                     loanStatus: loan.status,
+                                     loanBorrower: loan.borrower,
+                                     loanLender: loan.lender
+                                 });
+                             }
+                         } catch (e) {
+                             console.error('Failed to fetch lended NFT details', e);
+                         }
+                    }
+                }));
+                
                 setActiveLoans(loanMap);
+                setLendedNFTs(myLended);
             }
         } catch (err) {
             console.error('Failed to fetch active loans', err);
@@ -488,6 +518,7 @@ const Profile = () => {
               <TabsTrigger value="favorite">Favorite</TabsTrigger>
               <TabsTrigger value="followers">Followers</TabsTrigger>
               <TabsTrigger value="activity">Activity</TabsTrigger>
+              <TabsTrigger value="lending">Lending</TabsTrigger>
             </TabsList>
 
             {/* Collected Tab: combined NFTs */}
@@ -511,7 +542,7 @@ const Profile = () => {
                     }
                     
                     const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                    const loanStatus = loanKey ? activeLoans.get(loanKey) : undefined;
+                    const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
 
                     console.log('[Profile] Rendering NFT in collected tab:', {
                       original_id: nft.id,
@@ -543,11 +574,14 @@ const Profile = () => {
                         onClick={() => {
                           window.location.href = `/nft/${nftId}`;
                         }}
-                        loanStatus={loanStatus}
+                        loanStatus={loanInfo?.status}
+                        loanBorrower={loanInfo?.borrower}
+                        loanId={loanInfo?.loanId}
                         onRequestLoan={() => {
                             setSelectedLoanNft({
                                 contract: contractAddr,
-                                tokenId: String(nft.token_id)
+                                tokenId: String(nft.token_id),
+                                loanId: loanInfo?.loanId
                             });
                             setShowCollateralSidebar(true);
                         }}
@@ -579,7 +613,7 @@ const Profile = () => {
                     }
                     
                     const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                    const loanStatus = loanKey ? activeLoans.get(loanKey) : undefined;
+                    const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
 
                     return (
                       <NFTCard
@@ -600,11 +634,14 @@ const Profile = () => {
                         onClick={() => {
                           window.location.href = `/nft/${nftId}`;
                         }}
-                        loanStatus={loanStatus}
+                        loanStatus={loanInfo?.status}
+                        loanBorrower={loanInfo?.borrower}
+                        loanId={loanInfo?.loanId}
                         onRequestLoan={() => {
                             setSelectedLoanNft({
                                 contract: contractAddr,
-                                tokenId: String(nft.token_id)
+                                tokenId: String(nft.token_id),
+                                loanId: loanInfo?.loanId
                             });
                             setShowCollateralSidebar(true);
                         }}
@@ -744,6 +781,61 @@ const Profile = () => {
                 )}
               </div>
             </TabsContent>
+
+            {/* Lending Tab: NFTs user is lending */}
+            <TabsContent value="lending" className="mt-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {lendedNFTs.length === 0 ? (
+                  <div className="col-span-full text-center text-muted-foreground">
+                    <div className="text-4xl mb-4">💸</div>
+                    <p className="mb-4">You are not lending any NFTs.</p>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => window.location.href = '/marketplace'}
+                    >
+                      Find Loans to Fund
+                    </Button>
+                  </div>
+                ) : (
+                  lendedNFTs.map((nft: any) => {
+                    const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                    return (
+                      <NFTCard
+                        key={nftId}
+                        {...nft}
+                        image={nft.image_url}
+                        tokenId={nft.token_id}
+                        id={nftId}
+                        price={nft.price ? nft.price.toString() : '0'}
+                        title={nft.name}
+                        collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
+                        owner_address={nft.owner_address}
+                        is_listed={nft.is_listed}
+                        liked={isNFTLiked({ ...nft, id: nftId })}
+                        onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
+                        canLike={true}
+                        source="local"
+                        onClick={() => {
+                          window.location.href = `/nft/${nftId}`;
+                        }}
+                        loanStatus={nft.loanStatus}
+                        loanBorrower={nft.loanBorrower}
+                        loanLender={nft.loanLender}
+                        loanId={nft.loanId}
+                        onRequestLoan={() => {
+                            setSelectedLoanNft({
+                                contract: nft.contract_address || nft.collection,
+                                tokenId: String(nft.token_id),
+                                loanId: nft.loanId
+                            });
+                            setShowCollateralSidebar(true);
+                        }}
+                      />
+                    );
+                  })
+                )}
+              </div>
+            </TabsContent>
           </Tabs>
         </div>
       </WalletGuard>
@@ -753,6 +845,7 @@ const Profile = () => {
         onOpenChange={setShowCollateralSidebar}
         initialContractAddress={selectedLoanNft?.contract}
         initialTokenId={selectedLoanNft?.tokenId}
+        initialLoanId={selectedLoanNft?.loanId}
       />
       <Footer />
     </div>

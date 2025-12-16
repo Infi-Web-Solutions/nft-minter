@@ -11,6 +11,8 @@ import Footer from '@/components/Footer';
 import CollateralLeasingSidebar from '@/components/CollateralLeasingSidebar';
 import { apiUrl } from '@/config';
 import { getNFTMarketplaceAddress } from '@/services/configService';
+import { leasingMarketplaceService } from '@/services/leasingMarketplaceApiService';
+import { ethers } from 'ethers';
 
 import { nftService, NFT } from '@/services/nftService';
 import { toast } from 'sonner';
@@ -28,7 +30,8 @@ const Marketplace = () => {
   const [sortBy, setSortBy] = useState('recent');
   const [isLoading, setIsLoading] = useState(true);
   const [allNfts, setAllNfts] = useState<NFT[]>([]);
-  const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string }>>(new Map());
+  const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string, loanId: string }>>(new Map());
+  const [activeListings, setActiveListings] = useState<Map<string, number>>(new Map());
   const [contractAddress, setContractAddress] = useState<string>('');
   
   const [filters, setFilters] = useState({
@@ -45,7 +48,7 @@ const Marketplace = () => {
 
   // Collateral Leasing State
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
-  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string} | null>(null);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string} | null>(null);
 
   // Fetch active loans
   useEffect(() => {
@@ -54,10 +57,10 @@ const Marketplace = () => {
             const res = await fetch(apiUrl('/loans/open'));
             const data = await res.json();
             if (data.success) {
-                const loanMap = new Map<string, { status: string, borrower: string }>();
+                const loanMap = new Map<string, { status: string, borrower: string, loanId: string }>();
                 data.data.forEach((loan: any) => {
                     const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
-                    loanMap.set(key, { status: loan.status, borrower: loan.borrower });
+                    loanMap.set(key, { status: loan.status, borrower: loan.borrower, loanId: loan.loanId });
                 });
                 setActiveLoans(loanMap);
             }
@@ -66,7 +69,72 @@ const Marketplace = () => {
         }
     };
     fetchActiveLoans();
+    fetchActiveLoans();
   }, []);
+
+  // Fetch active marketplace listings
+  useEffect(() => {
+    const fetchListings = async () => {
+        try {
+            // First try to get listings from backend API
+            console.log('[Marketplace] Fetching listings from backend...');
+            const res = await fetch(apiUrl('/listings/active'));
+            const data = await res.json();
+            
+            if (data.success && data.data && data.data.length > 0) {
+                console.log('[Marketplace] Backend Listings Fetched:', data.data);
+                const listingMap = new Map<string, number>();
+                data.data.forEach((l: any) => {
+                    const key = `${l.nftAddress.toLowerCase()}-${String(l.tokenId)}`;
+                    listingMap.set(key, l.listingId);
+                    console.log('[Marketplace] Mapped Backend Listing:', {
+                        nftAddress: l.nftAddress,
+                        tokenId: l.tokenId,
+                        generatedKey: key,
+                        listingId: l.listingId,
+                        status: l.status
+                    });
+                });
+                setActiveListings(listingMap);
+                return;
+            }
+            
+            console.log('[Marketplace] No backend listings, trying blockchain...');
+        } catch (backendError) {
+            console.error('[Marketplace] Backend fetch failed:', backendError);
+        }
+        
+        // Fallback to blockchain if backend fails or returns empty
+        if (!window.ethereum) {
+            console.log('[Marketplace] No ethereum provider');
+            return;
+        }
+        
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            await leasingMarketplaceService.initialize(provider, signer);
+            
+            const listings = await leasingMarketplaceService.getActiveListings();
+            console.log('[Marketplace] Blockchain Listings Fetched:', listings);
+            const listingMap = new Map<string, number>();
+            listings.forEach((l: any) => {
+                const key = `${l.nft.toLowerCase()}-${String(l.tokenId)}`;
+                listingMap.set(key, l.listingId);
+                console.log('[Marketplace] Mapped Blockchain Listing:', {
+                    rawNft: l.nft,
+                    rawTokenId: l.tokenId,
+                    generatedKey: key,
+                    listingId: l.listingId
+                });
+            });
+            setActiveListings(listingMap);
+        } catch (e) {
+            console.error("[Marketplace] Failed to fetch active listings from blockchain", e);
+        }
+    };
+    fetchListings();
+  }, [address]);
 
   // Initialize filters from URL query params
   useEffect(() => {
@@ -421,7 +489,33 @@ const Marketplace = () => {
                     contractAddr = nft.collection;
                 }
                 
-                const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
+                const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${String(nft.token_id)}` : '';
+                // DEBUG: Force rentable for testing if needed, but let's log first
+                const isRentable = !!activeListings.get(loanKey);
+                
+                // DEBUG LOG
+                console.log('[Marketplace] Checking Rentable:', {
+                    nftTitle: nft.title || nft.name,
+                    rawContract: contractAddr,
+                    rawTokenId: nft.token_id,
+                    generatedKey: loanKey,
+                    inMap: activeListings.has(loanKey),
+                    listingId: activeListings.get(loanKey),
+                    isRentable,
+                    isOwner: address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase(),
+                    currentUser: address,
+                    nftOwner: nft.owner_address
+                });
+                if (isRentable) {
+                    console.log('[Marketplace] NFT is Rentable:', {
+                        id: nft.id,
+                        token_id: nft.token_id,
+                        contract: contractAddr,
+                        key: loanKey,
+                        isOwner: address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()
+                    });
+                }
+                
                 let loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;                                                    
                 if (!loanInfo && (nft.source === 'local' || !nft.source) && nft.token_id) {
                     const tokenIdStr = String(nft.token_id);
@@ -454,16 +548,28 @@ const Marketplace = () => {
                     is_listed={nft.is_listed}
                     loanStatus={loanInfo?.status}
                     loanBorrower={loanInfo?.borrower}
+                    loanId={loanInfo?.loanId}
                     onRequestLoan={() => {
                         setSelectedLoanNft({
                             contract: contractAddr,
-                            tokenId: String(nft.token_id)
+                            tokenId: String(nft.token_id),
+                            loanId: loanInfo?.loanId
                         });
                         setShowCollateralSidebar(true);
                     }}
 
 
                     disableRequestLoan={address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()}
+                    
+                    // Marketplace Renting Props
+                    isRentable={isRentable}
+                    onRent={() => {
+                        setSelectedLoanNft({
+                            contract: contractAddr,
+                            tokenId: String(nft.token_id)
+                        });
+                        setShowCollateralSidebar(true);
+                    }}
                   />
                 );
               })}
@@ -491,6 +597,7 @@ const Marketplace = () => {
         onOpenChange={setShowCollateralSidebar}
         initialContractAddress={selectedLoanNft?.contract}
         initialTokenId={selectedLoanNft?.tokenId}
+        initialLoanId={selectedLoanNft?.loanId}
       />
       <Footer />
     </div>
