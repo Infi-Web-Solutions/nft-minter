@@ -18,7 +18,9 @@ export interface ContractAddresses {
     collateralLending: string;
     wrappedLeasing: string;
     feeManager: string;
+    leasingMarketplace: string;
 }
+
 
 export interface NetworkConfig {
     chainId: string;
@@ -122,6 +124,14 @@ export async function getFeeManagerAddress(): Promise<string> {
 }
 
 /**
+ * Get the Leasing Marketplace contract address
+ */
+export async function getLeasingMarketplaceAddress(): Promise<string> {
+    const config = await fetchConfig();
+    return config.contracts.leasingMarketplace;
+}
+
+/**
  * Get network configuration
  */
 export async function getNetworkConfig(): Promise<NetworkConfig> {
@@ -152,6 +162,7 @@ export const configService = {
     getCollateralLendingAddress,
     getWrappedLeasingAddress,
     getFeeManagerAddress,
+    getLeasingMarketplaceAddress,
     getNetworkConfig,
     clearConfigCache,
     prefetchConfig

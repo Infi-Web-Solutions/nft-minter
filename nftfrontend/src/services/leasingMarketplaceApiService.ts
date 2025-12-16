@@ -23,19 +23,29 @@ const ERC721_ABI = [
   "function getApproved(uint256 tokenId) external view returns (address)"
 ];
 
+import { getLeasingMarketplaceAddress } from './configService';
+
+// ... (ABI definitions)
+
 class LeasingMarketplaceService {
   private contract: ethers.Contract | null = null;
   private provider: ethers.BrowserProvider | null = null;
   private signer: ethers.JsonRpcSigner | null = null;
-  private contractAddress: string = import.meta.env.VITE_LEASING_MARKETPLACE_ADDRESS || '';
+  private contractAddress: string = '';
 
   async initialize(provider: ethers.BrowserProvider, signer: ethers.JsonRpcSigner) {
     this.provider = provider;
     this.signer = signer;
-    if (this.contractAddress) {
-        this.contract = new ethers.Contract(this.contractAddress, LEASING_MARKETPLACE_ABI, signer);
-    } else {
-        console.error("Leasing Marketplace Address not found in env");
+    
+    try {
+        this.contractAddress = await getLeasingMarketplaceAddress();
+        if (this.contractAddress) {
+            this.contract = new ethers.Contract(this.contractAddress, LEASING_MARKETPLACE_ABI, signer);
+        } else {
+            console.error("Leasing Marketplace Address not found in config");
+        }
+    } catch (e) {
+        console.error("Failed to load leasing marketplace address from config", e);
     }
   }
 
@@ -80,7 +90,28 @@ class LeasingMarketplaceService {
     const maxSeconds = maxDays * 86400;
 
     const tx = await this.contract.listForRent(nftAddress, tokenId, pricePerSecond, minSeconds, maxSeconds);
-    return await tx.wait();
+    const receipt = await tx.wait();
+
+    // Find LeaseListed event
+    let listingId = null;
+    if (receipt && receipt.logs) {
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.contract.interface.parseLog({
+                    topics: [...log.topics],
+                    data: log.data
+                });
+                if (parsed && parsed.name === 'LeaseListed') {
+                    listingId = Number(parsed.args.listingId);
+                    break;
+                }
+            } catch (e) {
+                // ignore logs that don't match
+            }
+        }
+    }
+
+    return { receipt, listingId };
   }
 
   async calculateCost(listingId: number, durationDays: number) {

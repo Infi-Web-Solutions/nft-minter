@@ -148,6 +148,9 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           } catch (e) {
             console.error('Error checking marketplace balance:', e);
           }
+
+          // Check marketplace status now that service is initialized
+          await checkMarketplaceStatus();
           
           // Get contract info for display
           try {
@@ -990,7 +993,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setProcessing(true);
     try {
         toast.loading('Listing NFT for rent...');
-        const receipt = await leasingMarketplaceService.listForRent(
+        const { receipt, listingId: newListingId } = await leasingMarketplaceService.listForRent(
             contractAddress, 
             tokenId, 
             listingPrice, 
@@ -999,23 +1002,6 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         );
         toast.dismiss();
         toast.success('NFT Listed for Rent!');
-        
-        // Get listing ID from the event logs
-        let newListingId = null;
-        if (receipt && receipt.logs) {
-            for (const log of receipt.logs) {
-                try {
-                    // LeaseListed event topic
-                    if (log.topics && log.topics.length > 0) {
-                        // The first indexed param is listingId
-                        newListingId = parseInt(log.topics[1], 16);
-                        break;
-                    }
-                } catch (e) {
-                    console.log('Could not parse log', e);
-                }
-            }
-        }
         
         // Save listing to backend
         try {
@@ -1040,14 +1026,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         }
 
         // Also update NFT rentable status
-        try {
-            await fetch(apiUrl(`/nfts/${tokenId}/set_rentable/`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_rentable: true })
-            });
-        } catch (err) {
-            console.error("Failed to update backend rentable status", err);
+        if (nftData && nftData.id) {
+            try {
+                await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_rentable: true })
+                });
+            } catch (err) {
+                console.error("Failed to update backend rentable status", err);
+            }
         }
 
         // Refresh
@@ -1098,14 +1086,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         }
 
         // Update NFT rentable status
-        try {
-            await fetch(apiUrl(`/nfts/${tokenId}/set_rentable/`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_rentable: false })
-            });
-        } catch (err) {
-            console.error("Failed to update backend rentable status", err);
+        if (nftData && nftData.id) {
+            try {
+                await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_rentable: false })
+                });
+            } catch (err) {
+                console.error("Failed to update backend rentable status", err);
+            }
         }
 
         // Clear rental cost state
@@ -1117,6 +1107,38 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     } catch (error: any) {
         toast.dismiss('rent');
         handleTransactionError(error, 'Failed to rent NFT');
+    } finally {
+        setProcessing(false);
+    }
+  };
+
+  const handleCancelListing = async () => {
+    if (!listingId) return;
+    setProcessing(true);
+    try {
+        toast.loading('Cancelling listing...');
+        await leasingMarketplaceService.cancelListing(listingId);
+        toast.dismiss();
+        toast.success('Listing Cancelled & NFT Returned');
+        
+        // Update backend status
+        if (nftData && nftData.id) {
+            try {
+                await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_rentable: false })
+                });
+            } catch (err) {
+                console.error("Failed to update backend rentable status", err);
+            }
+        }
+
+        await checkMarketplaceStatus();
+        handleSearch();
+    } catch (e: any) {
+        toast.dismiss();
+        handleTransactionError(e, 'Failed to cancel');
     } finally {
         setProcessing(false);
     }
@@ -1730,35 +1752,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                 <div className="pt-2 border-t border-border/50">
                                     <p className="text-xs text-muted-foreground mb-2 text-center">You listed this NFT.</p>
                                     <Button 
-                                        onClick={async () => {
-                                            if (!listingId) return;
-                                            setProcessing(true);
-                                            try {
-                                                toast.loading('Cancelling listing...');
-                                                await leasingMarketplaceService.cancelListing(listingId);
-                                                toast.dismiss();
-                                                toast.success('Listing Cancelled & NFT Returned');
-                                                
-                                                // Update backend status
-                                                try {
-                                                    await fetch(apiUrl(`/nfts/${tokenId}/set_rentable/`), {
-                                                        method: 'POST',
-                                                        headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({ is_rentable: false })
-                                                    });
-                                                } catch (err) {
-                                                    console.error("Failed to update backend rentable status", err);
-                                                }
-
-                                                await checkMarketplaceStatus();
-                                                handleSearch();
-                                            } catch (e: any) {
-                                                toast.dismiss();
-                                                handleTransactionError(e, 'Failed to cancel');
-                                            } finally {
-                                                setProcessing(false);
-                                            }
-                                        }} 
+                                        onClick={handleCancelListing} 
                                         disabled={processing} 
                                         variant="destructive" 
                                         className="w-full"

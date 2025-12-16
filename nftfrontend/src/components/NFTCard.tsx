@@ -625,9 +625,9 @@ const NFTCard = ({
                         if (!disableRequestLoan && onRequestLoan) onRequestLoan();
                       }}
                       disabled={disableRequestLoan || !onRequestLoan}
-                      title={(disableRequestLoan || !onRequestLoan) ? "Loan requests are disabled here" : "Request a loan using this NFT as collateral"}
+                      title={(disableRequestLoan || !onRequestLoan) ? "Loan requests are disabled here" : "View lease requests for this NFT"}
                     >
-                      Leasing in Marketplace
+                      Lease Requests
                     </Button>
                   )}
 

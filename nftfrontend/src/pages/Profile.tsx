@@ -60,6 +60,7 @@ const Profile = () => {
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
   const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string} | null>(null);
   const [contractAddress, setContractAddress] = useState<string>('');
+  const [activeListings, setActiveListings] = useState<Map<string, number>>(new Map());
 
   // Load contract address from config
   useEffect(() => {
@@ -140,6 +141,29 @@ const Profile = () => {
     fetchFollowing();
     fetchActiveLoans();
   }, [address]);
+
+  // Fetch active marketplace listings
+  useEffect(() => {
+    const fetchListings = async () => {
+        try {
+            // First try to get listings from backend API
+            const res = await fetch(apiUrl('/listings/active'));
+            const data = await res.json();
+            
+            if (data.success && data.data) {
+                const listingMap = new Map<string, number>();
+                data.data.forEach((l: any) => {
+                    const key = `${l.nftAddress.toLowerCase()}-${String(l.tokenId)}`;
+                    listingMap.set(key, l.listingId);
+                });
+                setActiveListings(listingMap);
+            }
+        } catch (err) {
+            console.error('Failed to fetch active listings', err);
+        }
+    };
+    fetchListings();
+  }, []);
 
   // Follow/unfollow logic
   const handleFollow = async (targetAddress: string) => {
@@ -543,6 +567,7 @@ const Profile = () => {
                     
                     const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
                     const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
+                    const isRentable = !!activeListings.get(loanKey);
 
                     console.log('[Profile] Rendering NFT in collected tab:', {
                       original_id: nft.id,
@@ -571,6 +596,7 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        isRentable={isRentable}
                         onClick={() => {
                           window.location.href = `/nft/${nftId}`;
                         }}
@@ -614,6 +640,7 @@ const Profile = () => {
                     
                     const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
                     const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
+                    const isRentable = !!activeListings.get(loanKey);
 
                     return (
                       <NFTCard
@@ -631,6 +658,7 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        isRentable={isRentable}
                         onClick={() => {
                           window.location.href = `/nft/${nftId}`;
                         }}
@@ -693,6 +721,9 @@ const Profile = () => {
                               contractAddr = nft.collection;
                           }
                       }
+                      
+                      const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
+                      const isRentable = !!activeListings.get(loanKey);
 
                       return (
                         <NFTCard
@@ -799,6 +830,7 @@ const Profile = () => {
                 ) : (
                   lendedNFTs.map((nft: any) => {
                     const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                    const isRentable = false;
                     return (
                       <NFTCard
                         key={nftId}
@@ -815,6 +847,7 @@ const Profile = () => {
                         onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                         canLike={true}
                         source="local"
+                        isRentable={isRentable}
                         onClick={() => {
                           window.location.href = `/nft/${nftId}`;
                         }}

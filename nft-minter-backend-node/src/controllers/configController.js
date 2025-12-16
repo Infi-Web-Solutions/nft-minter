@@ -19,6 +19,7 @@ export const getPublicConfig = async (req, res) => {
                 collateralLending: process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS,
                 wrappedLeasing: process.env.WrappedLeasing_Address || process.env.WRAPPED_LEASING_ADDRESS,
                 feeManager: process.env.FeeManager_Address || process.env.FEE_MANAGER_ADDRESS,
+                leasingMarketplace: process.env.LeasingMarketplace_Address,
             },
             // Network Configuration
             network: {
