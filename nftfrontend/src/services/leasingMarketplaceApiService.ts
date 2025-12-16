@@ -132,7 +132,35 @@ class LeasingMarketplaceService {
     const durationSeconds = durationDays * 86400;
     
     const tx = await this.contract.rent(listingId, durationSeconds, { value: totalEthCost });
-    return await tx.wait();
+    const receipt = await tx.wait();
+
+    // Find LeaseRented event
+    let rentalDetails = null;
+    if (receipt && receipt.logs) {
+        for (const log of receipt.logs) {
+            try {
+                const parsed = this.contract.interface.parseLog({
+                    topics: [...log.topics],
+                    data: log.data
+                });
+                if (parsed && parsed.name === 'LeaseRented') {
+                    rentalDetails = {
+                        listingId: Number(parsed.args.listingId),
+                        renter: parsed.args.renter,
+                        wId: Number(parsed.args.wId),
+                        rentPaid: parsed.args.rentPaid,
+                        depositHeld: parsed.args.depositHeld,
+                        expiresAt: Number(parsed.args.expiresAt)
+                    };
+                    break;
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+    }
+
+    return { receipt, rentalDetails };
   }
 
   async cancelListing(listingId: number) {

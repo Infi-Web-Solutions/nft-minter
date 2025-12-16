@@ -1,3 +1,4 @@
+
 import RentalTransaction from '../models/rentalTransaction.js';
 import { ethers } from 'ethers';
 
@@ -32,6 +33,28 @@ export const getAllTransactions = async (req, res) => {
         });
     } catch (error) {
         console.error('[RentalTransactionController] Error fetching transactions:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+/**
+ * Create a new rental transaction
+ */
+export const createTransaction = async (req, res) => {
+    try {
+        const transactionData = req.body;
+        
+        // Basic validation
+        if (!transactionData.type || !transactionData.listingId) {
+            return res.status(400).json({ success: false, error: 'Missing required fields' });
+        }
+
+        const transaction = new RentalTransaction(transactionData);
+        await transaction.save();
+
+        return res.status(201).json({ success: true, data: transaction });
+    } catch (error) {
+        console.error('[RentalTransactionController] Error creating transaction:', error);
         return res.status(500).json({ success: false, error: error.message });
     }
 };

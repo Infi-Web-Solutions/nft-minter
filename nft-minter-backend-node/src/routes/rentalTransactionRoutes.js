@@ -4,10 +4,14 @@ import {
     getTransactionsByNFT,
     getTransactionsByUser,
     getTransactionsByListing,
-    getTransactionStats
+    getTransactionStats,
+    createTransaction
 } from '../controllers/rentalTransactionController.js';
 
 const router = express.Router();
+
+// Create a new transaction
+router.post('/', createTransaction);
 
 // Get all transactions (with pagination)
 router.get('/', getAllTransactions);

@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Edit, Share, MoreHorizontal, Copy, ExternalLink, Camera, Settings } from 'lucide-react';
+import { Edit, Share, MoreHorizontal, Copy, ExternalLink, Camera, Settings, BadgeCheck } from 'lucide-react';
 import NFTCard from '@/components/NFTCard';
 import CollateralLeasingSidebar from '@/components/CollateralLeasingSidebar';
 import Navbar from '@/components/Navbar';
@@ -55,10 +55,11 @@ const Profile = () => {
   const [createdNFTs, setCreatedNFTs] = useState([]);
   const [combinedNFTs, setCombinedNFTs] = useState([]);
   const [lendedNFTs, setLendedNFTs] = useState([]);
+  const [rentedNFTs, setRentedNFTs] = useState<any[]>([]);
   const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
   const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string, loanId: string }>>(new Map());
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
-  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string} | null>(null);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string, leasingType?: 'collateral' | 'wrapped' | 'marketplace'} | null>(null);
   const [contractAddress, setContractAddress] = useState<string>('');
   const [activeListings, setActiveListings] = useState<Map<string, number>>(new Map());
 
@@ -164,6 +165,58 @@ const Profile = () => {
     };
     fetchListings();
   }, []);
+
+  // Fetch rented NFTs
+  useEffect(() => {
+    if (!address) return;
+    const fetchRentedNFTs = async () => {
+        try {
+            // Import dynamically to avoid circular dependencies if any
+            const { leasingMarketplaceService } = await import('@/services/leasingMarketplaceApiService');
+            const { wrappedLeasingApiService } = await import('@/services/wrappedLeasingApiService');
+            
+            // Initialize if needed (though Navbar usually does it)
+            // We assume services are initialized or will be by the calls
+            
+            const rentals = await leasingMarketplaceService.getMyRentals(address);
+            const contractInfo = await wrappedLeasingApiService.getContractInfo();
+            const wNFTAddress = contractInfo.wrappedLeasingAddress;
+
+            // Fetch metadata for each rental
+            const enrichedRentals = await Promise.all(rentals.map(async (rental: any) => {
+                try {
+                    // Fetch original NFT metadata
+                    const res = await fetch(apiUrl(`/nfts/external/${rental.nft}/${rental.tokenId}`));
+                    const data = await res.json();
+                    const metadata = data.success ? data.data : {};
+                    
+                    return {
+                        ...rental,
+                        ...metadata,
+                        // Override with rental specific info
+                        id: `rented_${rental.listingId}`,
+                        name: metadata.name || `Wrapped NFT #${rental.wId}`,
+                        wNFTAddress: wNFTAddress,
+                        isRented: true
+                    };
+                } catch (e) {
+                    return {
+                        ...rental,
+                        id: `rented_${rental.listingId}`,
+                        name: `Wrapped NFT #${rental.wId}`,
+                        wNFTAddress: wNFTAddress,
+                        isRented: true
+                    };
+                }
+            }));
+            
+            setRentedNFTs(enrichedRentals);
+        } catch (err) {
+            console.error('Failed to fetch rented NFTs', err);
+        }
+    };
+    fetchRentedNFTs();
+  }, [address]);
 
   // Follow/unfollow logic
   const handleFollow = async (targetAddress: string) => {
@@ -447,16 +500,16 @@ const Profile = () => {
       
       <WalletGuard message="Connect your wallet to view and manage your profile">
         {/* Profile Header */}
-        <div className="relative">
+        <div className="relative mb-8">
           <div 
-            className="h-64 bg-gradient-to-r from-purple-500 to-blue-600 relative group"
+            className="h-48 md:h-80 w-full bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 relative group overflow-hidden"
             style={profile.banner_url ? { backgroundImage: `url(${profile.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
           >
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors">
+            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors">
               <Button
                 variant="secondary"
                 size="icon"
-                className="absolute top-4 right-4 bg-white/50 hover:bg-white/75 z-10"
+                className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 text-white border-0 backdrop-blur-md"
                 onClick={() => coverImageRef.current?.click()}
               >
                 <Camera className="h-4 w-4" />
@@ -470,20 +523,21 @@ const Profile = () => {
               onChange={(e) => handleImageUpload(e, 'cover')}
             />
           </div>
+          
           <div className="container mx-auto px-4">
-            <div className="relative -mt-16 pb-8">
-              <div className="flex flex-col md:flex-row gap-6">
-                <div className="relative">
-                  <Avatar className="h-32 w-32 border-4 border-background">
-                    <AvatarImage src={profile.avatar_url || undefined} />
-                    <AvatarFallback>
+            <div className="relative -mt-20 md:-mt-24 pb-4">
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                <div className="relative group">
+                  <Avatar className="h-32 w-32 md:h-48 md:w-48 border-4 border-background shadow-2xl rounded-2xl">
+                    <AvatarImage src={profile.avatar_url || undefined} className="object-cover" />
+                    <AvatarFallback className="text-4xl bg-gradient-to-br from-gray-100 to-gray-300 text-gray-600">
                       {address ? address.slice(2, 4).toUpperCase() : 'U'}
                     </AvatarFallback>
                   </Avatar>
                   <Button
                     variant="secondary"
                     size="icon"
-                    className="absolute bottom-0 right-0 bg-white/50 hover:bg-white/75"
+                    className="absolute bottom-2 right-2 bg-black/50 hover:bg-black/70 text-white border-0 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={() => profileImageRef.current?.click()}
                   >
                     <Camera className="h-4 w-4" />
@@ -497,32 +551,50 @@ const Profile = () => {
                   />
                 </div>
                 
-                <div className="flex-1">
+                <div className="flex-1 pt-2 md:pt-24 w-full">
                   <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                     <div>
-                      <h1 className="text-3xl font-bold mb-2">
+                      <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-2">
                         {address ? formatAddress(address) : 'Anonymous User'}
+                        <BadgeCheck className="h-6 w-6 text-blue-400 fill-blue-400/10" />
                       </h1>
-                      <p className="text-muted-foreground mb-4">Digital artist and NFT creator passionate about blockchain technology</p>
+                      <p className="text-muted-foreground mb-6 max-w-2xl text-lg">
+                        {profile.bio || "Digital artist and NFT creator passionate about blockchain technology."}
+                      </p>
                       
-                      <div className="flex gap-6 text-sm">
-                        <div><span className="font-semibold">{userStats.items}</span> items</div>
-                        <div><span className="font-semibold">{userStats.collections}</span> collections</div>
-                        <div><span className="font-semibold">{userStats.followers}</span> followers</div>
-                        <div><span className="font-semibold">{userStats.following}</span> following</div>
+                      <div className="flex flex-wrap gap-6 text-sm mb-4">
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg">{userStats.items}</span> 
+                            <span className="text-muted-foreground">Items</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg">{userStats.collections}</span>
+                            <span className="text-muted-foreground">Collections</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg">{userStats.followers}</span>
+                            <span className="text-muted-foreground">Followers</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-bold text-lg">{userStats.following}</span>
+                            <span className="text-muted-foreground">Following</span>
+                        </div>
                       </div>
                     </div>
                     
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm">
-                        <Copy className="h-4 w-4 mr-2" />
-                        Copy Link
+                    <div className="flex gap-3 w-full md:w-auto">
+                      <Button variant="outline" className="flex-1 md:flex-none gap-2">
+                        <Copy className="h-4 w-4" />
+                        <span className="hidden md:inline">Copy Address</span>
                       </Button>
-                      <Button variant="outline" size="sm">
-                        <Settings className="h-4 w-4 mr-2" />
-                        Edit Profile
+                      <Button variant="outline" className="flex-1 md:flex-none gap-2">
+                        <Settings className="h-4 w-4" />
+                        <span className="hidden md:inline">Edit Profile</span>
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="icon">
+                        <Share className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="icon">
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </div>
@@ -534,16 +606,34 @@ const Profile = () => {
         </div>
 
         {/* Profile Content */}
-        <div className="container mx-auto px-4 py-8">
-            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full mt-8">
-            <TabsList className="grid w-full grid-cols-5">
-              <TabsTrigger value="collected">Collected</TabsTrigger>
-              <TabsTrigger value="items">Items</TabsTrigger>
-              <TabsTrigger value="favorite">Favorite</TabsTrigger>
-              <TabsTrigger value="followers">Followers</TabsTrigger>
-              <TabsTrigger value="activity">Activity</TabsTrigger>
-              <TabsTrigger value="lending">Lending</TabsTrigger>
-            </TabsList>
+        <div className="container mx-auto px-4 py-4">
+            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
+            <div className="border-b border-border/50 mb-8 overflow-x-auto">
+                <TabsList className="w-full justify-start bg-transparent p-0 h-auto space-x-2 md:space-x-6" style={{
+                       display: 'flex',
+                       justifyContent: 'space-between',
+                      
+                    }}>
+                    {[
+                        { id: 'collected', label: 'Collected', icon: '' },
+                        { id: 'items', label: 'Created', icon: '' },
+                        { id: 'favorite', label: 'Favorites', icon: '' },
+                        { id: 'rentals', label: 'Rentals', icon: '' },
+                        { id: 'lending', label: 'Lending', icon: '' },
+                        { id: 'followers', label: 'Followers', icon: '' },
+                        { id: 'activity', label: 'Activity', icon: '' },
+                    ].map(tab => (
+                        <TabsTrigger 
+                            key={tab.id}
+                            value={tab.id}
+                            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 md:px-4 py-3 text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none transition-all hover:text-foreground text-base"
+                        >
+                            <span className="mr-2">{tab.icon}</span>
+                            {tab.label}
+                        </TabsTrigger>
+                    ))}
+                </TabsList>
+            </div>
 
             {/* Collected Tab: combined NFTs */}
             <TabsContent value="collected" className="mt-8">
@@ -681,16 +771,21 @@ const Profile = () => {
             </TabsContent>
 
             {/* Favorite Tab: liked NFTs only */}
-            <TabsContent value="favorite" className="mt-8">
+            <TabsContent value="favorite" className="mt-8" style={{
+                       display: 'flex',
+                       justifyContent: 'space-between',
+                      
+                    }}> 
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold">My Favorite NFTs</h3>
                 {Array.from(likedNFTIds).length > 0 && (
                   <Button 
                     variant="outline" 
                     onClick={() => window.location.href = '/favorites'}
+                    
                     className="flex items-center gap-2"
                   >
-                    ❤️ View All Favorites ({Array.from(likedNFTIds).length})
+                  View All Favorites ({Array.from(likedNFTIds).length})
                   </Button>
                 )}
               </div>
@@ -782,6 +877,88 @@ const Profile = () => {
                   ))
                 )}
               </div>
+            </TabsContent>
+
+            {/* Rentals Tab */}
+            <TabsContent value="rentals" className="mt-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {rentedNFTs.length === 0 ? (
+                    <div className="col-span-full text-center text-muted-foreground">
+                    <div className="text-4xl mb-4">🔑</div>
+                    <p className="mb-4">You haven't rented any NFTs yet.</p>
+                    <Button 
+                        variant="outline" 
+                        onClick={() => window.location.href = '/marketplace'}
+                    >
+                        Browse Marketplace
+                    </Button>
+                    </div>
+                ) : (
+                    rentedNFTs.map((nft: any) => (
+                    <div key={nft.id} className="flex flex-col gap-3">
+                        <div className="relative group">
+                            <NFTCard
+                                {...nft}
+                                image={nft.image_url}
+                                tokenId={nft.tokenId} // Show original token ID
+                                id={nft.id}
+                                price={null} // Don't show price for rented items
+                                title={nft.name}
+                                collection={nft.collection || 'Rented NFT'}
+                                owner_address={address} // User is the temporary owner
+                                is_listed={false}
+                                liked={false}
+                                canLike={false}
+                                source="rented"
+                                onClick={() => {
+                                    // Maybe open details?
+                                }}
+                            />
+                            <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-xs px-2 py-1 rounded-md font-medium border border-white/10 z-10 flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                Active Rental
+                            </div>
+                        </div>
+                        
+                        <Card className="p-4 bg-muted/30 border-dashed hover:bg-muted/50 transition-colors">
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-muted-foreground flex items-center gap-1">
+                                        Expires
+                                    </span>
+                                    <span className={`font-medium ${
+                                        (nft.expiresAt * 1000) < Date.now() ? 'text-red-500' : 'text-foreground'
+                                    }`}>
+                                        {new Date(nft.expiresAt * 1000).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-muted-foreground">Deposit</span>
+                                    <span className="font-medium font-mono">
+                                        {nft.deposit ? (Number(nft.deposit) / 1e18).toFixed(4) : '0'} ETH
+                                    </span>
+                                </div>
+                                <Button 
+                                    size="sm" 
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                                    onClick={() => {
+                                        // Open sidebar to list this wNFT
+                                        setSelectedLoanNft({
+                                            contract: nft.wNFTAddress,
+                                            tokenId: String(nft.wId),
+                                            leasingType: 'marketplace'
+                                        });
+                                        setShowCollateralSidebar(true);
+                                    }}
+                                >
+                                    List for Rent (Sub-lease)
+                                </Button>
+                            </div>
+                        </Card>
+                    </div>
+                    ))
+                )}
+                </div>
             </TabsContent>
 
             {/* Activity Tab: user actions */}
@@ -879,6 +1056,7 @@ const Profile = () => {
         initialContractAddress={selectedLoanNft?.contract}
         initialTokenId={selectedLoanNft?.tokenId}
         initialLoanId={selectedLoanNft?.loanId}
+        initialLeasingType={selectedLoanNft?.leasingType}
       />
       <Footer />
     </div>

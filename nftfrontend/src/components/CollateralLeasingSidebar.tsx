@@ -33,6 +33,7 @@ interface CollateralLeasingSidebarProps {
   initialContractAddress?: string;
   initialTokenId?: string;
   initialLoanId?: string;
+  initialLeasingType?: 'collateral' | 'wrapped' | 'marketplace';
 }
 
 const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ 
@@ -40,7 +41,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   onOpenChange,
   initialContractAddress,
   initialTokenId,
-  initialLoanId
+  initialLoanId,
+  initialLeasingType
 }) => {
 
   const { isConnected, provider, address, signer } = useWallet();
@@ -186,6 +188,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   // Handle initial data when opening
   useEffect(() => {
     if (open) {
+      if (initialLeasingType) {
+        setLeasingType(initialLeasingType);
+      }
+
       if (initialLoanId) {
           // If we have a loan ID, go directly to manage tab and fetch it
           setLoanIdInput(initialLoanId);
@@ -203,10 +209,18 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                   if (id) {
                       setLeasingType('marketplace');
                   } else {
-                      setLeasingType('collateral');
+                      // Only default to collateral if not already set or if we want to enforce it based on availability
+                      // But here we just want to know if it is marketplace. 
+                      // If it's not marketplace, we might want to keep the initialLeasingType if provided, 
+                      // or default to collateral.
+                      if (!initialLeasingType) {
+                          setLeasingType('collateral');
+                      }
                   }
               } catch (e) {
-                  setLeasingType('collateral');
+                  if (!initialLeasingType) {
+                      setLeasingType('collateral');
+                  }
               }
               // Trigger search
               handleSearch(initialContractAddress, initialTokenId);
@@ -215,7 +229,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           checkTypeAndSearch();
       }
     }
-  }, [open, initialContractAddress, initialTokenId, initialLoanId]);
+  }, [open, initialContractAddress, initialTokenId, initialLoanId, initialLeasingType]);
 
   const handleSearch = async (addr = contractAddress, id = tokenId) => {
     const hasContractAndToken = addr.trim() && id.trim();
@@ -1063,10 +1077,9 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         // Need to convert back to BigInt for the transaction
         const cost = await leasingMarketplaceService.calculateCost(listingId, parseInt(rentDuration));
         
-        await leasingMarketplaceService.rent(listingId, parseInt(rentDuration), cost.totalRequired);
-        
+        const result = await leasingMarketplaceService.rent(listingId, Number(rentDuration), ethers.parseEther(rentalCost.totalRequired));
         toast.dismiss('rent');
-        toast.success('🎉 NFT Rented Successfully! You now have a Wrapped NFT.');
+        toast.success('NFT Rented Successfully! You now have a Wrapped NFT.');
         
         // Update listing status in backend
         try {
@@ -1095,6 +1108,34 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                 });
             } catch (err) {
                 console.error("Failed to update backend rentable status", err);
+            }
+        }
+
+        // Store rental transaction in backend
+        if (result.rentalDetails) {
+            try {
+                await fetch(apiUrl('/rental-transactions/'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'Rented',
+                        listingId: listingId,
+                        nftAddress: contractAddress,
+                        tokenId: tokenId,
+                        owner: nftData?.owner_address || '', // We might not have owner if it's not in nftData
+                        renter: address,
+                        rentAmount: rentalCost.rentAmount.toString(),
+                        depositAmount: rentalCost.deposit.toString(),
+                        rentDuration: Number(rentDuration) * 86400,
+                        expiresAt: new Date(result.rentalDetails.expiresAt * 1000),
+                        wrappedTokenId: result.rentalDetails.wId,
+                        transactionHash: result.receipt.hash,
+                        blockNumber: result.receipt.blockNumber
+                    })
+                });
+                console.log('Rental transaction stored in backend');
+            } catch (err) {
+                console.error("Failed to store rental transaction in backend", err);
             }
         }
 
@@ -1300,10 +1341,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                     value={leasingType}
                     onChange={(e) => setLeasingType(e.target.value)}
                   >
-                    {/* <option value="wrapped">Wrapped Leasing</option> */}
+                  
                     <option value="marketplace">Leasing Marketplace</option>
                     <option value="collateral">Collateral Leasing</option>
-                    {/* <option value="program">Leasing Program (Coming Soon)</option> */}
+             
                   </select>
                 </div>
 

@@ -25,7 +25,6 @@ import Favorites from "./pages/Favorites";
 import Contact from "./pages/Contact";
 import LendingMarketplace from "./pages/LendingMarketplace";
 import TransactionHistory from "./pages/TransactionHistory";
-import WrappedLeasing from "./pages/WrappedLeasing";
 import RentalHistory from "./pages/RentalHistory";
 import { LikedNFTsProvider } from '@/contexts/LikedNFTsContext';
 
@@ -59,7 +58,6 @@ const App = () => (
                 <Route path="/favorites" element={<Favorites />} />
                 <Route path="/lending" element={<LendingMarketplace />} />
                 <Route path="/history" element={<TransactionHistory />} />
-                <Route path="/wrapped-leasing" element={<WrappedLeasing />} />
                 <Route path="/rental-history" element={<RentalHistory />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
