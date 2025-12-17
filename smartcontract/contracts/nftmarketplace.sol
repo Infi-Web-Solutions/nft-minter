@@ -28,9 +28,13 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
     event ExternalNFTListed(address indexed nftContract, uint256 indexed tokenId, address indexed seller, uint256 price);
     event ExternalNFTSold(address indexed nftContract, uint256 indexed tokenId, address indexed seller, address buyer, uint256 price);
     event ExternalNFTDelisted(address indexed nftContract, uint256 indexed tokenId, address indexed seller);
+    event MetadataUpdated(uint256 indexed tokenId, string name, string description, string metadataURI);
+    event CollectionUpdated(string indexed collectionName, string description);
+    event CollaboratorAdded(string indexed collectionName, address indexed collaborator);
+    event CollaboratorRemoved(string indexed collectionName, address indexed collaborator);
 
-    // Structs
-    struct Listing {
+    
+    struct Listing {// Structs
         address seller;
         uint256 price;
         bool isActive;
@@ -51,19 +55,22 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
         string name;
         string description;
         address creator;
+        address[] collaborators;
         uint256[] tokenIds;
         bool exists;
+        uint256 createdAt;
     }
 
     struct NFTMetadata {
         string name;
         string description;
-        string imageURI;
+        string metadataURI;  // IPFS hash or external JSON URI
         string category;
         uint256 royaltyPercentage;
         address creator;
         uint256 createdAt;
         string collection;
+        bool exists;
     }
 
     // State variables
@@ -78,8 +85,8 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
     mapping(address => uint256[]) public userNFTs;
     mapping(address => uint256[]) public userListings;
     mapping(uint256 => bool) public tokenExists;
-    mapping(uint256 => string) private _tokenURIs;
     mapping(address => mapping(uint256 => ExternalListing)) public externalListings;
+    mapping(address => mapping(string => bool)) public collectionAccess;  // Access control
 
     // Modifiers
     modifier tokenExistsModifier(uint256 tokenId) {
@@ -109,7 +116,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
      * @dev Mint a new NFT
      * @param name NFT name
      * @param description NFT description
-     * @param imageURI Image URI
+     * @param metadataURI Metadata URI (IPFS hash or JSON URL)
      * @param category NFT category (art, gaming, music, etc.)
      * @param royaltyPercentage Royalty percentage (0-1000 = 0-10%)
      * @param collectionName Collection name
@@ -117,53 +124,64 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
     function mintNFT(
         string memory name,
         string memory description,
-        string memory imageURI,
+        string memory metadataURI,
         string memory category,
         uint256 royaltyPercentage,
         string memory collectionName
     ) external whenNotPaused returns (uint256) {
         require(bytes(name).length > 0, "Name cannot be empty");
-        require(bytes(imageURI).length > 0, "Image URI cannot be empty");
+        require(bytes(metadataURI).length > 0, "Metadata URI cannot be empty");
+        require(bytes(description).length > 0, "Description cannot be empty");
         require(royaltyPercentage <= 1000, "Royalty cannot exceed 10%");
+        require(bytes(category).length > 0, "Category cannot be empty");
 
         _tokenIds++;
         uint256 newTokenId = _tokenIds;
 
-        // Create or update collection
-        if (bytes(collections[collectionName].name).length == 0) {
+        // Create or update collection with access control
+        if (!collections[collectionName].exists) {
             collections[collectionName] = Collection({
                 name: collectionName,
                 description: "",
                 creator: msg.sender,
+                collaborators: new address[](0),
                 tokenIds: new uint256[](0),
-                exists: true
+                exists: true,
+                createdAt: block.timestamp
             });
+            collectionAccess[msg.sender][collectionName] = true;
             emit CollectionCreated(collectionName, msg.sender);
+        } else {
+            // Verify access to collection
+            require(
+                collections[collectionName].creator == msg.sender || collectionAccess[msg.sender][collectionName],
+                "No permission to mint in this collection"
+            );
         }
 
         // Add token to collection
         collections[collectionName].tokenIds.push(newTokenId);
 
-        // Store metadata
+        // Store metadata with validation
         nftMetadata[newTokenId] = NFTMetadata({
             name: name,
             description: description,
-            imageURI: imageURI,
+            metadataURI: metadataURI,
             category: category,
             royaltyPercentage: royaltyPercentage,
             creator: msg.sender,
             createdAt: block.timestamp,
-            collection: collectionName
+            collection: collectionName,
+            exists: true
         });
 
         // Mint the NFT
         _safeMint(msg.sender, newTokenId);
-        _setTokenURI(newTokenId, imageURI);
         
         tokenExists[newTokenId] = true;
         userNFTs[msg.sender].push(newTokenId);
 
-        emit NFTMinted(newTokenId, msg.sender, imageURI, royaltyPercentage);
+        emit NFTMinted(newTokenId, msg.sender, metadataURI, royaltyPercentage);
         
         return newTokenId;
     }
@@ -367,7 +385,34 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
      * @return NFTMetadata struct
      */
     function getNFTMetadata(uint256 tokenId) external view tokenExistsModifier(tokenId) returns (NFTMetadata memory) {
+        require(nftMetadata[tokenId].exists, "Metadata does not exist");
         return nftMetadata[tokenId];
+    }
+
+    /**
+     * @dev Update NFT metadata (creator only)
+     * @param tokenId The NFT token ID
+     * @param name New name
+     * @param description New description
+     * @param metadataURI New metadata URI
+     */
+    function updateNFTMetadata(
+        uint256 tokenId,
+        string memory name,
+        string memory description,
+        string memory metadataURI
+    ) external tokenExistsModifier(tokenId) whenNotPaused {
+        require(nftMetadata[tokenId].creator == msg.sender, "Only creator can update metadata");
+        require(bytes(name).length > 0, "Name cannot be empty");
+        require(bytes(description).length > 0, "Description cannot be empty");
+        require(bytes(metadataURI).length > 0, "Metadata URI cannot be empty");
+        require(!listings[tokenId].isActive, "Cannot update listed NFT");
+
+        nftMetadata[tokenId].name = name;
+        nftMetadata[tokenId].description = description;
+        nftMetadata[tokenId].metadataURI = metadataURI;
+
+        emit MetadataUpdated(tokenId, name, description, metadataURI);
     }
 
     /**
@@ -393,6 +438,79 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
      */
     function withdrawFees() external onlyOwner {
         payable(owner()).transfer(address(this).balance);
+    }
+
+    /**
+     * @dev Update collection description (creator only)
+     * @param collectionName The collection name
+     * @param description New description
+     */
+    function updateCollectionDescription(
+        string memory collectionName,
+        string memory description
+    ) external whenNotPaused {
+        require(collections[collectionName].exists, "Collection does not exist");
+        require(collections[collectionName].creator == msg.sender, "Only creator can update collection");
+        require(bytes(description).length > 0, "Description cannot be empty");
+
+        collections[collectionName].description = description;
+        emit CollectionUpdated(collectionName, description);
+    }
+
+    /**
+     * @dev Add collaborator to collection (creator only)
+     * @param collectionName The collection name
+     * @param collaborator The collaborator address
+     */
+    function addCollaborator(
+        string memory collectionName,
+        address collaborator
+    ) external whenNotPaused {
+        require(collections[collectionName].exists, "Collection does not exist");
+        require(collections[collectionName].creator == msg.sender, "Only creator can add collaborators");
+        require(collaborator != address(0), "Invalid collaborator address");
+        require(!collectionAccess[collaborator][collectionName], "Already a collaborator");
+
+        collections[collectionName].collaborators.push(collaborator);
+        collectionAccess[collaborator][collectionName] = true;
+        emit CollaboratorAdded(collectionName, collaborator);
+    }
+
+    /**
+     * @dev Remove collaborator from collection (creator only)
+     * @param collectionName The collection name
+     * @param collaborator The collaborator address
+     */
+    function removeCollaborator(
+        string memory collectionName,
+        address collaborator
+    ) external whenNotPaused {
+        require(collections[collectionName].exists, "Collection does not exist");
+        require(collections[collectionName].creator == msg.sender, "Only creator can remove collaborators");
+        require(collectionAccess[collaborator][collectionName], "Not a collaborator");
+
+        // Remove from collaborators array
+        address[] storage collab = collections[collectionName].collaborators;
+        for (uint256 i = 0; i < collab.length; i++) {
+            if (collab[i] == collaborator) {
+                collab[i] = collab[collab.length - 1];
+                collab.pop();
+                break;
+            }
+        }
+
+        collectionAccess[collaborator][collectionName] = false;
+        emit CollaboratorRemoved(collectionName, collaborator);
+    }
+
+    /**
+     * @dev Get collection collaborators
+     * @param collectionName The collection name
+     * @return Array of collaborator addresses
+     */
+    function getCollaborators(string memory collectionName) external view returns (address[] memory) {
+        require(collections[collectionName].exists, "Collection does not exist");
+        return collections[collectionName].collaborators;
     }
 
     function pause() external onlyOwner {
@@ -483,12 +601,13 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
     }
 
     // Token URI functions
-    function _setTokenURI(uint256 tokenId, string memory _tokenURI) internal {
-        _tokenURIs[tokenId] = _tokenURI;
-    }
-
+    /**
+     * @dev Returns the Uniform Resource Identifier (URI) for a token (ERC721Metadata compliant)
+     * @param tokenId The NFT token ID
+     * @return The metadata URI
+     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        require(tokenExists[tokenId], "URI query for nonexistent token");
-        return _tokenURIs[tokenId];
+        require(tokenExists[tokenId] && nftMetadata[tokenId].exists, "URI query for nonexistent token");
+        return nftMetadata[tokenId].metadataURI;
     }
 }

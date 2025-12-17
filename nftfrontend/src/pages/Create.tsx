@@ -182,7 +182,7 @@ const Create = () => {
     e.preventDefault();
     if (!formData.file || !address || !signer) return;
 
-    let tokenId;
+    let tokenId: any;
     let perceptualHash: string;
 
     try {
@@ -267,7 +267,6 @@ const Create = () => {
       }
 
       // Robustly extract tokenId from events or logs
-      let tokenId;
       // Try events first
       if (receipt.events) {
         for (const event of receipt.events) {
@@ -278,13 +277,20 @@ const Create = () => {
         }
       }
       console.log('[NFT] All receipt logs:', receipt.logs);
-      // Fallback: Try logs if events are undefined
+      // Fallback: Try logs if events didn't provide tokenId
       if (!tokenId && receipt.logs) {
         const transferTopic = ethers.id("Transfer(address,address,uint256)");
         for (const log of receipt.logs) {
           if (log.topics && log.topics[0] === transferTopic) {
-            tokenId = ethers.getBigInt(log.topics[3]);
-            console.log('[NFT] Extracted tokenId from logs:', tokenId);
+            try {
+              // topics[3] is the tokenId in hex; normalize to decimal string using native BigInt
+              // topics[3] is a hex string like '0x..'; assert it's a string for BigInt
+              const topic3 = (log.topics[3] as string) || '0x0';
+              tokenId = BigInt(topic3).toString();
+              console.log('[NFT] Extracted tokenId from logs:', tokenId);
+            } catch (err) {
+              console.warn('[NFT] Failed to parse tokenId from log topics', err);
+            }
             break;
           }
         }
@@ -296,13 +302,55 @@ const Create = () => {
         const price = ethers.parseEther(formData.price);
         const isAuction = formData.saleType === 'auction';
         toast.loading('Listing your NFT...', { id: 'minting' });
+
+        // Normalize tokenId to a value acceptable by ethers
+        const normalizeTokenId = (id: any) => {
+          if (!id) return null;
+          if (typeof id === 'string') return BigInt(id);
+          if (typeof id === 'bigint') return id;
+          try {
+            if (id.toString) return BigInt(id.toString());
+          } catch (e) {
+            return null;
+          }
+          return null;
+        };
+
+        const tokenIdForTx = normalizeTokenId(tokenId);
+        if (!tokenIdForTx) throw new Error('Invalid tokenId extracted; cannot list NFT');
+
         const listingTx = await contract.listNFT(
-          tokenId,
+          tokenIdForTx,
           price,
           isAuction,
           isAuction ? 7 * 24 * 60 * 60 : 0 // 7 days for auction
         );
-        await listingTx.wait();
+
+        // Wait for listing TX and log receipt + on-chain listing state
+        const listingReceipt = await listingTx.wait();
+        console.log('[NFT] Listing transaction receipt:', listingReceipt);
+        try {
+          if (listingReceipt.events) {
+            for (const ev of listingReceipt.events) {
+              console.log('[NFT] Listing event:', ev.event, ev.args);
+            }
+          }
+        } catch (e) {
+          console.warn('[NFT] Failed to parse listing events', e);
+        }
+
+        // Read on-chain listing to confirm price and active flag
+        try {
+          const onchainListing = await contract.getListing(tokenIdForTx);
+          console.log('[NFT] On-chain listing:', {
+            seller: onchainListing.seller,
+            price: ethers.formatEther(onchainListing.price),
+            isActive: onchainListing.isActive,
+            isAuction: onchainListing.isAuction,
+          });
+        } catch (e) {
+          console.warn('[NFT] Failed to read on-chain listing', e);
+        }
       }
 
       // Register NFT in backend
