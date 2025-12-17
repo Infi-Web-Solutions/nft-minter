@@ -31,7 +31,7 @@ const Marketplace = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [allNfts, setAllNfts] = useState<NFT[]>([]);
   const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string, loanId: string }>>(new Map());
-  const [activeListings, setActiveListings] = useState<Map<string, number>>(new Map());
+  const [activeListings, setActiveListings] = useState<Map<string, { listingId: number, status: string }>>(new Map());
   const [contractAddress, setContractAddress] = useState<string>('');
   
   const [filters, setFilters] = useState({
@@ -83,10 +83,10 @@ const Marketplace = () => {
             
             if (data.success && data.data && data.data.length > 0) {
                 console.log('[Marketplace] Backend Listings Fetched:', data.data);
-                const listingMap = new Map<string, number>();
+                const listingMap = new Map<string, { listingId: number, status: string }>();
                 data.data.forEach((l: any) => {
                     const key = `${l.nftAddress.toLowerCase()}-${String(l.tokenId)}`;
-                    listingMap.set(key, l.listingId);
+                    listingMap.set(key, { listingId: l.listingId, status: l.status });
                     console.log('[Marketplace] Mapped Backend Listing:', {
                         nftAddress: l.nftAddress,
                         tokenId: l.tokenId,
@@ -117,10 +117,14 @@ const Marketplace = () => {
             
             const listings = await leasingMarketplaceService.getActiveListings();
             console.log('[Marketplace] Blockchain Listings Fetched:', listings);
-            const listingMap = new Map<string, number>();
+            const listingMap = new Map<string, { listingId: number, status: string }>();
             listings.forEach((l: any) => {
                 const key = `${l.nft.toLowerCase()}-${String(l.tokenId)}`;
-                listingMap.set(key, l.listingId);
+                // Blockchain listings from getActiveListings are by definition active (status 1)
+                // But we should check if they are rented (status 2) if getActiveListings returns them
+                // Our service getActiveListings currently filters for status 1 (Active)
+                // We might need to update it to return Rented ones too if we want to show them as "Rented"
+                listingMap.set(key, { listingId: l.listingId, status: 'Active' });
                 console.log('[Marketplace] Mapped Blockchain Listing:', {
                     rawNft: l.nft,
                     rawTokenId: l.tokenId,
@@ -491,7 +495,9 @@ const Marketplace = () => {
                 
                 const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${String(nft.token_id)}` : '';
                 // DEBUG: Force rentable for testing if needed, but let's log first
-                const isRentable = !!activeListings.get(loanKey);
+                const listingInfo = activeListings.get(loanKey);
+                const isRentable = !!listingInfo;
+                const isRented = listingInfo?.status === 'Rented';
                 
                 // DEBUG LOG
                 console.log('[Marketplace] Checking Rentable:', {
@@ -500,8 +506,10 @@ const Marketplace = () => {
                     rawTokenId: nft.token_id,
                     generatedKey: loanKey,
                     inMap: activeListings.has(loanKey),
-                    listingId: activeListings.get(loanKey),
+                    listingId: listingInfo?.listingId,
+                    status: listingInfo?.status,
                     isRentable,
+                    isRented,
                     isOwner: address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase(),
                     currentUser: address,
                     nftOwner: nft.owner_address
@@ -512,6 +520,7 @@ const Marketplace = () => {
                         token_id: nft.token_id,
                         contract: contractAddr,
                         key: loanKey,
+                        status: listingInfo?.status,
                         isOwner: address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()
                     });
                 }
@@ -559,16 +568,19 @@ const Marketplace = () => {
                     }}
 
 
-                    disableRequestLoan={address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()}
                     
                     // Marketplace Renting Props
+                    // Marketplace Renting Props
                     isRentable={isRentable}
+                    isRented={isRented}
                     onRent={() => {
-                        setSelectedLoanNft({
-                            contract: contractAddr,
-                            tokenId: String(nft.token_id)
-                        });
-                        setShowCollateralSidebar(true);
+                        if (!isRented) {
+                            setSelectedLoanNft({
+                                contract: contractAddr,
+                                tokenId: String(nft.token_id)
+                            });
+                            setShowCollateralSidebar(true);
+                        }
                     }}
                   />
                 );

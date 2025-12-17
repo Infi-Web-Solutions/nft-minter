@@ -1,6 +1,7 @@
 import { leasingMarketplace } from '../lib/contracts.js';
 import Listing from '../models/listing.js';
 import RentalTransaction from '../models/rentalTransaction.js';
+import WrappedNft from '../models/wrappedNft.js';
 
 class LeasingListenerService {
   constructor() {
@@ -117,6 +118,33 @@ class LeasingListenerService {
                     transactionHash: event.log?.transactionHash || event.transactionHash,
                     blockNumber: event.log?.blockNumber || event.blockNumber
                 });
+
+                // Create WrappedNft record
+                if (listing) {
+                    try {
+                        const now = Math.floor(Date.now() / 1000);
+                        const duration = Number(expiresAt) - now;
+                        
+                        await WrappedNft.create({
+                            wId: Number(wId),
+                            originalNftContract: listing.nftAddress,
+                            originalTokenId: listing.tokenId,
+                            owner: listing.owner,
+                            renter: renter,
+                            validUntil: new Date(Number(expiresAt) * 1000),
+                            durationSeconds: duration > 0 ? duration : 0,
+                            feePaid: '0', // Marketplace handles fees differently
+                            transactionHash: event.log?.transactionHash || event.transactionHash,
+                            status: 'Active'
+                        });
+                        console.log(`[LeasingListener] Created WrappedNft record for wId ${wId}`);
+                    } catch (wrapErr) {
+                        // Ignore duplicate key error if it was already created by other means
+                        if (wrapErr.code !== 11000) {
+                            console.error(`[LeasingListener] Error creating WrappedNft record:`, wrapErr);
+                        }
+                    }
+                }
                 
                 console.log(`[LeasingListener] Updated listing ${listingId} as Rented with transaction history`);
             } catch (err) {

@@ -9,6 +9,7 @@ import { toast} from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
 import { nftService } from '@/services/nftService';
+import { collateralLendingService } from '@/services/collateralLendingService';
 import { apiUrl, NETWORK_CONFIG } from '@/config';
 import { ethers } from 'ethers';
 
@@ -40,6 +41,9 @@ interface NFTCardProps {
   isRentable?: boolean;
   onRent?: () => void;
   loanId?: string;
+  isRented?: boolean;
+  onReturn?: () => void;
+  onSubLease?: () => void;
 }
 
 const getImageUrl = (url: string) => {
@@ -76,12 +80,15 @@ const NFTCard = ({
   disableRequestLoan = false,
   isWrapped = false,
   isRentable = false,
+  isRented = false,
   onRent,
   loanId,
   loanLender,
+  onReturn,
+  onSubLease,
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
-  const { address } = useWallet();
+  const { address, provider } = useWallet();
   const [isBuying, setIsBuying] = React.useState(false);
   const [isListing, setIsListing] = React.useState(false);
   const [isLiking, setIsLiking] = React.useState(false);
@@ -438,6 +445,50 @@ const NFTCard = ({
     }
   };
 
+  const handleFundLoan = async () => {
+    if (!address || !provider) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    
+    if (!loanId) {
+      toast.error('Loan ID is missing');
+      return;
+    }
+
+    try {
+      toast.loading('Funding Loan...');
+      
+      // Initialize service
+      await collateralLendingService.initialize(provider);
+      
+      // Fund loan
+      // We don't need to pass price anymore, the service fetches the exact principal from chain
+      await collateralLendingService.fundLoan(Number(loanId));
+      
+      // Update backend status
+      await fetch(apiUrl(`/loans/${loanId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            status: 'Funded',
+            lender: address,
+            startTime: Math.floor(Date.now() / 1000)
+        })
+      });
+
+      toast.dismiss();
+      toast.success('Loan Funded Successfully!');
+      
+      if (afterBuy) afterBuy();
+      
+    } catch (error: any) {
+      console.error('Error funding loan:', error);
+      toast.dismiss();
+      toast.error(error.message || 'Failed to fund loan');
+    }
+  };
+
 
   // Handler for card click
   const handleCardClick = async (e: React.MouseEvent) => {
@@ -547,14 +598,42 @@ const NFTCard = ({
               ) : (
                 <>
                   {isWrapped && (
-                    <Button
-                      size="sm"
-                      className="bg-purple-500/80 whitespace-nowrap text-xs px-2 cursor-not-allowed"
-                      disabled
-                      title="This NFT is currently wrapped"
-                    >
-                      🎁 Wrapped
-                    </Button>
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        size="sm"
+                        className="bg-purple-500/80 whitespace-nowrap text-xs px-2 cursor-not-allowed w-full"
+                        disabled
+                        title="This NFT is currently wrapped"
+                      >
+                        🎁 Wrapped
+                      </Button>
+                      {onReturn && (
+                        <Button
+                          size="sm"
+                          className="bg-red-500 hover:bg-red-600 whitespace-nowrap text-xs px-2 w-full"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onReturn();
+                          }}
+                          title="Return this NFT to the owner"
+                        >
+                          Return
+                        </Button>
+                      )}
+                      {onSubLease && (
+                        <Button
+                          size="sm"
+                          className="bg-blue-500 hover:bg-blue-600 whitespace-nowrap text-xs px-2 w-full"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSubLease();
+                          }}
+                          title="List this wrapped NFT for rent"
+                        >
+                          Sub-lease
+                        </Button>
+                      )}
+                    </div>
                   )}
 
                   {loanStatus === 'Requested' && !isOwner && !isWrapped && (
@@ -563,7 +642,7 @@ const NFTCard = ({
                       className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate('/lending');
+                        handleFundLoan();
                       }}
                       title={isLoanBorrower ? "You have requested a loan for this NFT" : "Click to fund this loan"}
                     >
@@ -616,18 +695,33 @@ const NFTCard = ({
                       Request Loan
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner &&  isRentable && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && isRentable && !isRented && (
                     <Button
                       size="sm"
-                      className={`whitespace-nowrap text-xs px-2 text-white ${(disableRequestLoan || !onRequestLoan) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700'}`}
+                      className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap text-xs px-2 text-white"
                       onClick={(e) => {
+                        console.log('Manage Listing Button Clicked');
                         e.stopPropagation();
-                        if (!disableRequestLoan && onRequestLoan) onRequestLoan();
+                        if (onRent) {
+                            console.log('Calling onRent');
+                            onRent();
+                        } else {
+                            console.log('onRent is undefined');
+                        }
                       }}
-                      disabled={disableRequestLoan || !onRequestLoan}
-                      title={(disableRequestLoan || !onRequestLoan) ? "Loan requests are disabled here" : "View lease requests for this NFT"}
+                      title="Manage your rental listing"
                     >
-                      Lease Requests
+                      Listed for Rent
+                    </Button>
+                  )}
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && isRentable && isRented && (
+                    <Button
+                      size="sm"
+                      className="bg-orange-500 cursor-not-allowed whitespace-nowrap text-xs px-2 text-white"
+                      disabled
+                      title="This NFT is currently rented out"
+                    >
+                      Rented Out
                     </Button>
                   )}
 
@@ -641,7 +735,7 @@ const NFTCard = ({
                       Not for Sale
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !isRentable && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2 mr-1"
@@ -654,17 +748,19 @@ const NFTCard = ({
                   )}
 
                   {/* Rent Button */}
+                  {/* Rent Button */}
                   {isRentable && !isOwner && !isWrapped && (
                     <Button
                       size="sm"
-                      className="bg-green-600 hover:bg-green-700 whitespace-nowrap text-xs px-2 ml-1"
+                      className={`${isRented ? "bg-orange-500 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"} whitespace-nowrap text-xs px-2 ml-1`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onRent) onRent();
+                        if (!isRented && onRent) onRent();
                       }}
-                      title="Rent this NFT"
+                      disabled={isRented}
+                      title={isRented ? "This NFT is currently rented" : "Rent this NFT"}
                     >
-                      Rent Now
+                      {isRented ? "Rented" : "Rent Now"}
                     </Button>
                   )}
                 </>

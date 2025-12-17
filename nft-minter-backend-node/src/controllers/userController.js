@@ -3,6 +3,7 @@ import UserProfile from '../models/userProfile.js';
 import Transaction from '../models/transaction.js';
 import NFT from '../models/nft.js';
 import Favorite from '../models/favorite.js';
+import Listing from '../models/listing.js';
 import { validationResult } from 'express-validator';
 import fs from 'fs';
 import path from 'path';
@@ -779,3 +780,57 @@ export const getUserLikedNftsAggregation = async (req, res) => {
     }
 };
 export { getUserNfts as getUserNFTs };
+
+// Get user's active listings (for rent)
+export const getUserListings = async (req, res) => {
+    try {
+        const { walletAddress } = req.params;
+        // Find active listings by this user
+        const listings = await Listing.find({ 
+            owner: { $regex: new RegExp(`^${walletAddress}$`, 'i') }, // Case insensitive
+            status: 'Active' 
+        });
+        
+        // We might want to enrich this with NFT metadata if it's stored locally
+        // For now, return the listing data which contains nftAddress and tokenId
+        
+        res.json({ success: true, data: listings });
+    } catch (error) {
+        console.error('[ERROR] getUserListings:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Get user's NFTs that are currently rented out to others
+export const getUserRentedOut = async (req, res) => {
+    try {
+        const { walletAddress } = req.params;
+        // Find rented listings by this user
+        const listings = await Listing.find({ 
+            owner: { $regex: new RegExp(`^${walletAddress}$`, 'i') }, // Case insensitive
+            status: 'Rented' 
+        });
+        
+        res.json({ success: true, data: listings });
+    } catch (error) {
+        console.error('[ERROR] getUserRentedOut:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// Get NFTs that the user is currently renting (as tenant)
+export const getUserRentals = async (req, res) => {
+    try {
+        const { walletAddress } = req.params;
+        // Find listings rented BY this user
+        const listings = await Listing.find({ 
+            rentedBy: { $regex: new RegExp(`^${walletAddress}$`, 'i') }, // Case insensitive
+            status: 'Rented' 
+        });
+        
+        res.json({ success: true, data: listings });
+    } catch (error) {
+        console.error('[ERROR] getUserRentals:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};

@@ -132,10 +132,17 @@ export class CollateralLendingService {
   }
 
   // Fund Loan
-  async fundLoan(loanId: number, amountETH: string) {
+  async fundLoan(loanId: number, amountETH?: string) {
     this.checkInitialized();
-    const amountWei = ethers.parseEther(amountETH);
-    const tx = await this.contract!.fundLoan(loanId, { value: amountWei });
+    
+    // Fetch the exact principal from the contract to ensure we send the correct amount
+    // This avoids "Send ETH" errors due to rounding or stale frontend data
+    const loan = await this.contract!.loans(loanId);
+    const principalWei = loan.principal;
+
+    console.log(`[CollateralLending] Funding loan ${loanId} with ${principalWei.toString()} Wei`);
+
+    const tx = await this.contract!.fundLoan(loanId, { value: principalWei });
     return await tx.wait();
   }
 

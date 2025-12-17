@@ -201,32 +201,31 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           setContractAddress(initialContractAddress);
           setTokenId(initialTokenId);
           
-          // Check if it's a marketplace listing
-          const checkTypeAndSearch = async () => {
-              try {
-                  // Check marketplace status
-                  const id = await leasingMarketplaceService.getListingIdForNFT(initialContractAddress, initialTokenId);
-                  if (id) {
-                      setLeasingType('marketplace');
-                  } else {
-                      // Only default to collateral if not already set or if we want to enforce it based on availability
-                      // But here we just want to know if it is marketplace. 
-                      // If it's not marketplace, we might want to keep the initialLeasingType if provided, 
-                      // or default to collateral.
-                      if (!initialLeasingType) {
+          // If explicit type is provided, use it
+          if (initialLeasingType) {
+              setLeasingType(initialLeasingType);
+              if (initialLoanId) {
+                  setListingId(Number(initialLoanId));
+              }
+              handleSearch(initialContractAddress, initialTokenId);
+          } else {
+              // Otherwise infer it
+              const checkTypeAndSearch = async () => {
+                  try {
+                      const id = await leasingMarketplaceService.getListingIdForNFT(initialContractAddress, initialTokenId);
+                      if (id) {
+                          setLeasingType('marketplace');
+                          setListingId(id);
+                      } else {
                           setLeasingType('collateral');
                       }
-                  }
-              } catch (e) {
-                  if (!initialLeasingType) {
+                  } catch (e) {
                       setLeasingType('collateral');
                   }
-              }
-              // Trigger search
-              handleSearch(initialContractAddress, initialTokenId);
-          };
-          
-          checkTypeAndSearch();
+                  handleSearch(initialContractAddress, initialTokenId);
+              };
+              checkTypeAndSearch();
+          }
       }
     }
   }, [open, initialContractAddress, initialTokenId, initialLoanId, initialLeasingType]);
