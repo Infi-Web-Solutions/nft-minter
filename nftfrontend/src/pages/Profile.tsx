@@ -59,6 +59,7 @@ const Profile = () => {
   const [lendedNFTs, setLendedNFTs] = useState([]);
   const [rentedNFTs, setRentedNFTs] = useState<any[]>([]);
   const [myListings, setMyListings] = useState<any[]>([]);
+  const [allListings, setAllListings] = useState<any[]>([]);
   const [myRentedOut, setMyRentedOut] = useState<any[]>([]);
   const [myRentals, setMyRentals] = useState<any[]>([]);
   const [myWrappedRentals, setMyWrappedRentals] = useState<any[]>([]);
@@ -165,6 +166,7 @@ const Profile = () => {
                     listingMap.set(key, { listingId: l.listingId, status: l.status });
                 });
                 setActiveListings(listingMap);
+                setAllListings(data.data);
             }
         } catch (err) {
             console.error('Failed to fetch active listings', err);
@@ -172,6 +174,72 @@ const Profile = () => {
     };
     fetchListings();
   }, []);
+
+  // Filter and enrich my listings
+  useEffect(() => {
+    if (!address || allListings.length === 0) {
+        setMyListings([]);
+        return;
+    }
+
+    const fetchMyListings = async () => {
+        setIsLoadingRentals(true);
+        try {
+            const myActiveListings = allListings.filter((l: any) => 
+                l.owner && l.owner.toLowerCase() === address.toLowerCase() &&
+                l.status === 'Active'
+            );
+
+            const enrichedListings = await Promise.all(myActiveListings.map(async (l: any) => {
+                // Try to find in combinedNFTs first
+                const existing = combinedNFTs.find((n: any) => 
+                    (n.contract_address || n.collection)?.toLowerCase() === l.nftAddress.toLowerCase() && 
+                    String(n.token_id) === String(l.tokenId)
+                );
+                
+                if (existing) {
+                    return { 
+                        ...existing, 
+                        ...l, 
+                        id: existing.id || `listing_${l.listingId}`,
+                        pricePerSecond: l.pricePerSecond // Ensure listing price overrides
+                    };
+                }
+                
+                // Fetch external metadata
+                try {
+                    const res = await fetch(apiUrl(`/nfts/external/${l.nftAddress}/${l.tokenId}`));
+                    const data = await res.json();
+                    if (data.success) {
+                        return { 
+                            ...data.data, 
+                            ...l, 
+                            id: `listing_${l.listingId}`,
+                            collection: data.data.collection || 'Unknown Collection'
+                        };
+                    }
+                } catch (e) {
+                    console.error('Error fetching listing metadata', e);
+                }
+                return { 
+                    ...l, 
+                    id: `listing_${l.listingId}`, 
+                    name: `NFT #${l.tokenId}`, 
+                    collection: 'Unknown',
+                    image_url: '' // Placeholder
+                };
+            }));
+            
+            setMyListings(enrichedListings);
+        } catch (error) {
+            console.error('Error processing my listings:', error);
+        } finally {
+            setIsLoadingRentals(false);
+        }
+    };
+    
+    fetchMyListings();
+  }, [address, allListings, combinedNFTs]);
 
   // Fetch all NFTs
   useEffect(() => {
@@ -984,7 +1052,7 @@ const Profile = () => {
                                         />
                                         <div className="absolute top-3 right-3 bg-blue-600/90 backdrop-blur-md text-white text-xs px-2 py-1 rounded-md font-medium border border-white/10 z-10 flex items-center gap-1">
                                             <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-                                            Request for Rent
+                                            Listed for Rent
                                         </div>
                                     </div>
                                 ))
