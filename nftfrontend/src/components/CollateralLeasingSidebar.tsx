@@ -201,32 +201,31 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           setContractAddress(initialContractAddress);
           setTokenId(initialTokenId);
           
-          // Check if it's a marketplace listing
-          const checkTypeAndSearch = async () => {
-              try {
-                  // Check marketplace status
-                  const id = await leasingMarketplaceService.getListingIdForNFT(initialContractAddress, initialTokenId);
-                  if (id) {
-                      setLeasingType('marketplace');
-                  } else {
-                      // Only default to collateral if not already set or if we want to enforce it based on availability
-                      // But here we just want to know if it is marketplace. 
-                      // If it's not marketplace, we might want to keep the initialLeasingType if provided, 
-                      // or default to collateral.
-                      if (!initialLeasingType) {
+          // If explicit type is provided, use it
+          if (initialLeasingType) {
+              setLeasingType(initialLeasingType);
+              if (initialLoanId) {
+                  setListingId(Number(initialLoanId));
+              }
+              handleSearch(initialContractAddress, initialTokenId);
+          } else {
+              // Otherwise infer it
+              const checkTypeAndSearch = async () => {
+                  try {
+                      const id = await leasingMarketplaceService.getListingIdForNFT(initialContractAddress, initialTokenId);
+                      if (id) {
+                          setLeasingType('marketplace');
+                          setListingId(id);
+                      } else {
                           setLeasingType('collateral');
                       }
-                  }
-              } catch (e) {
-                  if (!initialLeasingType) {
+                  } catch (e) {
                       setLeasingType('collateral');
                   }
-              }
-              // Trigger search
-              handleSearch(initialContractAddress, initialTokenId);
-          };
-          
-          checkTypeAndSearch();
+                  handleSearch(initialContractAddress, initialTokenId);
+              };
+              checkTypeAndSearch();
+          }
       }
     }
   }, [open, initialContractAddress, initialTokenId, initialLoanId, initialLeasingType]);
@@ -1113,6 +1112,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
         // Store rental transaction in backend
         if (result.rentalDetails) {
+            // Fetch listing details to get the original owner (Lessor)
+            let lessor = nftData?.owner_address || '';
+            try {
+                const listingInfo = await leasingMarketplaceService.getListingDetails(listingId);
+                lessor = listingInfo.owner;
+            } catch (e) {
+                console.warn('Could not fetch listing details for owner, using nftData fallback');
+            }
+
+            // 1. Save Rental Transaction
             try {
                 await fetch(apiUrl('/rental-transactions/'), {
                     method: 'POST',
@@ -1122,7 +1131,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                         listingId: listingId,
                         nftAddress: contractAddress,
                         tokenId: tokenId,
-                        owner: nftData?.owner_address || '', // We might not have owner if it's not in nftData
+                        owner: lessor,
                         renter: address,
                         rentAmount: rentalCost.rentAmount.toString(),
                         depositAmount: rentalCost.deposit.toString(),
@@ -1136,6 +1145,24 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                 console.log('Rental transaction stored in backend');
             } catch (err) {
                 console.error("Failed to store rental transaction in backend", err);
+            }
+
+            // 2. Explicitly Save Wrapped NFT Record
+            try {
+                await wrappedLeasingApiService.saveWrappedNFT({
+                    wId: result.rentalDetails.wId.toString(),
+                    originalNftContract: contractAddress,
+                    originalTokenId: tokenId,
+                    owner: lessor,
+                    renter: address || '',
+                    validUntil: result.rentalDetails.expiresAt,
+                    durationSeconds: Number(rentDuration) * 86400,
+                    feePaid: cost.wrapFee.toString(),
+                    transactionHash: result.receipt.hash
+                });
+                console.log('Wrapped NFT record saved explicitly');
+            } catch (err) {
+                console.error("Failed to save wrapped NFT record explicitly", err);
             }
         }
 

@@ -6,7 +6,7 @@ import { leasingMarketplace } from '../lib/contracts.js';
  */
 export const getActiveListings = async (req, res) => {
     try {
-        const listings = await Listing.find({ status: 'Active' }).sort({ createdAt: -1 });
+        const listings = await Listing.find({ status: { $in: ['Active', 'Rented'] } }).sort({ createdAt: -1 });
         return res.json({ success: true, data: listings });
     } catch (error) {
         console.error('[ListingController] Error fetching active listings:', error);
@@ -28,7 +28,7 @@ export const getListingByNFT = async (req, res) => {
         const listing = await Listing.findOne({ 
             nftAddress: { $regex: new RegExp(`^${nftAddress}$`, 'i') },
             tokenId: tokenId.toString(),
-            status: 'Active'
+            status: { $in: ['Active', 'Rented'] }
         });
         
         if (listing) {

@@ -20,7 +20,8 @@ const ERC721_ABI = [
   "function approve(address to, uint256 tokenId) external",
   "function setApprovalForAll(address operator, bool approved) external",
   "function isApprovedForAll(address owner, address operator) external view returns (bool)",
-  "function getApproved(uint256 tokenId) external view returns (address)"
+  "function getApproved(uint256 tokenId) external view returns (address)",
+  "function ownerOf(uint256 tokenId) external view returns (address)"
 ];
 
 import { getLeasingMarketplaceAddress } from './configService';
@@ -52,9 +53,26 @@ class LeasingMarketplaceService {
   async listForRent(nftAddress: string, tokenId: string, pricePerDay: string, minDays: number, maxDays: number) {
     if (!this.contract || !this.signer) throw new Error("Not initialized");
 
-    // 1. Approve Marketplace to transfer NFT
+    // 1. Verify ownership and Approve Marketplace
     const nftContract = new ethers.Contract(nftAddress, ERC721_ABI, this.signer);
+    const userAddress = await this.signer.getAddress();
     
+    try {
+        const owner = await nftContract.ownerOf(tokenId);
+        if (owner.toLowerCase() !== userAddress.toLowerCase()) {
+            // Check if it's owned by the NFT Marketplace (meaning it's listed for sale)
+            // We can't easily import the address here without async, but we can check if it's a contract
+            // For now, just give a more helpful error
+            console.error(`Ownership mismatch: Blockchain owner ${owner}, User ${userAddress}`);
+            throw new Error(`You do not own this NFT on-chain. Owner: ${owner.slice(0,6)}...${owner.slice(-4)}. If listed for sale, delist it first.`);
+        }
+    } catch (e: any) {
+        // If ownerOf fails, it might be because the token doesn't exist or contract is invalid
+        if (e.message.includes("You do not own")) throw e; // Re-throw our custom error
+        console.warn("Failed to check owner, possibly non-standard ERC721 or token does not exist", e);
+        // We continue to try approval, but it will likely fail if ownership is wrong
+    }
+
     // Check specific approval first
     try {
         const approvedAddr = await nftContract.getApproved(tokenId);
@@ -62,7 +80,7 @@ class LeasingMarketplaceService {
         
         if (!isApproved) {
             // Check operator approval
-            const isOperator = await nftContract.isApprovedForAll(await this.signer.getAddress(), this.contractAddress);
+            const isOperator = await nftContract.isApprovedForAll(userAddress, this.contractAddress);
             if (!isOperator) {
                 toast.loading("Approving Marketplace...", { id: 'approve' });
                 try {
@@ -249,6 +267,47 @@ class LeasingMarketplaceService {
         }
     }
     return rentals;
+  }
+
+  // Helper to get NFTs listed by user that are currently rented out
+  async getMyRentedOutNFTs(userAddress: string) {
+    if (!this.contract) throw new Error("Not initialized");
+
+    // 1. Get all listings by this user
+    const filter = this.contract.filters.LeaseListed(null, userAddress);
+    const events = await this.contract.queryFilter(filter);
+
+    const rentedOut = [];
+    for (const event of events) {
+        // @ts-ignore
+        const listingId = Number(event.args[0]);
+        
+        // 2. Check current status
+        const listing = await this.contract.listings(listingId);
+        
+        // Status 2 is Rented (assuming 0=None, 1=Active, 2=Rented, 3=Cancelled)
+        if (listing.status === 2n) {
+            // 3. Get rental details
+            const rental = await this.contract.rentals(listingId);
+            
+            // Double check it's not expired/refunded if needed, but status 2 usually means active rental
+            // We can check if deposit is still held
+            if (rental.deposit > 0n) {
+                rentedOut.push({
+                    listingId,
+                    renter: rental.renter,
+                    wId: Number(rental.wId),
+                    deposit: rental.deposit,
+                    rentAmount: rental.rentAmount,
+                    expiresAt: Number(rental.expiresAt),
+                    nft: listing.nft,
+                    tokenId: Number(listing.tokenId),
+                    pricePerSecond: listing.pricePerSecond
+                });
+            }
+        }
+    }
+    return rentedOut;
   }
 
   // Helper to get all active listings (limited to recent for performance)
