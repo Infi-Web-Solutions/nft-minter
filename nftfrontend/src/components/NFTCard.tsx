@@ -607,7 +607,7 @@ const NFTCard = ({
                       >
                         🎁 Wrapped
                       </Button>
-                      {onReturn && (
+                      {/* {onReturn && (
                         <Button
                           size="sm"
                           className="bg-red-500 hover:bg-red-600 whitespace-nowrap text-xs px-2 w-full"
@@ -619,7 +619,7 @@ const NFTCard = ({
                         >
                           Return
                         </Button>
-                      )}
+                      )} */}
                       {onSubLease && (
                         <Button
                           size="sm"

@@ -173,116 +173,6 @@ const Profile = () => {
     fetchListings();
   }, []);
 
-  // Fetch rental related data (My Listings, Rented Out, Rentals)
-  const fetchRentalData = async () => {
-      if (!address) return;
-      setIsLoadingRentals(true);
-      try {
-          // 1. Fetch My Listings (Active)
-          const listingsRes = await fetch(apiUrl(`/profiles/${address}/listings/`));
-          const listingsData = await listingsRes.json();
-          if (listingsData.success) {
-              const enrichedListings = await Promise.all(listingsData.data.map(async (item: any) => {
-                  try {
-                      const res = await fetch(apiUrl(`/nfts/external/${item.nftAddress}/${item.tokenId}`));
-                      const data = await res.json();
-                      const metadata = data.success ? data.data : {};
-                      return { ...item, ...metadata, id: `listing_${item.listingId}`, isRentable: true };
-                  } catch (e) {
-                      return { ...item, id: `listing_${item.listingId}`, name: `NFT #${item.tokenId}`, isRentable: true };
-                  }
-              }));
-              setMyListings(enrichedListings);
-          }
-
-          // 2. Fetch Rented Out (My NFTs rented by others)
-          const rentedOutRes = await fetch(apiUrl(`/profiles/${address}/rented-out/`));
-          const rentedOutData = await rentedOutRes.json();
-          if (rentedOutData.success) {
-              const enrichedRentedOut = await Promise.all(rentedOutData.data.map(async (item: any) => {
-                  try {
-                      const res = await fetch(apiUrl(`/nfts/external/${item.nftAddress}/${item.tokenId}`));
-                      const data = await res.json();
-                      const metadata = data.success ? data.data : {};
-                      return { ...item, ...metadata, id: `rented_out_${item.listingId}`, isRentedOut: true };
-                  } catch (e) {
-                      return { ...item, id: `rented_out_${item.listingId}`, name: `NFT #${item.tokenId}`, isRentedOut: true };
-                  }
-              }));
-              setMyRentedOut(enrichedRentedOut);
-          }
-
-          // 3. Fetch Rentals (NFTs I am renting)
-          const rentalsRes = await fetch(apiUrl(`/profiles/${address}/rentals/`));
-          const rentalsData = await rentalsRes.json();
-          if (rentalsData.success) {
-              const enrichedRentals = await Promise.all(rentalsData.data.map(async (item: any) => {
-                  try {
-                      const res = await fetch(apiUrl(`/nfts/external/${item.nftAddress}/${item.tokenId}`));
-                      const data = await res.json();
-                      const metadata = data.success ? data.data : {};
-                      return { ...item, ...metadata, id: `rental_${item.listingId}`, isRentedByMe: true };
-                  } catch (e) {
-                      return { ...item, id: `rental_${item.listingId}`, name: `NFT #${item.tokenId}`, isRentedByMe: true };
-                  }
-              }));
-              setMyRentals(enrichedRentals);
-          }
-
-          // 4. Fetch Wrapped Rentals (My Wrapped NFTs)
-          try {
-              const wrappedNfts = await wrappedLeasingApiService.getUserWrappedNFTs(address);
-              if (wrappedNfts && wrappedNfts.length > 0) {
-                  const enrichedWrapped = await Promise.all(wrappedNfts.map(async (item: any) => {
-                      try {
-                          // Try to fetch metadata from original NFT first to get image/name
-                          const res = await fetch(apiUrl(`/nfts/external/${item.originalNft}/${item.originalTokenId}`));
-                          const data = await res.json();
-                          const metadata = data.success ? data.data : {};
-                          
-                          return { 
-                              ...item, 
-                              ...metadata, 
-                              id: `wrapped_${item.wId}`, 
-                              tokenId: item.wId, // Show wId as the token ID for the wrapped NFT
-                              originalTokenId: item.originalTokenId,
-                              name: metadata.name ? `Wrapped ${metadata.name}` : `Wrapped NFT #${item.wId}`,
-                              isWrapped: true,
-                              rentalExpiresAt: new Date(item.validUntil * 1000), // Service returns seconds
-                              collection: 'Wrapped NFT'
-                          };
-                      } catch (e) {
-                          return { 
-                              ...item, 
-                              id: `wrapped_${item.wId}`, 
-                              tokenId: item.wId, 
-                              name: `Wrapped NFT #${item.wId}`,
-                              isWrapped: true,
-                              rentalExpiresAt: new Date(item.validUntil * 1000),
-                              collection: 'Wrapped NFT'
-                          };
-                      }
-                  }));
-                  setMyWrappedRentals(enrichedWrapped);
-              } else {
-                  setMyWrappedRentals([]);
-              }
-          } catch (wrappedErr) {
-              console.error('Failed to fetch wrapped rentals', wrappedErr);
-          }
-          
-      } catch (err) {
-          console.error('Failed to fetch rental data', err);
-      } finally {
-          setIsLoadingRentals(false);
-      }
-  };
-
-  useEffect(() => {
-    if (!address) return;
-    fetchRentalData();
-  }, [address]);
-
   // Fetch all NFTs
   useEffect(() => {
     if (!address) return;
@@ -296,10 +186,6 @@ const Profile = () => {
             nft.creator_address && nft.creator_address.toLowerCase() === address.toLowerCase()
         );
         setCreatedNFTs(created);
-
-        // Filter for Collected tab (Owned NFTs)
-        // STRICT CHECK: Only show NFTs where owner_address matches current user address
-        // Also exclude NFTs that are listed for rent (isRentable) as they are shown in Rentals tab
         const owned = nfts.filter((nft: any) => {
             const isOwner = nft.owner_address && nft.owner_address.toLowerCase() === address.toLowerCase();
             const isRentable = nft.isRentable || activeListings.has(`${(nft.contract_address || nft.collection).toLowerCase()}-${nft.token_id}`);
@@ -324,6 +210,52 @@ const Profile = () => {
 
     fetchNFTs();
   }, [address, likedNFTIds, activeListings]);
+
+  // Fetch wrapped NFTs
+  useEffect(() => {
+    if (!address) return;
+    const fetchWrappedNFTs = async () => {
+      try {
+        const [wrapped, contractInfo] = await Promise.all([
+            wrappedLeasingApiService.getUserWrappedNFTs(address),
+            wrappedLeasingApiService.getContractInfo()
+        ]);
+        
+        const enrichedWrapped = await Promise.all(wrapped.map(async (w: any) => {
+             try {
+                 // Fetch metadata for the original NFT
+                 const res = await fetch(apiUrl(`/nfts/external/${w.originalNft}/${w.originalTokenId}`));
+                 const data = await res.json();
+                 if (data.success) {
+                     return {
+                         ...w,
+                         ...data.data, // This should have name, image, description, attributes
+                         id: `wrapped_${w.wId}`, // Unique ID for React key
+                         collection: data.data.collection || 'Wrapped NFT',
+                         isWrapped: true,
+                         wrappedContractAddress: contractInfo.wrappedLeasingAddress
+                     };
+                 }
+             } catch (e) {
+                 console.error('Failed to fetch metadata for wrapped NFT', w.wId, e);
+             }
+             return {
+                 ...w,
+                 id: `wrapped_${w.wId}`,
+                 name: `Wrapped NFT #${w.wId}`,
+                 collection: 'Wrapped Collection',
+                 isWrapped: true,
+                 wrappedContractAddress: contractInfo.wrappedLeasingAddress
+             };
+        }));
+        
+        setMyWrappedRentals(enrichedWrapped);
+      } catch (e) {
+        console.error('Failed to fetch wrapped NFTs', e);
+      }
+    };
+    fetchWrappedNFTs();
+  }, [address]);
   // Follow/unfollow logic
   const handleFollow = async (targetAddress: string) => {
     try {
@@ -1124,24 +1056,9 @@ const Profile = () => {
                             canLike={false}
                             source="rented"
                             isWrapped={true}
-                            onReturn={async () => {
-                              if (window.confirm('Are you sure you want to return this NFT?')) {
-                                try {
-                                  toast.loading('Returning NFT...');
-                                  await wrappedLeasingApiService.unwrapNFT(nft.wId);
-                                  toast.dismiss();
-                                  toast.success('NFT Returned Successfully!');
-                                  // Refresh data
-                                  fetchRentalData();
-                                } catch (error: any) {
-                                  toast.dismiss();
-                                  toast.error(error.message || 'Failed to return NFT');
-                                }
-                              }
-                            }}
                             onSubLease={() => {
                               setSelectedLoanNft({
-                                contract: nft.contract_address || nft.collection, // This should be the WrappedLeasing address
+                                contract: nft.wrappedContractAddress, // Use the WrappedLeasing address
                                 tokenId: String(nft.wId), // Use wId for sub-leasing
                                 leasingType: 'marketplace'
                               });
