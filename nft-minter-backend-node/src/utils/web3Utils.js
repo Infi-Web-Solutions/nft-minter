@@ -21,7 +21,12 @@ class NFTMarketplaceWeb3 {
         this.lendingContractAddress = process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS || process.env.NFT_COLLATERAL_ADDRESS || null;
 
         // Wrapped Leasing contract address
-        this.wrappedLeasingAddress = process.env.WrappedLeasing_Address || process.env.WRAPPED_LEASING_ADDRESS || null;
+        // Prefer env, but fall back to known Sepolia deployment if not set
+        this.wrappedLeasingAddress =
+            process.env.WrappedLeasing_Address ||
+            process.env.WRAPPED_LEASING_ADDRESS ||
+            // Fallback: Wrapped Lease NFT (wNFTM) proxy on Sepolia
+            '0x293a1ac2e749e33effd25c7e292f78ebd8ff7489';
 
         // Leasing Marketplace contract address
         this.leasingMarketplaceAddress = process.env.LeasingMarketplace_Address || process.env.LEASING_MARKETPLACE_ADDRESS || null;
@@ -962,13 +967,13 @@ class NFTMarketplaceWeb3 {
     }
 
     // Wrapped Leasing Methods
-    async wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, fromAddress) {
+    async wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, originalOwner, fromAddress) {
         if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
         try {
             const leasingFeeBps = await this.getLeasingFeeBps();
             const wrapFee = (BigInt(durationSeconds) * BigInt(leasingFeeBps)) / 10000n;
-            const gas = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI).estimateGas({ from: fromAddress, value: wrapFee });
-            const result = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI).send({ from: fromAddress, gas, value: wrapFee });
+            const gas = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, originalOwner).estimateGas({ from: fromAddress, value: wrapFee });
+            const result = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, originalOwner).send({ from: fromAddress, gas, value: wrapFee });
             return result;
         } catch (error) {
             console.error('[Web3] Error wrapping NFT:', error.message);
@@ -1214,8 +1219,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100); // 10% increase
+            
             const gas = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({ 
+                from: fromAddress, 
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -1231,8 +1245,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
+            
             const gas = await this.feeManagerContract.methods.setLendingAprBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({ 
+                from: fromAddress, 
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -1248,8 +1271,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
+            
             const gas = await this.feeManagerContract.methods.setLeasingFeeBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({ 
+                from: fromAddress, 
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -1265,8 +1297,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
+            
             const gas = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ 
+                from: fromAddress, 
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -1412,21 +1453,53 @@ class NFTMarketplaceWeb3 {
 
             console.log('[Web3] Setting FeeManager values...');
             
+            // Get base gas price and nonce for all transactions
+            const baseGasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(baseGasPrice) * BigInt(110) / BigInt(100); // 10% increase
+            let currentNonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            
             // Set Marketplace Fee
             const gas1 = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).estimateGas({ from: fromAddress });
-            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({ from: fromAddress, gas: gas1 });
+            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({ 
+                from: fromAddress, 
+                gas: gas1,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
+            
+            // Wait a bit between transactions to avoid nonce issues
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
             // Set Lending APR
             const gas2 = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).estimateGas({ from: fromAddress });
-            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({ from: fromAddress, gas: gas2 });
+            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({ 
+                from: fromAddress, 
+                gas: gas2,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
             // Set Leasing Fee
             const gas3 = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).estimateGas({ from: fromAddress });
-            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({ from: fromAddress, gas: gas3 });
+            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({ 
+                from: fromAddress, 
+                gas: gas3,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
             // Set Treasury
             const gas4 = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
-            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ from: fromAddress, gas: gas4 });
+            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ 
+                from: fromAddress, 
+                gas: gas4,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
 
             console.log('[Web3] FeeManager values set successfully');
             return results;

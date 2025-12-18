@@ -209,6 +209,8 @@ const Create = () => {
 
       // 3. Create and upload metadata
       const metadataHash = await createMetadata(imageHash);
+      // Full metadata URI that will be stored on-chain and used for metadata fetches
+      const metadataUri = `ipfs://${metadataHash}`;
 
       // 3. Mint NFT
       if (!contractAddress) {
@@ -249,7 +251,7 @@ const Create = () => {
       const tx = await contract.mintNFT(
         formData.name,
         formData.description,
-        `ipfs://${imageHash}`,
+        metadataUri,
         formData.category,
         Math.floor(parseFloat(formData.royaltyPercentage) * 100), // Convert to basis points (2.5% -> 250)
         formData.collection || 'Default Collection'
@@ -368,7 +370,7 @@ const Create = () => {
           name: formData.name,
           description: formData.description,
           image_url: `ipfs://${imageHash}${mediaTag}`,
-          token_uri: `ipfs://${metadataHash}`,
+          token_uri: metadataUri,
           creator_address: address,
           owner_address: address,
           contract_address: contractAddress, // Store smart contract address

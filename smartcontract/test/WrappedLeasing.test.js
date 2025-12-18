@@ -38,6 +38,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1000,
             "ipfs://metadata",
+            owner.address,
             { value: 0 }
         );
 
@@ -98,6 +99,7 @@ describe("WrappedLeasing", function () {
                 renter.address,
                 100,
                 "",
+                owner.address,
                 { value: 0 }
             )
         ).to.be.revertedWithCustomError(wrapped, "EnforcedPause");
@@ -114,6 +116,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             duration,
             "",
+            owner.address,
             { value: fee }
         );
     });
@@ -129,6 +132,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1, // 1s duration
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -154,6 +158,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1, // 1 second duration
             "",
+            owner.address,
             { value: 0 }
         );
         const txRcpt = await wrapTx.wait();
@@ -182,6 +187,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1000,
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -204,6 +210,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1,
             "",
+            owner.address,
             { value: 0 }
         );
 
@@ -231,6 +238,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1000,
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -253,6 +261,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             100,
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -282,6 +291,7 @@ describe("WrappedLeasing", function () {
                 renter.address,
                 1000,
                 "",
+                owner.address,
                 { value: 0 } // no fee
             )
         ).to.be.revertedWith("insufficient fee");

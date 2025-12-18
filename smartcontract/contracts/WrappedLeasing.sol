@@ -41,7 +41,7 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
     event LeaseForceExpired(uint256 indexed wId, address indexed caller);
 
     function initialize(address admin_, address feeManager_) external initializer {
-        __ERC721_init("Wrapped Lease NFT", "wNFTL");
+        __ERC721_init("Wrapped Lease NFT", "wNFTM");
         __ERC721URIStorage_init();
         __ReentrancyGuard_init();
         __AccessControl_init();
@@ -52,8 +52,9 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         gracePeriod = 1 days;
     }
 
-    function wrap(address nft, uint256 tokenId, address renter, uint256 durationSeconds, string calldata metadataURI) external payable nonReentrant whenNotPaused returns (uint256) {
+    function wrap(address nft, uint256 tokenId, address renter, uint256 durationSeconds, string calldata metadataURI, address originalOwner) external payable nonReentrant whenNotPaused returns (uint256) {
         require(renter != address(0), "invalid renter");
+        require(originalOwner != address(0), "invalid originalOwner");
         require(durationSeconds > 0, "duration>0");
 
         // fee handling: the UI should pass rent/deposit; we optionally collect a small lease fee
@@ -74,14 +75,14 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         uint256 wId = wCounter;
         uint256 validUntil = block.timestamp + durationSeconds;
 
-        wrapped[wId] = WrappedInfo({ originalNft: nft, originalTokenId: tokenId, owner: msg.sender, validUntil: validUntil, active: true });
+        wrapped[wId] = WrappedInfo({ originalNft: nft, originalTokenId: tokenId, owner: originalOwner, validUntil: validUntil, active: true });
 
         _safeMint(renter, wId);
         if (bytes(metadataURI).length > 0) {
             _setTokenURI(wId, metadataURI);
         }
 
-        emit Wrapped(wId, msg.sender, nft, tokenId, validUntil);
+        emit Wrapped(wId, originalOwner, nft, tokenId, validUntil);
         return wId;
     }
 

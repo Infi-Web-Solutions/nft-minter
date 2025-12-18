@@ -17,7 +17,10 @@ export const getPublicConfig = async (req, res) => {
             contracts: {
                 nftMarketplace: process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS,
                 collateralLending: process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS,
-                wrappedLeasing: process.env.WrappedLeasing_Address || process.env.WRAPPED_LEASING_ADDRESS,
+                // Prefer env for flexibility, but fall back to known Sepolia WrappedLeasing proxy
+                wrappedLeasing: process.env.WrappedLeasing_Address
+                    || process.env.WRAPPED_LEASING_ADDRESS
+                    || '0x293a1ac2e749e33effd25c7e292f78ebd8ff7489',
                 feeManager: process.env.FeeManager_Address || process.env.FEE_MANAGER_ADDRESS,
                 leasingMarketplace: process.env.LeasingMarketplace_Address,
             },

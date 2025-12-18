@@ -1147,6 +1147,11 @@ export default[
           "internalType": "string",
           "name": "metadataURI",
           "type": "string"
+        },
+        {
+          "internalType": "address",
+          "name": "originalOwner",
+          "type": "address"
         }
       ],
       "name": "wrap",

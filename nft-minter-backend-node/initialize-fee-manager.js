@@ -282,6 +282,12 @@ async function initializeFeeManager() {
         } else if (error.message.includes('insufficient funds')) {
             console.error('   ⚠️  Insufficient Funds: Account does not have enough ETH for gas fees.\n');
             console.error('   💡 Make sure the admin account has enough ETH for transaction gas.\n');
+        } else if (error.message.includes('replacement transaction underpriced')) {
+            console.error('   ⚠️  Transaction Underpriced: There is a pending transaction with the same nonce.\n');
+            console.error('   💡 Solutions:');
+            console.error('      1. Wait for pending transactions to complete (check on block explorer)');
+            console.error('      2. Cancel the pending transaction by sending a new one with higher gas price');
+            console.error('      3. Or wait a few minutes and try again\n');
         } else if (error.message.includes('execution reverted')) {
             console.error('   ⚠️  Transaction Reverted: The contract rejected the transaction.\n');
             console.error('   💡 Common causes:');

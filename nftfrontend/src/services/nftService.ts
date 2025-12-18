@@ -23,6 +23,10 @@ export interface NFT {
   is_listed?: boolean;
   is_auction?: boolean;
   sell_orders?: Array<{ current_price: string | number }>;
+  // Optional contract address for the NFT (e.g. original collection or wrapped contract)
+  contract_address?: string;
+  // Flag to indicate this NFT represents a wrapped leasing token (wNFT)
+  isWrapped?: boolean;
 }
 
 export interface NFTResponse {

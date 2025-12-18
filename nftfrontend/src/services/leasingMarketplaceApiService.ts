@@ -40,11 +40,28 @@ class LeasingMarketplaceService {
     
     try {
         this.contractAddress = await getLeasingMarketplaceAddress();
-        if (this.contractAddress) {
-            this.contract = new ethers.Contract(this.contractAddress, LEASING_MARKETPLACE_ABI, signer);
-        } else {
+        if (!this.contractAddress) {
             console.error("Leasing Marketplace Address not found in config");
+            toast.error("Leasing Marketplace address is not configured on the backend.");
+            return;
         }
+
+        // Sanity-check that the address is a real contract, not an EOA (like an NFT owner)
+        try {
+            const code = await provider.getCode(this.contractAddress);
+            if (!code || code === "0x") {
+                console.error(
+                    `[LeasingService] Address ${this.contractAddress} has no contract code (likely an EOA).`
+                );
+                toast.error("Leasing Marketplace address is invalid (no contract at that address).");
+                this.contract = null;
+                return;
+            }
+        } catch (checkErr) {
+            console.warn("[LeasingService] Failed to verify LeasingMarketplace contract code", checkErr);
+        }
+
+        this.contract = new ethers.Contract(this.contractAddress, LEASING_MARKETPLACE_ABI, signer);
     } catch (e) {
         console.error("Failed to load leasing marketplace address from config", e);
     }
@@ -57,6 +74,11 @@ class LeasingMarketplaceService {
     const nftContract = new ethers.Contract(nftAddress, ERC721_ABI, this.signer);
     const userAddress = await this.signer.getAddress();
     
+    // Check if this is a wNFT (wrapped NFT)
+    const config = await import('@/services/configService');
+    const wrappedLeasingAddress = await config.getWrappedLeasingAddress();
+    const isWNFT = nftAddress.toLowerCase() === wrappedLeasingAddress.toLowerCase();
+    
     try {
         const owner = await nftContract.ownerOf(tokenId);
         if (owner.toLowerCase() !== userAddress.toLowerCase()) {
@@ -64,11 +86,24 @@ class LeasingMarketplaceService {
             // We can't easily import the address here without async, but we can check if it's a contract
             // For now, just give a more helpful error
             console.error(`Ownership mismatch: Blockchain owner ${owner}, User ${userAddress}`);
-            throw new Error(`You do not own this NFT on-chain. Owner: ${owner.slice(0,6)}...${owner.slice(-4)}. If listed for sale, delist it first.`);
+            throw new Error(`You do not own this ${isWNFT ? 'wNFT' : 'NFT'} on-chain. Owner: ${owner.slice(0,6)}...${owner.slice(-4)}. If listed for sale, delist it first.`);
+        }
+        
+        // If it's a wNFT, validate it's active and not expired
+        if (isWNFT) {
+            const wrappedContract = new ethers.Contract(
+                wrappedLeasingAddress,
+                ["function getLeaseStatus(uint256 wId) external view returns (bool isActive, uint256 timeRemaining)"],
+                this.signer
+            );
+            const [isActive, timeRemaining] = await wrappedContract.getLeaseStatus(tokenId);
+            if (!isActive || timeRemaining === 0n) {
+                throw new Error("This wNFT is not active or has expired. You can only list active wNFTs for rent.");
+            }
         }
     } catch (e: any) {
         // If ownerOf fails, it might be because the token doesn't exist or contract is invalid
-        if (e.message.includes("You do not own")) throw e; // Re-throw our custom error
+        if (e.message.includes("You do not own") || e.message.includes("not active") || e.message.includes("expired")) throw e; // Re-throw our custom errors
         console.warn("Failed to check owner, possibly non-standard ERC721 or token does not exist", e);
         // We continue to try approval, but it will likely fail if ownership is wrong
     }
@@ -135,13 +170,14 @@ class LeasingMarketplaceService {
   async calculateCost(listingId: number, durationDays: number) {
     if (!this.contract) throw new Error("Not initialized");
     const durationSeconds = durationDays * 86400;
+    // Call through directly so we surface the real revert reason from the contract
     const result = await this.contract.getTotalCost(listingId, durationSeconds);
     return {
-        rentAmount: result.rentAmount,
-        deposit: result.deposit,
-        platformFee: result.platformFee,
-        wrapFee: result.wrapFee,
-        totalRequired: result.totalRequired
+      rentAmount: result.rentAmount,
+      deposit: result.deposit,
+      platformFee: result.platformFee,
+      wrapFee: result.wrapFee,
+      totalRequired: result.totalRequired,
     };
   }
 

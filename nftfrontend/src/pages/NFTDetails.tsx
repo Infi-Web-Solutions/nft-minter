@@ -458,6 +458,11 @@ useEffect(() => {
 
   if (!nft) return null;
 
+  const isOwner =
+    !!address &&
+    !!nft.owner_address &&
+    address.toLowerCase() === nft.owner_address.toLowerCase();
+
   // Format price for display
   const formatPrice = (price: any) => {
     if (!price || price === '0') return 'Not for sale';
@@ -853,7 +858,7 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {nft.is_listed && (
+                {nft.is_listed && !isOwner && (
                   <div className="grid grid-cols-2 gap-3">
                     <Button 
                       className="bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 transition-smooth"
@@ -864,6 +869,12 @@ useEffect(() => {
                     <Button variant="outline" onClick={handleMakeOffer}>
                       Make Offer
                     </Button>
+                  </div>
+                )}
+
+                {nft.is_listed && isOwner && (
+                  <div className="rounded-lg bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+                    You are the current owner of this NFT. Other users can see and buy this listing.
                   </div>
                 )}
 

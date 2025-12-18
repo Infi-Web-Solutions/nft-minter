@@ -494,6 +494,14 @@ const NFTCard = ({
   const handleCardClick = async (e: React.MouseEvent) => {
     // Prevent navigation if clicking on a button or interactive element
     if ((e.target as HTMLElement).closest('button,svg,a,input')) return;
+
+    // For wrapped leasing tokens shown in marketplace/profile, always go to wNFT detail page
+    if (isWrapped && tokenId !== undefined && tokenId !== null) {
+      navigate(`/wnft/${tokenId}`);
+      return;
+    }
+
+    // Default: regular NFT detail page using combined ID
     if (id) {
       try {
         await fetch(apiUrl(`/nfts/${id}/track-view/`), {
@@ -508,7 +516,6 @@ const NFTCard = ({
       } catch (error) {
         console.error('[NFTCard] Failed to track view:', error);
       }
-      // Navigate with the combined ID format (should include 'local_' prefix for API)
       navigate(`/nft/${id}`);
     }
   };

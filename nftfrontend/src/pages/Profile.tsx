@@ -12,6 +12,7 @@ import CollateralLeasingSidebar from '@/components/CollateralLeasingSidebar';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import WalletGuard from '@/components/WalletGuard';
+import { useNavigate } from 'react-router-dom';
 import { useWallet } from '@/contexts/WalletContext';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +27,7 @@ const Profile = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const { address } = useWallet();
+  const navigate = useNavigate();
   const profileImageRef = useRef<HTMLInputElement>(null);
   const coverImageRef = useRef<HTMLInputElement>(null);
 
@@ -1029,7 +1031,14 @@ const Profile = () => {
                                             source="local"
                                             isRentable={true}
                                             onClick={() => {
-                                                // window.location.href = `/nft/${nft.id}`;
+                                                // Open rental management sidebar for this listing instead of navigating away
+                                                setSelectedLoanNft({
+                                                    contract: nft.nftAddress,
+                                                    tokenId: String(nft.tokenId),
+                                                    loanId: String(nft.listingId),
+                                                    leasingType: 'marketplace'
+                                                });
+                                                setShowCollateralSidebar(true);
                                             }}
                                             onRequestLoan={() => {
                                                 setSelectedLoanNft({
@@ -1124,6 +1133,10 @@ const Profile = () => {
                             canLike={false}
                             source="rented"
                             isWrapped={true}
+                            onClick={() => {
+                              if (!nft.wId) return;
+                              navigate(`/wnft/${nft.wId}`);
+                            }}
                             onSubLease={() => {
                               setSelectedLoanNft({
                                 contract: nft.wrappedContractAddress, // Use the WrappedLeasing address

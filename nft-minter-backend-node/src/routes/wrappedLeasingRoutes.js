@@ -15,7 +15,8 @@ import {
   setFeeManager,
   saveWrappedNFT,
   updateWrappedNFTStatus,
-  getUserWrappedNFTs
+  getUserWrappedNFTs,
+  getWrappedDetails
 } from '../controllers/wrappedLeasingController.js';
 
 const router = express.Router();
@@ -36,6 +37,7 @@ router.get('/w-counter', getWCounter);
 router.post('/save', saveWrappedNFT);
 router.put('/status/:wId', updateWrappedNFTStatus);
 router.get('/user/:userAddress', getUserWrappedNFTs);
+router.get('/details/:wId', getWrappedDetails);
 
 // System endpoints
 router.get('/validate-environment', validateEnvironment);

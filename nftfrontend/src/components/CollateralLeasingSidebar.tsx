@@ -84,6 +84,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const [wrappedLoading, setWrappedLoading] = useState(false);
   const [wrappedContractAddress, setWrappedContractAddress] = useState<string>('');
   const [selectedWrappedNFT, setSelectedWrappedNFT] = useState<WrappedNFT | null>(null);
+  const [isWNFT, setIsWNFT] = useState(false);
   
   // FeeManager Configuration State
   const [feeManagerConfigured, setFeeManagerConfigured] = useState<boolean | null>(null);
@@ -116,6 +117,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     totalRequired: string;
   } | null>(null);
   const [calculatingCost, setCalculatingCost] = useState(false);
+  const [currentWNFTMaxDays, setCurrentWNFTMaxDays] = useState<number | null>(null);
 
   // Helper to format time remaining
   const formatTimeRemaining = (seconds: number) => {
@@ -243,56 +245,141 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setNftData(null);
 
     try {
-      // First try the backend
-      const res = await fetch(apiUrl('/nfts/external/'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contract_address: addr.trim(),
-          token_id: id.trim(),
-        }),
-      });
-      
-      const data = await res.json();
+      const addrTrimmed = addr.trim();
+      const idTrimmed = id.trim();
 
-      if (data.success && data.data) {
-        setNftData(data.data);
-        toast.success('NFT found!');
-      } else {
-        // Fallback to direct blockchain fetch
-        console.log('Backend search failed, trying direct blockchain fetch...');
+      // Detect if this is the WrappedLeasing contract (wNFT)
+      const config = await import('@/services/configService');
+      const wrappedLeasingAddress = await config.getWrappedLeasingAddress();
+      const isWNFTAddress =
+        addrTrimmed.toLowerCase() === wrappedLeasingAddress.toLowerCase();
+
+      if (isWNFTAddress) {
+        // For wNFTs, query the WrappedLeasing contract / backend directly
         try {
-            const externalData = await web3Service.getExternalNFTMetadata(addr.trim(), id.trim());
-            if (externalData) {
-                setNftData(externalData);
-                toast.success('NFT found on blockchain!');
-            } else {
-                setNotFound(true);
-                toast.error('No NFT found for this address');
+          const [info, status, details] = await Promise.all([
+            wrappedLeasingApiService.getWrappedInfo(idTrimmed),
+            wrappedLeasingApiService.getLeaseStatus(idTrimmed),
+            wrappedLeasingApiService.getWrappedDetails(idTrimmed),
+          ]);
+
+          setIsWNFT(true);
+
+          // Compute maximum days this wNFT can be sub-leased: limited by remaining lease time
+          const remainingSeconds = status?.timeRemaining ?? 0;
+          if (remainingSeconds > 0) {
+            const maxDaysByLease = Math.max(1, Math.floor(remainingSeconds / 86400));
+            setCurrentWNFTMaxDays(maxDaysByLease);
+            // Clamp UI maxDuration to this limit
+            setMaxDuration(
+              String(Math.min(parseInt(maxDuration || '30', 10) || 30, maxDaysByLease)),
+            );
+            // Ensure minDuration is not above max
+            if ((parseInt(minDuration || '1', 10) || 1) > maxDaysByLease) {
+              setMinDuration('1');
             }
-        } catch (chainError) {
+          } else {
+            setCurrentWNFTMaxDays(null);
+          }
+
+          // Prefer DB renter as the current logical wNFT owner (renter who can sub-lease)
+          const dbWrapped = details?.data?.wrapped;
+          const dbRental = details?.data?.rental;
+          const currentOwner =
+            (dbRental && dbRental.renter) ||
+            (dbWrapped && dbWrapped.owner) ||
+            info.owner;
+
+          // Try to load original NFT metadata so we can show an image in the sidebar card
+          let originalMeta: any = null;
+          try {
+            const metaRes = await fetch(
+              apiUrl(`/nfts/external/${info.originalNft}/${info.originalTokenId}`),
+            );
+            const metaJson = await metaRes.json();
+            if (metaJson.success && metaJson.data) {
+              originalMeta = metaJson.data;
+            }
+          } catch (metaErr) {
+            console.warn('Failed to load original NFT metadata for wNFT', metaErr);
+          }
+
+          const displayName =
+            originalMeta?.name || (dbWrapped && dbWrapped.name) || `Wrapped NFT #${idTrimmed}`;
+          const displayImage =
+            originalMeta?.image_url || originalMeta?.image || '';
+          const displayCollection = originalMeta?.collection || 'Wrapped NFT';
+          const displayDescription =
+            originalMeta?.description ||
+            'Wrapped lease NFT. Original asset details are shown in the details view.';
+
+          // Minimal NFT data for UI
+          const wrappedNftData: any = {
+            id: `wrapped_${idTrimmed}`,
+            name: displayName,
+            description: displayDescription,
+            image_url: displayImage,
+            owner_address: currentOwner,
+            contract_address: addrTrimmed,
+            token_id: idTrimmed,
+            collection: displayCollection,
+            isWrapped: true,
+            blockchain_data: {
+              contract_address: addrTrimmed,
+              token_id: idTrimmed,
+            },
+          };
+
+          setNftData(wrappedNftData);
+          toast.success('wNFT found! You can list it for sub-lease.');
+        } catch (e) {
+          console.error('Failed to fetch wNFT info for sub-leasing', e);
+          setNotFound(true);
+          toast.error('Could not load wrapped NFT details');
+        }
+      } else {
+        // Regular NFT flow: backend first, then blockchain fallback
+        const res = await fetch(apiUrl('/nfts/external/'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contract_address: addrTrimmed,
+            token_id: idTrimmed,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.success && data.data) {
+          setNftData(data.data);
+          setIsWNFT(false);
+          toast.success('NFT found!');
+        } else {
+          console.log('Backend search failed, trying direct blockchain fetch...');
+          try {
+            const externalData = await web3Service.getExternalNFTMetadata(
+              addrTrimmed,
+              idTrimmed,
+            );
+            if (externalData) {
+              setNftData(externalData);
+              setIsWNFT(false);
+              toast.success('NFT found on blockchain!');
+            } else {
+              setNotFound(true);
+              toast.error('No NFT found for this address');
+            }
+          } catch (chainError) {
             console.error('Blockchain fetch failed:', chainError);
             setNotFound(true);
             toast.error('No NFT found on blockchain');
+          }
         }
       }
     } catch (error) {
       console.error('Error fetching NFT:', error);
-      // Fallback to direct blockchain fetch on API error too
-      try {
-          const externalData = await web3Service.getExternalNFTMetadata(addr.trim(), id.trim());
-          if (externalData) {
-              setNftData(externalData);
-              toast.success('NFT found on blockchain!');
-          } else {
-              setNotFound(true);
-              toast.error('Failed to fetch NFT details');
-          }
-      } catch (chainError) {
-          console.error('Blockchain fetch failed:', chainError);
-          setNotFound(true);
-          toast.error('Failed to fetch NFT details');
-      }
+      setNotFound(true);
+      toast.error('Failed to fetch NFT details');
     } finally {
       setLoading(false);
     }
@@ -973,8 +1060,14 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         wrapFee: ethers.formatEther(cost.wrapFee),
         totalRequired: ethers.formatEther(cost.totalRequired)
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error calculating rental cost", e);
+      const errorMessage = e.message || 'Failed to calculate rental cost';
+      if (errorMessage.includes('FeeManager')) {
+        toast.error('FeeManager is not configured. Rental prices cannot be calculated.');
+      } else {
+        toast.error(`Failed to calculate cost: ${errorMessage}`);
+      }
       setRentalCost(null);
     } finally {
       setCalculatingCost(false);
@@ -1001,6 +1094,21 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     if (!contractAddress || !tokenId || !listingPrice || !minDuration || !maxDuration) {
         toast.error('Please fill all fields');
         return;
+    }
+
+    // If this is a wNFT sub-lease, enforce that requested maxDuration does not exceed
+    // the remaining lease duration on the underlying wrapped NFT.
+    if (isWNFT && currentWNFTMaxDays !== null) {
+      const maxDaysRequested = parseInt(maxDuration, 10);
+      if (maxDaysRequested > currentWNFTMaxDays) {
+        toast.error(`Max duration cannot exceed remaining lease of ${currentWNFTMaxDays} day(s).`);
+        return;
+      }
+      const minDaysRequested = parseInt(minDuration, 10);
+      if (minDaysRequested > currentWNFTMaxDays) {
+        toast.error(`Min duration cannot exceed remaining lease of ${currentWNFTMaxDays} day(s).`);
+        return;
+      }
     }
     
     setProcessing(true);
@@ -1594,8 +1702,21 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                             onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/150?text=NFT'; }} />
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold">{nftData.name}</h3>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-bold">{nftData.name}</h3>
+                            {isWNFT && (
+                              <Badge variant="secondary" className="bg-purple-500/20 text-purple-300 border-purple-500/30">
+                                wNFT
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground line-clamp-2">{nftData.description}</p>
+                          {isWNFT && (
+                            <p className="text-xs text-purple-400 mt-1 flex items-center gap-1">
+                              <Info className="h-3 w-3" />
+                              This is a wrapped NFT. You can list it for rent.
+                            </p>
+                          )}
                         </div>
                       </div>
 

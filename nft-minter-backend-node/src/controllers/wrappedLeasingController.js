@@ -312,3 +312,49 @@ export const getUserWrappedNFTs = async (req, res) => {
     return res.status(500).json({ error: error.message || 'Failed to get wrapped NFTs' });
   }
 };
+
+/**
+ * Get detailed info for a single wrapped NFT (DB + rental details)
+ */
+export const getWrappedDetails = async (req, res) => {
+  const { wId } = req.params;
+
+  if (!wId) {
+    return res.status(400).json({ error: 'Wrapped NFT ID (wId) is required' });
+  }
+
+  try {
+    const numericWId = parseInt(wId);
+
+    // Base wrapped NFT record from database
+    const wrapped = await WrappedNft.findOne({ wId: numericWId });
+    if (!wrapped) {
+      return res.status(404).json({ error: 'Wrapped NFT not found in database' });
+    }
+
+    // Try to fetch latest rental transaction linked to this wNFT
+    let rental = null;
+    try {
+      const rentalTxModule = await import('../models/rentalTransaction.js');
+      const RentalTransaction = rentalTxModule.default;
+      rental = await RentalTransaction.findOne({ wrappedTokenId: numericWId })
+        .sort({ createdAt: -1 })
+        .lean();
+    } catch (txError) {
+      console.warn('[WrappedNFT] Failed to load rental transaction for wId', wId, txError);
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        wrapped,
+        rental,
+      },
+    });
+  } catch (error) {
+    console.error('Get wrapped details error:', error.message || error);
+    return res
+      .status(500)
+      .json({ error: error.message || 'Failed to get wrapped NFT details' });
+  }
+};

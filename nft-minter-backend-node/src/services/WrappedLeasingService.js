@@ -10,6 +10,10 @@ export class WrappedLeasingService {
     constructor() {
         // Use read-only provider for querying blockchain
         this.contract = wrappedLeasing.connect(provider);
+        // Cache for FeeManager configuration status
+        this.feeManagerConfiguredCache = null;
+        this.feeManagerCacheTime = null;
+        this.feeManagerCacheTTL = 60000; // Cache for 60 seconds
     }
 
     /** Validate NFT approval status */
@@ -115,10 +119,19 @@ export class WrappedLeasingService {
     /** Get wrapped NFT info */
     async getWrappedInfo(wId) {
         const info = await this.contract.getWrapped(wId);
+        let currentOwner = info.owner;
+        try {
+            // Resolve the current wNFT holder from the ERC721 ownerOf call
+            currentOwner = await this.contract.ownerOf(wId);
+        } catch (err) {
+            // If token is burned or doesn't exist, fall back to original owner
+            console.warn(`[WrappedLeasingService] ownerOf failed for wId ${wId}, using original owner`, err.message || err);
+        }
         return {
             originalNft: info.originalNft,
             originalTokenId: info.originalTokenId.toString(),
-            owner: info.owner,
+            owner: currentOwner,
+            originalOwner: info.owner,
             validUntil: Number(info.validUntil),
             active: info.active
         };
@@ -153,14 +166,40 @@ export class WrappedLeasingService {
     /** Check FeeManager configured */
     async isFeeManagerConfigured() {
         try {
+            // Return cached result if still valid
+            const now = Date.now();
+            if (this.feeManagerConfiguredCache !== null && 
+                this.feeManagerCacheTime && 
+                (now - this.feeManagerCacheTime) < this.feeManagerCacheTTL) {
+                return this.feeManagerConfiguredCache;
+            }
+
             const feeManagerAddr = await this.contract.feeManager();
             const isConfigured = feeManagerAddr && feeManagerAddr !== '0x0000000000000000000000000000000000000000';
-            console.log(`FeeManager check: address=${feeManagerAddr}, configured=${isConfigured}`);
+            
+            // Only log if status changed or if not configured (to help with debugging)
+            if (this.feeManagerConfiguredCache !== isConfigured || !isConfigured) {
+                console.log(`FeeManager check: address=${feeManagerAddr}, configured=${isConfigured}`);
+            }
+            
+            // Update cache
+            this.feeManagerConfiguredCache = isConfigured;
+            this.feeManagerCacheTime = now;
+            
             return isConfigured;
         } catch (error) {
             console.error('Error checking FeeManager:', error);
+            // Don't cache errors
+            this.feeManagerConfiguredCache = null;
+            this.feeManagerCacheTime = null;
             return false;
         }
+    }
+    
+    /** Clear FeeManager cache (call this after setting FeeManager) */
+    clearFeeManagerCache() {
+        this.feeManagerConfiguredCache = null;
+        this.feeManagerCacheTime = null;
     }
 
     /** Set FeeManager address (admin only) */
@@ -179,6 +218,9 @@ export class WrappedLeasingService {
                 feeManagerAddress,
                 transactionHash: receipt.transactionHash
             });
+            
+            // Clear cache so next check will get fresh data
+            this.clearFeeManagerCache();
             
             return {
                 success: true,

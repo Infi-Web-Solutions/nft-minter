@@ -95,6 +95,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     }
 
     /// List NFT for rent (custodial)
+    /// Supports both regular NFTs and wNFTs (wrapped NFTs)
     function listForRent(
         address nft,
         uint256 tokenId,
@@ -107,12 +108,21 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         require(pricePerSecond > 0, "price>0");
         require(minDuration > 0 && maxDuration >= minDuration, "bad duration");
 
+        // If listing a wNFT, validate it's active and not expired
+        if (nft == address(wrappedContract)) {
+            (bool isActive, uint256 timeRemaining) = wrappedContract.getLeaseStatus(tokenId);
+            require(isActive, "wNFT not active");
+            require(timeRemaining > 0, "wNFT expired");
+            // Borrower (current holder) can list their wNFT
+            // msg.sender already verified as owner via token.ownerOf check above
+        }
+
         // Custody the NFT
         token.transferFrom(msg.sender, address(this), tokenId);
 
         listingCounter++;
         listings[listingCounter] = LeaseListing({
-            owner: msg.sender,
+            owner: msg.sender, // For wNFTs, this is the borrower (current wNFT holder)
             nft: nft,
             tokenId: tokenId,
             pricePerSecond: pricePerSecond,
@@ -125,6 +135,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     }
 
     /// Cancel listing before it is rented
+    /// Returns NFT/wNFT back to the lister (borrower for wNFTs)
     function cancelListing(uint256 listingId) external nonReentrant whenNotPaused {
         LeaseListing storage ls = listings[listingId];
         require(ls.status == ListingStatus.Active, "not active");
@@ -132,11 +143,16 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         require(ls.owner == msg.sender || hasRole(ADMIN_ROLE, msg.sender), "not allowed");
 
         ls.status = ListingStatus.Cancelled;
+        
+        // Return NFT/wNFT to the lister
+        // For wNFTs, this returns it to the borrower who listed it
         IERC721(ls.nft).transferFrom(address(this), ls.owner, ls.tokenId);
+        
         emit LeaseCancelled(listingId);
     }
 
     /// Rent an active listing; pays rent + platform fee + deposit; mints wrapped lease to renter
+    /// Handles both regular NFTs and wNFTs
     function rent(uint256 listingId, uint256 durationSeconds) external payable nonReentrant whenNotPaused {
         LeaseListing storage ls = listings[listingId];
         require(ls.status == ListingStatus.Active, "not rentable");
@@ -148,7 +164,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint16 wrapBps = wrapFeeBps == 0 ? feeManager.leasingFeeBps() : wrapFeeBps;
         uint256 deposit = feeManager.calcBps(rentAmount, depositBps);
         uint256 platformFee = feeManager.calcBps(rentAmount, platformBps);
-        uint256 wrapFee = feeManager.calcBps(durationSeconds, wrapBps); // mirrors WrappedLeasing fee calc
+        uint256 wrapFee = feeManager.calcBps(durationSeconds, wrapBps);
 
         uint256 totalRequired = rentAmount + deposit + platformFee + wrapFee;
         require(msg.value >= totalRequired, "insufficient payment");
@@ -160,7 +176,8 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         IERC721(ls.nft).approve(address(wrappedContract), ls.tokenId);
 
         // Mint wrapped lease to renter
-        uint256 wId = wrappedContract.wrap{value: wrapFee}(ls.nft, ls.tokenId, msg.sender, durationSeconds, "");
+        // For both wNFT and regular NFT listings, original owner is ls.owner (borrower for wNFTs, NFT owner for regular NFTs)
+        uint256 wId = wrappedContract.wrap{value: wrapFee}(ls.nft, ls.tokenId, msg.sender, durationSeconds, "", ls.owner);
 
         uint256 expiresAt = block.timestamp + durationSeconds;
         rentals[listingId] = RentalInfo({

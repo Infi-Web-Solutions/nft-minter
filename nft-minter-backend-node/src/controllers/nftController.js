@@ -1398,8 +1398,13 @@ export const getExternalNft = async (req, res) => {
         
         // Always check internal database first for ANY contract
         // This handles NFTs that were minted through this platform
-        console.log(`[DEBUG] Checking internal database for token_id: ${token_id}`);
-        const internalNft = await NFT.findOne({ token_id: parseInt(token_id) });
+        console.log(`[DEBUG] Checking internal database for contract: ${contract_address}, token_id: ${token_id}`);
+        // Match by BOTH token_id and contract_address to avoid collisions between
+        // different NFT contracts (e.g. original collection vs WrappedLeasing wNFTs)
+        const internalNft = await NFT.findOne({
+            token_id: parseInt(token_id),
+            contract_address: contract_address.toLowerCase()
+        });
         
         if (internalNft) {
             console.log(`[DEBUG] Found NFT in internal database - Name: ${internalNft.name}`);

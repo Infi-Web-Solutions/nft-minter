@@ -24,7 +24,7 @@ class WrappedLeasingApiService {
       
       // WrappedLeasing ABI
       const wrappedLeasingAbi = [
-        "function wrap(address nftContract, uint256 tokenId, address renterAddress, uint256 durationSeconds, string metadataURI) external payable",
+        "function wrap(address nftContract, uint256 tokenId, address renterAddress, uint256 durationSeconds, string metadataURI, address originalOwner) external payable",
         "function unwrap(uint256 wId) external",
         "function getWrapped(uint256 wId) external view returns (address originalNft, uint256 originalTokenId, address owner, uint256 validUntil, bool active)",
         "function getLeaseStatus(uint256 wId) external view returns (bool isActive, uint256 timeRemaining)",
@@ -152,12 +152,14 @@ class WrappedLeasingApiService {
       }
 
       // Perform the wrap transaction
+      // When wrapping directly (not through marketplace), the current user is the original owner
       const tx = await this.wrappedLeasingContract!.wrap(
         nftContract,
         tokenId,
         renterAddress,
         durationSeconds,
         "", // metadata URI
+        currentAddress, // originalOwner - the current user who owns the NFT
         { value: validation.feeWithBufferWei }
       );
 
@@ -285,6 +287,19 @@ class WrappedLeasingApiService {
     } catch (error: any) {
       console.error('Get lease status API error:', error.response?.data || error.message);
       throw new Error(error.response?.data?.error || 'Failed to get lease status');
+    }
+  }
+
+  /**
+   * Get combined wrapped NFT details (DB + rental info)
+   */
+  async getWrappedDetails(wId: string) {
+    try {
+      const response = await this.api.get(`/details/${wId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get wrapped details API error:', error.response?.data || error.message);
+      throw new Error(error.response?.data?.error || 'Failed to get wrapped NFT details');
     }
   }
 
