@@ -27,6 +27,8 @@ import LendingMarketplace from "./pages/LendingMarketplace";
 import TransactionHistory from "./pages/TransactionHistory";
 import RentalHistory from "./pages/RentalHistory";
 import WrappedNFTDetails from "./pages/WrappedNFTDetails";
+import MakeOffer from "./pages/MakeOffer";
+import AdminOffers from "./pages/AdminOffers";
 import { LikedNFTsProvider } from '@/contexts/LikedNFTsContext';
 
 const queryClient = new QueryClient();
@@ -43,7 +45,7 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/marketplace" element={<Marketplace />} />
-      
+
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/profile/:walletAddress" element={<UserProfile />} />
                 <Route path="/create" element={<Create />} />
@@ -57,6 +59,8 @@ const App = () => (
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/nft/:id" element={<NFTDetails />} />
                 <Route path="/wnft/:wId" element={<WrappedNFTDetails />} />
+                <Route path="/nft/:id/offer" element={<MakeOffer />} />
+                <Route path="/admin/offers" element={<AdminOffers />} />
                 <Route path="/favorites" element={<Favorites />} />
                 <Route path="/lending" element={<LendingMarketplace />} />
                 <Route path="/history" element={<TransactionHistory />} />

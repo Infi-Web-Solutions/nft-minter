@@ -176,6 +176,15 @@ const Navbar = () => {
                             <p className="text-sm text-muted-foreground">Fund loans and earn interest</p>
                           </Link>
                         </NavigationMenuLink>
+                        <NavigationMenuLink asChild>
+                          <Link
+                            to="/admin/offers"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <div className="text-sm font-medium">Admin Offers</div>
+                            <p className="text-sm text-muted-foreground">Manage all NFT offers</p>
+                          </Link>
+                        </NavigationMenuLink>
                       </div>
                     </NavigationMenuContent>
                   </NavigationMenuItem>
@@ -423,9 +432,9 @@ const Navbar = () => {
 
 
       <WalletConnectionModal open={showWalletModal} onOpenChange={setShowWalletModal} />
-      <CollateralLeasingSidebar 
-        open={showCollateralModal} 
-        onOpenChange={setShowCollateralModal} 
+      <CollateralLeasingSidebar
+        open={showCollateralModal}
+        onOpenChange={setShowCollateralModal}
         initialLeasingType={sidebarLeasingType}
       />
     </>

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import NFT from '../models/nft.js';
 import Transaction from '../models/transaction.js';
 import web3Utils from '../utils/web3Utils.js';
@@ -514,7 +515,7 @@ export const getCombinedNfts = async (req, res) => {
             const favorites = await Favorite.find({ user_address });
             liked_nft_ids = new Set(favorites.map(fav => fav.nft.toString()));
         }
-        const local_nfts = await NFT.find().limit(50);
+        const local_nfts = await NFT.find().sort({ created_at: -1 }).limit(100);
         const local_nfts_data = await Promise.all(local_nfts.map(async (nft) => {
             const like_count = await Favorite.countDocuments({ nft: nft._id });
             return {
@@ -1542,7 +1543,41 @@ export const getExternalNft = async (req, res) => {
             : null;
         const isListed = !!(listing && listing.isActive && listing.priceEth);
 
-        // Format response similar to internal NFTs
+        // Save to database so it appears in the marketplace
+        // Use upsert to prevent duplicates
+        try {
+            const newNftData = {
+                token_id: parseInt(token_id),
+                contract_address: contract_address.toLowerCase(),
+                name: nftData.name || `External NFT #${token_id}`,
+                description: nftData.description || '',
+                image_url: nftData.image || '',
+                token_uri: nftData.token_uri || '',
+                owner_address: nftData.owner_address,
+                creator_address: nftData.owner_address, // Assume owner is creator for external
+                nft_collection: nftData.collection_name || 'External Collection',
+                category: 'External NFT',
+                price: priceEth,
+                is_listed: isListed,
+                is_auction: listing ? !!listing.isAuction : false,
+                // Don't overwrite existing creation date if it exists
+            };
+
+            const savedNft = await NFT.findOneAndUpdate(
+                {
+                    token_id: parseInt(token_id),
+                    contract_address: contract_address.toLowerCase()
+                },
+                { $set: newNftData },
+                { new: true, upsert: true, setDefaultsOnInsert: true }
+            );
+
+            console.log(`[DEBUG] External NFT saved/updated in database: ${savedNft._id}`);
+        } catch (dbError) {
+            console.error('[ERROR] Failed to save external NFT to database:', dbError);
+            // Continue execution, don't fail the request just because save failed
+        }
+
         const formattedData = {
             id: `external_${contract_address}_${token_id}`,
             nft_address: `${contract_address}:${token_id}`,
@@ -1583,5 +1618,82 @@ export const getExternalNft = async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+};
+// Create an offer (bid) for an NFT
+
+export const createOffer = async (req, res) => {
+    try {
+        let { token_id } = req.params;
+        const { from_address, price, transaction_hash, block_number, gas_used, gas_price } = req.body;
+
+        console.log(`[DEBUG] createOffer called for token_id: ${token_id}`);
+        console.log('[DEBUG] Offer data:', req.body);
+
+        if (!from_address || !price) {
+            return res.status(400).json({ success: false, error: 'Missing required fields' });
+        }
+
+        // Strip the "local_" prefix if present (frontend sends IDs like "local_694926a96d2b1e5de5217aa6")
+        if (token_id.startsWith('local_')) {
+            token_id = token_id.replace('local_', '');
+            console.log(`[DEBUG] Stripped local_ prefix, new token_id: ${token_id}`);
+        }
+
+        // Find the NFT
+        let nft = null;
+
+        // Check if token_id is a valid number (for token_id lookup)
+        if (!isNaN(token_id)) {
+            nft = await NFT.findOne({ token_id: token_id });
+        }
+
+        // If not found by token_id, try by _id if it's a valid ObjectId
+        if (!nft && mongoose.Types.ObjectId.isValid(token_id)) {
+            nft = await NFT.findById(token_id);
+        }
+
+        if (!nft) {
+            console.log(`[DEBUG] NFT not found for token_id: ${token_id}`);
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
+
+        // Create Transaction record
+        const transaction = new Transaction({
+            transaction_hash: transaction_hash || `OFFER_${Date.now()}_${Math.random().toString(36).substring(7)}`, // Generate dummy hash if off-chain
+            nft: nft._id,
+            from_address: from_address.toLowerCase(),
+            to_address: nft.owner_address.toLowerCase(),
+            transaction_type: 'bid',
+            price: price,
+            block_number: block_number || 0,
+            gas_used: gas_used || 0,
+            gas_price: gas_price || 0,
+            timestamp: new Date()
+        });
+
+        await transaction.save();
+        console.log('[DEBUG] Offer transaction saved:', transaction._id);
+
+        // Update current_bid on NFT if it's an auction and this is higher
+        if (nft.is_auction && price > (nft.current_bid || 0)) {
+            nft.current_bid = price;
+            nft.highest_bidder = from_address.toLowerCase();
+            await nft.save();
+            console.log('[DEBUG] Updated NFT current_bid');
+        }
+
+        return res.status(201).json({
+            success: true,
+            data: transaction
+        });
+
+    } catch (error) {
+        console.error('[ERROR] createOffer:', error);
+        // Handle duplicate key error (if we generated a colliding hash, unlikely but possible)
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, error: 'Duplicate transaction hash' });
+        }
+        return res.status(500).json({ success: false, error: error.message });
     }
 };

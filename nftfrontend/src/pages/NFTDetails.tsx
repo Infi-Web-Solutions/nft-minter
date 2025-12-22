@@ -10,11 +10,11 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 
 import { toast } from 'sonner';
-import { 
-  Heart, 
-  Share2, 
-  MoreHorizontal, 
-  Eye, 
+import {
+  Heart,
+  Share2,
+  MoreHorizontal,
+  Eye,
   TrendingUp,
   Clock,
   Users,
@@ -65,31 +65,31 @@ const NFTDetails = () => {
     getNFTMarketplaceAddress().then(setContractAddress).catch(console.error);
   }, []);
 
-// 3️⃣ Fetch following list for the current user
-useEffect(() => {
-  if (!address) {
-    setFollowing([]);
-    return;
-  }
+  // 3️⃣ Fetch following list for the current user
+  useEffect(() => {
+    if (!address) {
+      setFollowing([]);
+      return;
+    }
 
-  const fetchFollowing = async () => {
-    try {
-      console.log('[NFTDetails] Fetching following for user:', address);
-      const res = await fetch(apiUrl(`/users/${address}/following/`));
-      const data = await res.json();
-      if (data.success) {
-        setFollowing(data.following || []);
-      } else {
+    const fetchFollowing = async () => {
+      try {
+        console.log('[NFTDetails] Fetching following for user:', address);
+        const res = await fetch(apiUrl(`/users/${address}/following/`));
+        const data = await res.json();
+        if (data.success) {
+          setFollowing(data.following || []);
+        } else {
+          setFollowing([]);
+        }
+      } catch (error) {
+        console.error('[NFTDetails] Error fetching following:', error);
         setFollowing([]);
       }
-    } catch (error) {
-      console.error('[NFTDetails] Error fetching following:', error);
-      setFollowing([]);
-    }
-  };
+    };
 
-  fetchFollowing();
-}, [address]);
+    fetchFollowing();
+  }, [address]);
 
   useEffect(() => {
     if (!id) return;
@@ -114,10 +114,10 @@ useEffect(() => {
           navigate('/');
           return;
         }
-        
+
         setNFT(nftData);
         setImageLoading(true); // Reset image loading state
-        
+
         // Debug image data
         console.log('[NFTDetails] NFT Data:', {
           id: nftData.id,
@@ -126,7 +126,7 @@ useEffect(() => {
           token_uri: nftData.token_uri,
           liked: nftData.liked
         });
-        
+
         // Test image URL conversion
         if (nftData.image_url) {
           const testUrl = nftData.image_url;
@@ -136,15 +136,15 @@ useEffect(() => {
             console.log('[NFTDetails] Converted Image URL:', convertedUrl);
           }
         }
-        
 
-        
+
+
         // Fetch owner and creator profiles if addresses are available
         if (nftData.owner_address) {
           try {
             const ownerRes = await fetch(apiUrl(`/profiles/${nftData.owner_address}/`));
             if (ownerRes.ok) {
-            const ownerData = await ownerRes.json();
+              const ownerData = await ownerRes.json();
               if (ownerData.success) {
                 setOwner(ownerData.data || ownerData);
               } else {
@@ -175,12 +175,12 @@ useEffect(() => {
             });
           }
         }
-        
+
         if (nftData.creator_address) {
           try {
             const creatorRes = await fetch(apiUrl(`/profiles/${nftData.creator_address}/`));
             if (creatorRes.ok) {
-            const creatorData = await creatorRes.json();
+              const creatorData = await creatorRes.json();
               if (creatorData.success) {
                 setCreator(creatorData.data || creatorData);
               } else {
@@ -211,10 +211,10 @@ useEffect(() => {
             });
           }
         }
-        
+
         // Fetch NFT statistics and properties
         await fetchNFTStats(nftData);
-        
+
       } catch (e) {
         console.error('Error fetching NFT:', e);
         toast.error('Failed to load NFT');
@@ -223,7 +223,7 @@ useEffect(() => {
         setLoading(false);
       }
     };
-    
+
     fetchNFT();
   }, [id, navigate]);
 
@@ -264,7 +264,7 @@ useEffect(() => {
             setMintTransactionHash(mintTx.transaction_hash);
           }
         }
-      } catch (e) { 
+      } catch (e) {
         console.error('Failed to fetch activity:', e);
       }
     };
@@ -276,7 +276,7 @@ useEffect(() => {
     if (nft) {
       setCurrentGatewayIndex(0);
       setImageLoading(true);
-      
+
       // Track view when NFT loads
       trackNFTView();
     }
@@ -284,7 +284,7 @@ useEffect(() => {
 
   const trackNFTView = async () => {
     if (!nft?.id) return;
-    
+
     try {
       const response = await fetch(apiUrl(`/nfts/${nft.id}/track-view/`), {
         method: 'POST',
@@ -295,7 +295,7 @@ useEffect(() => {
           viewer_address: address || null
         })
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         console.log('[NFTDetails] View tracked:', data.view_count);
@@ -410,12 +410,12 @@ useEffect(() => {
       toast.success('Purchase successful!', { id: 'buy' });
     } catch (err: any) {
       console.error('[NFTDetails] Buy failed:', err);
-      
+
       // Handle user rejection
-      if (err?.code === 4001 || 
-          err?.code === 'ACTION_REJECTED' || 
-          err?.message?.includes('User denied') || 
-          err?.message?.includes('user rejected')) {
+      if (err?.code === 4001 ||
+        err?.code === 'ACTION_REJECTED' ||
+        err?.message?.includes('User denied') ||
+        err?.message?.includes('user rejected')) {
         toast.error('Transaction cancelled by user', { id: 'buy' });
         return;
       }
@@ -426,9 +426,7 @@ useEffect(() => {
         return;
       }
 
-      const message = err?.message || 'Failed to buy NFT';
-      toast.error(message, { id: 'buy' });
-    }
+    };
   };
 
   const handleMakeOffer = () => {
@@ -436,7 +434,7 @@ useEffect(() => {
       toast.error('Please connect your wallet first');
       return;
     }
-    toast.info('Make offer functionality coming soon!');
+    navigate(`/nft/${id}/offer`);
   };
 
   const copyToClipboard = (text: string) => {
@@ -472,14 +470,14 @@ useEffect(() => {
   // Get real NFT image URL with proper IPFS handling and fallback gateways
   const getNFTImageUrl = () => {
     if (!nft) return '';
-    
+
     let imageUrl = nft.image_url || '';
-    
+
     // If no direct image URL, try to get from blockchain data
     if (!imageUrl && nft.blockchain_data && nft.blockchain_data.image) {
       imageUrl = nft.blockchain_data.image;
     }
-    
+
     // Handle IPFS URLs with multiple gateway fallbacks
     if (imageUrl && imageUrl.startsWith('ipfs://')) {
       const ipfsHash = imageUrl.replace('ipfs://', '');
@@ -490,27 +488,27 @@ useEffect(() => {
         `https://dweb.link/ipfs/${ipfsHash}`,
         `https://ipfs.infura.io/ipfs/${ipfsHash}`
       ];
-      
+
       // Use current gateway index or default to first
       const selectedGateway = gateways[currentGatewayIndex] || gateways[0];
       imageUrl = selectedGateway;
-      
+
       console.log('[NFTDetails] IPFS URL converted to:', imageUrl);
       console.log('[NFTDetails] Using gateway index:', currentGatewayIndex);
       console.log('[NFTDetails] Available gateways:', gateways);
     }
-    
+
     // Handle other IPFS formats
     if (imageUrl && imageUrl.includes('ipfs/') && !imageUrl.startsWith('http')) {
       imageUrl = `https://ipfs.io/${imageUrl}`;
     }
-    
+
     // Ensure we have a valid URL
     if (!imageUrl || imageUrl === '') {
       console.log('[NFTDetails] No valid image URL found, using fallback');
       return '';
     }
-    
+
     console.log('[NFTDetails] Final Image URL:', imageUrl);
     return imageUrl;
   };
@@ -528,7 +526,7 @@ useEffect(() => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       {/* Back Button */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
         <Button
@@ -543,28 +541,28 @@ useEffect(() => {
 
       {/* Cover Image */}
       <div className="relative h-64 md:h-80 w-full overflow-hidden">
-        <img 
-          src={getNFTImageUrl()} 
-          alt="NFT Cover" 
+        <img
+          src={getNFTImageUrl()}
+          alt="NFT Cover"
           className="w-full h-full object-cover"
           onError={(e) => {
             const img = e.currentTarget;
             const currentSrc = img.src;
             console.error('[NFTDetails] Cover image failed to load:', currentSrc);
-            
+
             // Check if this is an IPFS URL and we can try another gateway
-            if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') || 
-                currentSrc.includes('cloudflare-ipfs.com') || currentSrc.includes('dweb.link') || 
-                currentSrc.includes('ipfs.infura.io')) {
-              
+            if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') ||
+              currentSrc.includes('cloudflare-ipfs.com') || currentSrc.includes('dweb.link') ||
+              currentSrc.includes('ipfs.infura.io')) {
+
               // Try next gateway
               const nextGatewayIndex = currentGatewayIndex + 1;
               if (nextGatewayIndex < 5) { // We have 5 gateways
                 console.log('[NFTDetails] Trying next gateway for cover, index:', nextGatewayIndex);
                 setCurrentGatewayIndex(nextGatewayIndex);
-                
-                                         // Force re-render by updating the image URL
-                         const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
+
+                // Force re-render by updating the image URL
+                const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
                 const gateways = [
                   `https://ipfs.io/ipfs/${ipfsHash}`,
                   `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
@@ -572,14 +570,14 @@ useEffect(() => {
                   `https://dweb.link/ipfs/${ipfsHash}`,
                   `https://ipfs.infura.io/ipfs/${ipfsHash}`
                 ];
-                
+
                 if (gateways[nextGatewayIndex]) {
                   img.src = gateways[nextGatewayIndex];
                   return; // Don't set fallback yet, try the new gateway
                 }
               }
             }
-            
+
             // If all gateways failed or it's not an IPFS URL, use fallback
             img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVCBDb3ZlcjwvdGV4dD48L3N2Zz4=';
           }}
@@ -599,8 +597,8 @@ useEffect(() => {
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
                   </div>
                 )}
-                <img 
-                  src={getNFTImageUrl()} 
+                <img
+                  src={getNFTImageUrl()}
                   alt={nft.name}
                   className="w-full h-full object-cover transition-smooth hover:scale-105"
                   onLoad={() => setImageLoading(false)}
@@ -609,18 +607,18 @@ useEffect(() => {
                     const img = e.currentTarget;
                     const currentSrc = img.src;
                     console.error('[NFTDetails] Image failed to load:', currentSrc);
-                    
+
                     // Check if this is an IPFS URL and we can try another gateway
-                    if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') || 
-                        currentSrc.includes('cloudflare-ipfs.com') || currentSrc.includes('dweb.link') || 
-                        currentSrc.includes('ipfs.infura.io')) {
-                      
+                    if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') ||
+                      currentSrc.includes('cloudflare-ipfs.com') || currentSrc.includes('dweb.link') ||
+                      currentSrc.includes('ipfs.infura.io')) {
+
                       // Try next gateway
                       const nextGatewayIndex = currentGatewayIndex + 1;
                       if (nextGatewayIndex < 5) { // We have 5 gateways
                         console.log('[NFTDetails] Trying next gateway, index:', nextGatewayIndex);
                         setCurrentGatewayIndex(nextGatewayIndex);
-                        
+
                         // Force re-render by updating the image URL
                         const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
                         const gateways = [
@@ -630,14 +628,14 @@ useEffect(() => {
                           `https://dweb.link/ipfs/${ipfsHash}`,
                           `https://ipfs.infura.io/ipfs/${ipfsHash}`
                         ];
-                        
+
                         if (gateways[nextGatewayIndex]) {
                           img.src = gateways[nextGatewayIndex];
                           return; // Don't set fallback yet, try the new gateway
                         }
                       }
                     }
-                    
+
                     // If all gateways failed or it's not an IPFS URL, use fallback
                     img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVCBJbWFnZTwvdGV4dD48L3N2Zz4=';
                   }}
@@ -736,15 +734,15 @@ useEffect(() => {
                         <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
                           {mintTransactionHash}
                         </code>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="icon"
                           onClick={() => copyToClipboard(mintTransactionHash)}
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="icon"
                           onClick={() => window.open(`https://sepolia.etherscan.io/tx/${mintTransactionHash}`, '_blank')}
                         >
@@ -754,7 +752,7 @@ useEffect(() => {
                     </div>
                   )}
 
-                
+
                   {/* Contract Address */}
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Contract Address</h3>
@@ -762,16 +760,16 @@ useEffect(() => {
                       <code className="text-sm text-muted-foreground flex-1 overflow-hidden text-ellipsis">
                         {contractAddress || 'Loading...'}
                       </code>
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         size="icon"
                         onClick={() => copyToClipboard(contractAddress)}
                         disabled={!contractAddress}
                       >
                         <Copy className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
+                      <Button
+                        variant="ghost"
                         size="icon"
                         onClick={() => window.open(`https://sepolia.etherscan.io/address/${contractAddress}`, '_blank')}
                         disabled={!contractAddress}
@@ -860,7 +858,7 @@ useEffect(() => {
 
                 {nft.is_listed && !isOwner && (
                   <div className="grid grid-cols-2 gap-3">
-                    <Button 
+                    <Button
                       className="bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 transition-smooth"
                       onClick={handleBuyNow}
                     >
@@ -890,7 +888,7 @@ useEffect(() => {
             {/* Creator Info */}
             <Card className="glass-card p-6">
               <h3 className="text-lg font-semibold mb-4">Creator</h3>
-              <div 
+              <div
                 className="flex items-center gap-3 mb-4 cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
                 onClick={() => navigate(`/profile/${nft.creator_address}`)}
               >
@@ -956,12 +954,12 @@ useEffect(() => {
               >
                 {following.some(f => f.wallet_address === creator?.wallet_address) ? 'Unfollow' : 'Follow Creator'}
               </Button>
-        </Card>
+            </Card>
 
             {/* Current Owner Info */}
             <Card className="glass-card p-6">
               <h3 className="text-lg font-semibold mb-4">Current Owner</h3>
-              <div 
+              <div
                 className="flex items-center gap-3 mb-4 cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
                 onClick={() => navigate(`/profile/${nft.owner_address}`)}
               >
@@ -970,8 +968,8 @@ useEffect(() => {
                   <AvatarFallback>
                     {getProfileDisplayName(owner, nft.owner_address).slice(0, 2).toUpperCase()}
                   </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1">
+                </Avatar>
+                <div className="flex-1">
                   <div className="font-semibold flex items-center gap-2">
                     {getProfileDisplayName(owner, nft.owner_address)}
                     {owner?.verified && (
@@ -979,7 +977,7 @@ useEffect(() => {
                         <div className="w-2 h-2 rounded-full bg-white" />
                       </div>
                     )}
-                    </div>
+                  </div>
                   <div className="text-sm text-muted-foreground break-all overflow-hidden text-ellipsis max-w-[200px]">
                     {nft.owner_address}
                   </div>
@@ -1021,7 +1019,7 @@ useEffect(() => {
                   </span>
                 </div>
               </div>
-              </Card>
+            </Card>
           </div>
         </div>
       </div>

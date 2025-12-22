@@ -21,7 +21,8 @@ import {
     trackNftView,
     getCollections,
     getExternalNft,
-    setNftRentable
+    setNftRentable,
+    createOffer
 } from '../controllers/nftController.js';
 
 const router = express.Router();
@@ -58,5 +59,6 @@ router.post('/:nft_id/track-view/', trackNftView);
 router.post('/:nft_id/toggle-like/', toggleNftLike);
 router.post('/:token_id/set_listed/', setNftListed);
 router.post('/:token_id/set_rentable/', setNftRentable);
+router.post('/:token_id/offers/create/', createOffer);
 
 export default router;

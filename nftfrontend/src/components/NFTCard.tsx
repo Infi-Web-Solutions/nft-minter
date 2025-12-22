@@ -51,9 +51,22 @@ const getImageUrl = (url: string) => {
   if (!url) return url;
   // Strip any extra query params
   const clean = url.split('?')[0];
+
   if (clean.startsWith('ipfs://')) {
-    return clean.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+    // Handle ipfs://ipfs/HASH and ipfs://HASH
+    const hash = clean.replace('ipfs://', '').replace('ipfs/', '');
+    return `https://gateway.pinata.cloud/ipfs/${hash}`;
   }
+
+  // Handle cases where the URL might be a gateway URL but we want to standardize
+  // This ensures we always start with our primary gateway (Pinata) and fallback from there
+  if (clean.includes('/ipfs/')) {
+    const hash = clean.split('/ipfs/')[1];
+    if (hash) {
+      return `https://gateway.pinata.cloud/ipfs/${hash}`;
+    }
+  }
+
   return clean;
 };
 
@@ -403,6 +416,14 @@ const NFTCard = ({
     }
   };
 
+  // Determine effective badge type based on loan status
+  let displayBadge = nftType;
+  if (loanStatus === 'Requested') {
+    displayBadge = 'Loan Request' as any;
+  } else if (loanStatus === 'Funded') {
+    displayBadge = 'Loan Active' as any;
+  }
+
   // Helper to get badge color
   const getBadgeColor = (type: string) => {
     switch (type) {
@@ -413,6 +434,8 @@ const NFTCard = ({
       case 'For Sale': return 'bg-blue-600 hover:bg-blue-700';
       case 'wNFT': return 'bg-purple-600 hover:bg-purple-700';
       case 'wwNFT': return 'bg-indigo-600 hover:bg-indigo-700';
+      case 'Loan Request': return 'bg-pink-600 hover:bg-pink-700';
+      case 'Loan Active': return 'bg-amber-600 hover:bg-amber-700';
       default: return 'bg-gray-600 hover:bg-gray-700'; // NFT
     }
   };
@@ -425,8 +448,8 @@ const NFTCard = ({
       <div className="relative aspect-square overflow-hidden bg-muted">
         {/* NFT Type Badge */}
         <div className="absolute top-3 left-3 z-10">
-          <Badge className={`${getBadgeColor(nftType)} text-white border-0`}>
-            {nftType}
+          <Badge className={`${getBadgeColor(displayBadge)} text-white border-0`}>
+            {displayBadge}
           </Badge>
         </div>
 
@@ -440,7 +463,7 @@ const NFTCard = ({
             src={getImageUrl(image)}
             alt={title}
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={(e) => {
+            onError={async (e) => {
               const img = e.target as HTMLImageElement;
               const currentSrc = img.src;
               console.warn('[NFTCard] Image failed to load:', currentSrc);
@@ -450,38 +473,64 @@ const NFTCard = ({
                 'https://gateway.pinata.cloud/ipfs/',
                 'https://dweb.link/ipfs/',
                 'https://cloudflare-ipfs.com/ipfs/',
+                'https://nftstorage.link/ipfs/',
                 'https://ipfs.io/ipfs/'
               ];
 
-              // Extract hash from current URL if possible
+              // Extract hash from current URL
               let hash = '';
-              for (const gw of gateways) {
-                if (currentSrc.includes(gw)) {
-                  hash = currentSrc.split(gw)[1];
-                  console.log(`[NFTCard] Extracted hash: ${hash} from gateway: ${gw}`);
-                  break;
-                }
+
+              // Try to find /ipfs/ in the URL
+              const ipfsIndex = currentSrc.indexOf('/ipfs/');
+              if (ipfsIndex !== -1) {
+                hash = currentSrc.substring(ipfsIndex + 6);
               }
 
               if (!hash) {
                 console.warn('[NFTCard] Could not extract hash from URL:', currentSrc);
+                // Fallback to placeholder immediately if no hash found
+                img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
+                return;
               }
 
-              // If we found a hash, try the next gateway
-              if (hash) {
-                const currentGatewayIndex = gateways.findIndex(gw => currentSrc.includes(gw));
-                if (currentGatewayIndex !== -1 && currentGatewayIndex < gateways.length - 1) {
-                  const nextGateway = gateways[currentGatewayIndex + 1];
-                  console.log(`[NFTCard] Retrying with next gateway: ${nextGateway}`);
-                  img.src = `${nextGateway}${hash}`;
-                  return;
-                } else {
-                  console.warn('[NFTCard] All gateways exhausted or unknown gateway.');
+              // Determine which gateway we just tried
+              const currentGateway = gateways.find(gw => currentSrc.startsWith(gw));
+              let nextGatewayIndex = 0;
+
+              if (currentGateway) {
+                nextGatewayIndex = gateways.indexOf(currentGateway) + 1;
+              }
+
+              if (nextGatewayIndex < gateways.length) {
+                const nextGateway = gateways[nextGatewayIndex];
+                console.log(`[NFTCard] Retrying with next gateway: ${nextGateway}`);
+                img.src = `${nextGateway}${hash}`;
+              } else {
+                console.warn('[NFTCard] All gateways exhausted. Checking if this is metadata JSON...');
+
+                // Try to fetch it as JSON, maybe it's metadata?
+                try {
+                  // Use the first gateway (Pinata) for this check as it's most reliable
+                  const metadataUrl = `https://gateway.pinata.cloud/ipfs/${hash}`;
+                  const response = await fetch(metadataUrl);
+                  if (response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                      const metadata = await response.json();
+                      if (metadata.image) {
+                        console.log('[NFTCard] Found image in metadata JSON:', metadata.image);
+                        // Recursively use getImageUrl to handle the new IPFS URI
+                        img.src = getImageUrl(metadata.image);
+                        return;
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.error('[NFTCard] Failed to check metadata:', err);
                 }
-              }
 
-              // Fallback to placeholder if all gateways fail or no hash found
-              img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
+                img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
+              }
             }}
           />
         )}

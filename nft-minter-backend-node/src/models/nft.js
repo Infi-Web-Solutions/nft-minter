@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const nftSchema = new mongoose.Schema({
-    token_id: { type: Number, unique: true, required: true },
+    token_id: { type: Number, required: true },
     name: { type: String, required: true },
     description: { type: String },
     image_url: { type: String },
@@ -23,6 +23,9 @@ const nftSchema = new mongoose.Schema({
     created_at: { type: Date, default: Date.now },
     updated_at: { type: Date, default: Date.now }
 });
+
+// Compound index to ensure token_id is unique per contract_address
+nftSchema.index({ token_id: 1, contract_address: 1 }, { unique: true });
 
 const NFT = mongoose.model('NFT', nftSchema);
 export default NFT;

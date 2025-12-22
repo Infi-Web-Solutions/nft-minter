@@ -28,10 +28,23 @@ export function apiUrl(path: string): string {
   return `${cleanBaseUrl}${cleanPath}`;
 }
 
+// Helper to build full media URLs safely
+export function mediaUrl(path: string): string {
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) return path;
+
+  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  // Remove trailing slash from base URL if exists
+  const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+  // Remove leading slash from path if exists
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${cleanBaseUrl}${cleanPath}`;
+}
+
 // Helper to add Sepolia network to MetaMask
 export async function addSepoliaNetwork() {
   if (!window.ethereum) return false;
-  
+
   try {
     await window.ethereum.request({
       method: 'wallet_addEthereumChain',
@@ -53,7 +66,7 @@ export async function addSepoliaNetwork() {
 // Helper to switch to Sepolia network
 export async function switchToSepoliaNetwork() {
   if (!window.ethereum) return false;
-  
+
   try {
     await window.ethereum.request({
       method: 'wallet_switchEthereumChain',
