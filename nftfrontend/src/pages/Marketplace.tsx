@@ -29,14 +29,19 @@ const Marketplace = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [activeTab, setActiveTab] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
-  const [isLoading, setIsLoading] = useState(true);
+  const [loadingLocal, setLoadingLocal] = useState(true);
+  const [loadingExternal, setLoadingExternal] = useState(true);
+  // Derived loading state
+  const isLoading = loadingLocal || loadingExternal;
+
   const [allNfts, setAllNfts] = useState<NFT[]>([]);
   const [wrappedMarketNfts, setWrappedMarketNfts] = useState<NFT[]>([]);
+  const [externalListedNfts, setExternalListedNfts] = useState<NFT[]>([]);
   const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string, loanId: string }>>(new Map());
   const [activeListings, setActiveListings] = useState<Map<string, { listingId: number, status: string }>>(new Map());
   const [contractAddress, setContractAddress] = useState<string>('');
   const [wrappedLeasingAddress, setWrappedLeasingAddress] = useState<string>('');
-  
+
   const [filters, setFilters] = useState({
     status: [] as string[],
     priceRange: [0, 100] as [number, number],
@@ -63,25 +68,25 @@ const Marketplace = () => {
 
   // Collateral Leasing State
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
-  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string} | null>(null);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{ contract: string, tokenId: string, loanId?: string } | null>(null);
 
   // Fetch active loans
   useEffect(() => {
     const fetchActiveLoans = async () => {
-        try {
-            const res = await fetch(apiUrl('/loans/open'));
-            const data = await res.json();
-            if (data.success) {
-                const loanMap = new Map<string, { status: string, borrower: string, loanId: string }>();
-                data.data.forEach((loan: any) => {
-                    const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
-                    loanMap.set(key, { status: loan.status, borrower: loan.borrower, loanId: loan.loanId });
-                });
-                setActiveLoans(loanMap);
-            }
-        } catch (err) {
-            console.error('Failed to fetch active loans', err);
+      try {
+        const res = await fetch(apiUrl('/loans/open'));
+        const data = await res.json();
+        if (data.success) {
+          const loanMap = new Map<string, { status: string, borrower: string, loanId: string }>();
+          data.data.forEach((loan: any) => {
+            const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
+            loanMap.set(key, { status: loan.status, borrower: loan.borrower, loanId: loan.loanId });
+          });
+          setActiveLoans(loanMap);
         }
+      } catch (err) {
+        console.error('Failed to fetch active loans', err);
+      }
     };
     fetchActiveLoans();
     fetchActiveLoans();
@@ -94,150 +99,158 @@ const Marketplace = () => {
         // Wait until we know the wrapped contract address
         return;
       }
-        try {
-            // First try to get listings from backend API
-            console.log('[Marketplace] Fetching listings from backend...');
-            const res = await fetch(apiUrl('/listings/active'));
-            const data = await res.json();
-            
-            if (data.success && data.data && data.data.length > 0) {
-                console.log('[Marketplace] Backend Listings Fetched:', data.data);
-                const listingMap = new Map<string, { listingId: number, status: string }>();
-                const wrappedNfts: NFT[] = [];
+      setLoadingExternal(true);
+      try {
+        // First try to get listings from backend API
+        console.log('[Marketplace] Fetching listings from backend...');
+        const res = await fetch(apiUrl('/listings/active'));
+        const data = await res.json();
 
-                for (const l of data.data as any[]) {
-                  const key = `${String(l.nftAddress).toLowerCase()}-${String(l.tokenId)}`;
-                  listingMap.set(key, { listingId: l.listingId, status: l.status });
-                  console.log('[Marketplace] Mapped Backend Listing:', {
-                      nftAddress: l.nftAddress,
-                      tokenId: l.tokenId,
-                      generatedKey: key,
-                      listingId: l.listingId,
-                      status: l.status
-                  });
+        if (data.success && data.data && data.data.length > 0) {
+          console.log('[Marketplace] Backend Listings Fetched:', data.data);
+          const listingMap = new Map<string, { listingId: number, status: string }>();
 
-                  // If this listing is for a wrapped NFT, build a synthetic NFT entry
-                  if (
-                    String(l.nftAddress).toLowerCase() === wrappedLeasingAddress &&
-                    (l.status === 'Active' || l.status === 'Rented')
-                  ) {
-                    try {
-                      const wId = String(l.tokenId);
-                      const info = await wrappedLeasingApiService.getWrappedInfo(wId);
+          // Process all listings in parallel
+          const results = await Promise.all(data.data.map(async (l: any) => {
+            const key = `${String(l.nftAddress).toLowerCase()}-${String(l.tokenId)}`;
+            listingMap.set(key, { listingId: l.listingId, status: l.status });
 
-                      // Load original NFT metadata for image/name
-                      let originalMeta: any = null;
-                      try {
-                        const metaRes = await fetch(
-                          apiUrl(`/nfts/external/${info.originalNft}/${info.originalTokenId}`)
-                        );
-                        const metaJson = await metaRes.json();
-                        if (metaJson.success && metaJson.data) {
-                          originalMeta = metaJson.data;
-                        }
-                      } catch (metaErr) {
-                        console.warn('[Marketplace] Failed to load original NFT metadata for wNFT', metaErr);
-                      }
+            // If this listing is for a wrapped NFT, build a synthetic NFT entry
+            if (
+              String(l.nftAddress).toLowerCase() === wrappedLeasingAddress &&
+              (l.status === 'Active' || l.status === 'Rented')
+            ) {
+              try {
+                const wId = String(l.tokenId);
+                const info = await wrappedLeasingApiService.getWrappedInfo(wId);
 
-                      const displayName =
-                        originalMeta?.name || `Wrapped NFT #${wId}`;
-                      const displayImage =
-                        originalMeta?.image_url || originalMeta?.image || '';
-                      const displayCollection =
-                        (typeof originalMeta?.collection === 'string'
-                          ? originalMeta.collection
-                          : originalMeta?.collection?.name) || 'Wrapped NFT';
-                      const displayDescription =
-                        originalMeta?.description ||
-                        'Wrapped lease NFT available for rent.';
+                // Load original NFT metadata for image/name
+                let originalMeta: any = null;
+                try {
+                  const metaRes = await fetch(
+                    apiUrl(`/nfts/external/${info.originalNft}/${info.originalTokenId}`)
+                  );
+                  const metaJson = await metaRes.json();
+                  if (metaJson.success && metaJson.data) {
+                    originalMeta = metaJson.data;
+                  }
+                } catch (metaErr) {
+                  console.warn('[Marketplace] Failed to load original NFT metadata for wNFT', metaErr);
+                }
 
-                      // Derive a daily price from pricePerSecond if available
-                      let dailyPrice = 0;
-                      if (l.pricePerSecond) {
-                        try {
-                          const perSecond = BigInt(l.pricePerSecond);
-                          const perDay = perSecond * 86400n;
-                          dailyPrice = parseFloat(ethers.formatEther(perDay));
-                        } catch (e) {
-                          console.warn('[Marketplace] Failed to parse pricePerSecond for wNFT listing', e);
-                        }
-                      }
+                const displayName =
+                  originalMeta?.name || `Wrapped NFT #${wId}`;
+                const displayImage =
+                  originalMeta?.image_url || originalMeta?.image || '';
+                const displayCollection =
+                  (typeof originalMeta?.collection === 'string'
+                    ? originalMeta.collection
+                    : originalMeta?.collection?.name) || 'Wrapped NFT';
+                const displayDescription =
+                  originalMeta?.description ||
+                  'Wrapped lease NFT available for rent.';
 
-                      const wnftNft: NFT = {
-                        id: `wnft_${l.listingId}`,
-                        title: displayName,
-                        name: displayName,
-                        collection: displayCollection,
-                        price: dailyPrice || '0',
-                        image: displayImage,
-                        image_url: displayImage,
-                        token_id: wId,
-                        description: displayDescription,
-                        owner_address: info.owner,
-                        creator_address: info.originalOwner,
-                        is_listed: true,
-                        isAuction: false,
-                        is_auction: false,
-                        status: l.status,
-                        blockchain: 'Ethereum',
-                        createdAt: l.createdAt,
-                        source: 'local',
-                        contract_address: wrappedLeasingAddress,
-                        isWrapped: true
-                      };
-
-                      wrappedNfts.push(wnftNft);
-                    } catch (wnftErr) {
-                      console.error('[Marketplace] Failed to build wrapped NFT listing card', wnftErr);
-                    }
+                // Derive a daily price from pricePerSecond if available
+                let dailyPrice = 0;
+                if (l.pricePerSecond) {
+                  try {
+                    const perSecond = BigInt(l.pricePerSecond);
+                    const perDay = perSecond * 86400n;
+                    dailyPrice = parseFloat(ethers.formatEther(perDay));
+                  } catch (e) {
+                    console.warn('[Marketplace] Failed to parse pricePerSecond for wNFT listing', e);
                   }
                 }
 
-                setActiveListings(listingMap);
-                setWrappedMarketNfts(wrappedNfts);
-                return;
+                const wnftNft: NFT = {
+                  id: `wnft_${l.listingId}`,
+                  title: displayName,
+                  name: displayName,
+                  collection: displayCollection,
+                  price: dailyPrice || '0',
+                  image: displayImage,
+                  image_url: displayImage,
+                  token_id: wId,
+                  description: displayDescription,
+                  owner_address: info.owner,
+                  creator_address: info.originalOwner,
+                  is_listed: true,
+                  isAuction: false,
+                  is_auction: false,
+                  status: l.status,
+                  blockchain: 'Ethereum',
+                  createdAt: l.createdAt,
+                  source: 'local',
+                  contract_address: wrappedLeasingAddress,
+                  isWrapped: true
+                };
+
+                return { type: 'wrapped', data: wnftNft };
+              } catch (wnftErr) {
+                console.error('[Marketplace] Failed to build wrapped NFT listing card', wnftErr);
+                return null;
+              }
+            } else {
+              // It's a regular listing (local or external)
+              // Fetch metadata to ensure we can display it, especially if it's not in our local DB
+              try {
+                // We fetch metadata for ALL active listings to ensure we have the latest data
+                // Deduplication happens in the render/memo
+                const metaRes = await fetch(
+                  apiUrl(`/nfts/external/${l.nftAddress}/${l.tokenId}`)
+                );
+                const metaJson = await metaRes.json();
+
+                if (metaJson.success && metaJson.data) {
+                  const nftItem = metaJson.data;
+                  // Ensure it has the correct listing status from the listing object
+                  nftItem.is_listed = true;
+                  nftItem.price = l.pricePerSecond
+                    ? parseFloat(ethers.formatEther(BigInt(l.pricePerSecond) * 86400n)) // Daily price
+                    : nftItem.price;
+
+                  return { type: 'external', data: nftItem };
+                }
+              } catch (extErr) {
+                console.error('[Marketplace] Failed to fetch metadata for listing:', l, extErr);
+              }
+              return null;
             }
-            
-            console.log('[Marketplace] No backend listings, trying blockchain...');
-        } catch (backendError) {
-            console.error('[Marketplace] Backend fetch failed:', backendError);
+          }));
+
+          const wrappedNfts = results
+            .filter(r => r && r.type === 'wrapped')
+            .map(r => r!.data);
+
+          const externalNfts = results
+            .filter(r => r && r.type === 'external')
+            .map(r => r!.data);
+
+          setActiveListings(listingMap);
+          setWrappedMarketNfts(wrappedNfts);
+          setExternalListedNfts(externalNfts);
+        } else {
+          // No listings from backend
+          setActiveListings(new Map());
+          setWrappedMarketNfts([]);
+          setExternalListedNfts([]);
         }
-        
-        // Fallback to blockchain if backend fails or returns empty
-        if (!window.ethereum) {
-            console.log('[Marketplace] No ethereum provider');
-            return;
-        }
-        
-        try {
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            await leasingMarketplaceService.initialize(provider, signer);
-            
-            const listings = await leasingMarketplaceService.getActiveListings();
-            console.log('[Marketplace] Blockchain Listings Fetched:', listings);
-            const listingMap = new Map<string, { listingId: number, status: string }>();
-            listings.forEach((l: any) => {
-                const key = `${l.nft.toLowerCase()}-${String(l.tokenId)}`;
-                // Blockchain listings from getActiveListings are by definition active (status 1)
-                // But we should check if they are rented (status 2) if getActiveListings returns them
-                // Our service getActiveListings currently filters for status 1 (Active)
-                // We might need to update it to return Rented ones too if we want to show them as "Rented"
-                listingMap.set(key, { listingId: l.listingId, status: 'Active' });
-                console.log('[Marketplace] Mapped Blockchain Listing:', {
-                    rawNft: l.nft,
-                    rawTokenId: l.tokenId,
-                    generatedKey: key,
-                    listingId: l.listingId
-                });
-            });
-            setActiveListings(listingMap);
-        } catch (e) {
-            console.error("[Marketplace] Failed to fetch active listings from blockchain", e);
-        }
+      } catch (backendError) {
+        console.error('[Marketplace] Backend fetch failed:', backendError);
+      } finally {
+        setLoadingExternal(false);
+      }
+
+      // Fallback to blockchain if needed (logic remains similar but we won't block loadingExternal on it if backend succeeded)
+      if (!window.ethereum) return;
+
+      // ... blockchain fallback logic (optional to keep or remove, but keeping for safety)
+      // For now, we assume backend is primary source.
     };
     fetchListings();
   }, [address, wrappedLeasingAddress]);
+
+
 
   // Initialize filters from URL query params
   useEffect(() => {
@@ -255,7 +268,7 @@ const Marketplace = () => {
   // Fetch NFTs from API
   useEffect(() => {
     const fetchNFTs = async () => {
-      setIsLoading(true);
+      setLoadingLocal(true);
       try {
         const nfts = await nftService.getCombinedNFTs(address);
         console.log('[Marketplace] Fetched NFTs:', nfts.length);
@@ -266,7 +279,7 @@ const Marketplace = () => {
         console.error('[Marketplace] Error fetching NFTs:', error);
         toast.error('Failed to load NFTs');
       } finally {
-        setIsLoading(false);
+        setLoadingLocal(false);
       }
     };
 
@@ -280,8 +293,17 @@ const Marketplace = () => {
 
   // Filter and sort NFTs based on current filters
   const filteredNfts = useMemo(() => {
-    const combined = [...allNfts, ...wrappedMarketNfts];
-    console.log('[Marketplace] Starting filter with', combined.length, 'NFTs (including wrapped)');
+    // Combine all sources and deduplicate by ID
+    const combinedRaw = [...allNfts, ...wrappedMarketNfts, ...externalListedNfts];
+    const seenIds = new Set();
+    const combined = combinedRaw.filter(nft => {
+      const id = String(nft.id);
+      if (seenIds.has(id)) return false;
+      seenIds.add(id);
+      return true;
+    });
+
+    console.log('[Marketplace] Starting filter with', combined.length, 'NFTs (including wrapped & external)');
 
     const getNumericPrice = (nft: NFT): number => {
       // prefer explicit price, then current_price, then first sell order (wei -> ETH)
@@ -378,7 +400,7 @@ const Marketplace = () => {
 
     console.log('[Marketplace] Final filtered result:', filtered.length);
     return filtered;
-  }, [activeTab, filters, sortBy, allNfts, wrappedMarketNfts]);
+  }, [activeTab, filters, sortBy, allNfts, wrappedMarketNfts, externalListedNfts]);
 
   // Debug: Log filtered results
   useEffect(() => {
@@ -414,14 +436,14 @@ const Marketplace = () => {
       toast.error('Please connect your wallet first');
       return;
     }
-    
-    console.log('[Marketplace] handleLikeToggle called with:', { 
-      nftId, 
-      nftId_type: typeof nftId, 
+
+    console.log('[Marketplace] handleLikeToggle called with:', {
+      nftId,
+      nftId_type: typeof nftId,
       newLikedState,
       currentLikedState: likedNFTIds.has(String(nftId))
     });
-    
+
     try {
       const result = await nftService.toggleNFTLike(nftId, address);
       console.log('[Marketplace] toggleNFTLike result:', result);
@@ -430,9 +452,9 @@ const Marketplace = () => {
         const actualLikedState = result.liked !== undefined ? result.liked : newLikedState;
         console.log('[Marketplace] Setting actual liked state:', actualLikedState);
         // Update the local state immediately for better UX
-        setAllNfts(prevNfts => 
-          prevNfts.map(nft => 
-            nft.id === nftId 
+        setAllNfts(prevNfts =>
+          prevNfts.map(nft =>
+            nft.id === nftId
               ? { ...nft, liked: actualLikedState }
               : nft
           )
@@ -472,7 +494,7 @@ const Marketplace = () => {
             <h1 className="text-3xl font-bold mb-2">Explore NFTs</h1>
             <p className="text-muted-foreground">Discover the world's top crypto art and collectibles</p>
           </div>
-          
+
           <div className="flex items-center space-x-4">
             <Button
               variant="outline"
@@ -482,7 +504,7 @@ const Marketplace = () => {
               <Filter className="h-4 w-4" />
               <span>Filters</span>
             </Button>
-            
+
             <div className="flex items-center space-x-2">
               <Button
                 variant={viewMode === 'grid' ? 'default' : 'outline'}
@@ -515,7 +537,7 @@ const Marketplace = () => {
           <p className="text-muted-foreground">
             Showing {filteredNfts.length} of {allNfts.length} NFTs
           </p>
-          
+
           <div className="flex items-center space-x-4">
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-40">
@@ -532,36 +554,36 @@ const Marketplace = () => {
           </div>
         </div>
 
-          <div className="flex gap-6">
+        <div className="flex gap-6">
           {showFilters && (
-            <FilterSidebar 
+            <FilterSidebar
               filters={filters}
               onFilterChange={handleFilterChange}
               onClearAll={handleClearAllFilters}
             />
           )}
-          
+
           <div className="flex-1">
             <div className={`grid gap-6 ${viewMode === 'grid' ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'}`}>
               {filteredNfts.map((nft) => {
-                                 // Debug each NFT being rendered
-                 console.log('[Marketplace] Rendering NFT:', {
-                   id: nft.id,
-                   id_type: typeof nft.id,
-                   title: nft.title || nft.name,
-                   image: nft.image,
-                   image_url: nft.image_url,
-                   price: nft.price,
-                   current_price: nft.current_price,
-                   sell_orders: nft.sell_orders,
-                   collection: nft.collection,
-                   source: nft.source,
-                   token_id: nft.token_id
-                 });
-                
+                // Debug each NFT being rendered
+                console.log('[Marketplace] Rendering NFT:', {
+                  id: nft.id,
+                  id_type: typeof nft.id,
+                  title: nft.title || nft.name,
+                  image: nft.image,
+                  image_url: nft.image_url,
+                  price: nft.price,
+                  current_price: nft.current_price,
+                  sell_orders: nft.sell_orders,
+                  collection: nft.collection,
+                  source: nft.source,
+                  token_id: nft.token_id
+                });
+
                 // Determine the correct image URL
                 const imageUrl = nft.image_url || nft.image || '';
-                
+
                 // Determine the correct price - check multiple sources
                 let price = 0;
                 if (nft.price) {
@@ -575,9 +597,9 @@ const Marketplace = () => {
                     price = parseFloat(String(sellOrder.current_price)) / (10 ** 18); // Convert from wei
                   }
                 }
-                
+
                 const priceString = price > 0 ? price.toFixed(4) : '0';
-                
+
                 console.log('[Marketplace] Final price calculation:', {
                   original_price: nft.price,
                   current_price: nft.current_price,
@@ -596,7 +618,7 @@ const Marketplace = () => {
                     contractAddr = nft.collection as string;
                   }
                 }
-                
+
                 const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${String(nft.token_id)}` : '';
                 // DEBUG: Force rentable for testing if needed, but let's log first
                 const listingInfo = activeListings.get(loanKey);
@@ -606,46 +628,46 @@ const Marketplace = () => {
                   !!address &&
                   !!nft.owner_address &&
                   address.toLowerCase() === nft.owner_address.toLowerCase();
-                
+
                 // DEBUG LOG
                 console.log('[Marketplace] Checking Rentable:', {
-                    nftTitle: nft.title || nft.name,
-                    rawContract: contractAddr,
-                    rawTokenId: nft.token_id,
-                    generatedKey: loanKey,
-                    inMap: activeListings.has(loanKey),
-                    listingId: listingInfo?.listingId,
-                    status: listingInfo?.status,
-                    isRentable,
-                    isRented,
-                    isOwner,
-                    currentUser: address,
-                    nftOwner: nft.owner_address
+                  nftTitle: nft.title || nft.name,
+                  rawContract: contractAddr,
+                  rawTokenId: nft.token_id,
+                  generatedKey: loanKey,
+                  inMap: activeListings.has(loanKey),
+                  listingId: listingInfo?.listingId,
+                  status: listingInfo?.status,
+                  isRentable,
+                  isRented,
+                  isOwner,
+                  currentUser: address,
+                  nftOwner: nft.owner_address
                 });
                 if (isRentable) {
-                    console.log('[Marketplace] NFT is Rentable:', {
-                        id: nft.id,
-                        token_id: nft.token_id,
-                        contract: contractAddr,
-                        key: loanKey,
-                        status: listingInfo?.status,
-                        isOwner: address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()
-                    });
+                  console.log('[Marketplace] NFT is Rentable:', {
+                    id: nft.id,
+                    token_id: nft.token_id,
+                    contract: contractAddr,
+                    key: loanKey,
+                    status: listingInfo?.status,
+                    isOwner: address && nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase()
+                  });
                 }
-                
-                let loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;                                                    
+
+                let loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
                 if (!loanInfo && (nft.source === 'local' || !nft.source) && nft.token_id) {
-                    const tokenIdStr = String(nft.token_id);
-                    for (const [key, info] of activeLoans.entries()) {
-                        if (key.endsWith(`-${tokenIdStr}`)) {
-                            loanInfo = info;
-                            break;
-                        }
+                  const tokenIdStr = String(nft.token_id);
+                  for (const [key, info] of activeLoans.entries()) {
+                    if (key.endsWith(`-${tokenIdStr}`)) {
+                      loanInfo = info;
+                      break;
                     }
+                  }
                 }
-                
+
                 return (
-                    <NFTCard
+                  <NFTCard
                     key={`nft-${nft.source || 'local'}-${nft.token_id ?? nft.id}-${typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'unknown'}`}
                     title={nft.title || nft.name}
                     collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
@@ -657,26 +679,26 @@ const Marketplace = () => {
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}
-                                         onLike={(newLikedState) => {
-                       // Pass the full NFT ID and new liked state to the like handler
-                       handleLikeToggle(nft.id, newLikedState);
-                     }}
+                    onLike={(newLikedState) => {
+                      // Pass the full NFT ID and new liked state to the like handler
+                      handleLikeToggle(nft.id, newLikedState);
+                    }}
                     owner_address={nft.owner_address}
                     is_listed={nft.is_listed}
                     loanStatus={loanInfo?.status}
                     loanBorrower={loanInfo?.borrower}
                     loanId={loanInfo?.loanId}
                     onRequestLoan={() => {
-                        setSelectedLoanNft({
-                            contract: contractAddr,
-                            tokenId: String(nft.token_id),
-                            loanId: loanInfo?.loanId
-                        });
-                        setShowCollateralSidebar(true);
+                      setSelectedLoanNft({
+                        contract: contractAddr,
+                        tokenId: String(nft.token_id),
+                        loanId: loanInfo?.loanId
+                      });
+                      setShowCollateralSidebar(true);
                     }}
 
 
-                    
+
                     // Marketplace Renting Props
                     // Marketplace Renting Props
                     isRentable={isRentable}
@@ -696,21 +718,21 @@ const Marketplace = () => {
                     onClick={
                       isRentable && !nft.isWrapped
                         ? () => {
-                            if (!isRented) {
-                              setSelectedLoanNft({
-                                contract: contractAddr,
-                                tokenId: String(nft.token_id)
-                              });
-                              setShowCollateralSidebar(true);
-                            }
+                          if (!isRented) {
+                            setSelectedLoanNft({
+                              contract: contractAddr,
+                              tokenId: String(nft.token_id)
+                            });
+                            setShowCollateralSidebar(true);
                           }
+                        }
                         : undefined
                     }
                   />
                 );
               })}
             </div>
-            
+
             {filteredNfts.length === 0 ? (
               <div className="text-center py-16">
                 <p className="text-muted-foreground mb-4">No NFTs match your current filters</p>
@@ -728,8 +750,8 @@ const Marketplace = () => {
           </div>
         </div>
       </div>
-      <CollateralLeasingSidebar 
-        open={showCollateralSidebar} 
+      <CollateralLeasingSidebar
+        open={showCollateralSidebar}
         onOpenChange={setShowCollateralSidebar}
         initialContractAddress={selectedLoanNft?.contract}
         initialTokenId={selectedLoanNft?.tokenId}

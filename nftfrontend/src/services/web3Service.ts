@@ -9,7 +9,7 @@ const NFT_MARKETPLACE_ABI = [
   "function tokenURI(uint256 tokenId) view returns (string)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function balanceOf(address owner) view returns (uint256)",
-  
+
   // Marketplace functions
   "function mintNFT(string name, string description, string imageURI, string category, uint256 royaltyPercentage, string collectionName) external returns (uint256)",
   "function listNFT(uint256 tokenId, uint256 price, bool isAuction, uint256 auctionDuration) external",
@@ -17,13 +17,14 @@ const NFT_MARKETPLACE_ABI = [
   "function placeBid(uint256 tokenId) external payable",
   "function endAuction(uint256 tokenId) external",
   "function delistNFT(uint256 tokenId) external",
-  
+
   // View functions
   "function getNFTMetadata(uint256 tokenId) external view returns (tuple(string name, string description, string imageURI, string category, uint256 royaltyPercentage, string collectionName))",
-  "function getListing(uint256 tokenId) external view returns (tuple(address seller, uint256 price, bool isAuction, uint256 auctionEndTime, uint256 currentBid, address highestBidder))",
+  // Full Listing struct as defined in the contract artifacts
+  "function getListing(uint256 tokenId) external view returns (tuple(address seller, uint256 price, bool isActive, bool isAuction, uint256 auctionEndTime, uint256 startingPrice, uint256 highestBid, address highestBidder))",
   "function getUserNFTs(address user) external view returns (uint256[])",
   "function getUserListings(address user) external view returns (uint256[])",
-  
+
   // Events
   "event NFTMinted(uint256 indexed tokenId, address indexed creator, string tokenURI, uint256 royaltyPercentage)",
   "event NFTListed(uint256 indexed tokenId, address indexed seller, uint256 price, bool isAuction)",
@@ -44,9 +45,11 @@ export interface NFTMetadata {
 export interface Listing {
   seller: string;
   price: string;
+  isActive: boolean;
   isAuction: boolean;
   auctionEndTime: string;
-  currentBid: string;
+  startingPrice: string;
+  highestBid: string;
   highestBidder: string;
 }
 
@@ -59,10 +62,10 @@ export class Web3Service {
   async initialize(provider: ethers.BrowserProvider) {
     this.provider = provider;
     this.signer = await provider.getSigner();
-    
+
     // Get contract address from backend config
     this.contractAddress = await getNFTMarketplaceAddress();
-    
+
     if (this.contractAddress && this.contractAddress !== ethers.ZeroAddress) {
       this.contract = new ethers.Contract(this.contractAddress, NFT_MARKETPLACE_ABI, this.signer);
     } else {
@@ -99,7 +102,7 @@ export class Web3Service {
     collectionName: string
   ): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
-    
+
     const tx = await this.contract!.mintNFT(
       name,
       description,
@@ -108,7 +111,7 @@ export class Web3Service {
       royaltyPercentage,
       collectionName
     );
-    
+
     return tx;
   }
 
@@ -120,65 +123,65 @@ export class Web3Service {
     auctionDuration: number = 0
   ): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
-    
+
     const priceInWei = ethers.parseEther(price);
-    
+
     const tx = await this.contract!.listNFT(
       tokenId,
       priceInWei,
       isAuction,
       auctionDuration
     );
-    
+
     return tx;
   }
 
   // Buy an NFT
   async buyNFT(tokenId: number, price: string): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
-    
+
     const priceInWei = ethers.parseEther(price);
-    
+
     const tx = await this.contract!.buyNFT(tokenId, { value: priceInWei });
-    
+
     return tx;
   }
 
   // Place a bid on an auction
   async placeBid(tokenId: number, bidAmount: string): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
-    
+
     const bidInWei = ethers.parseEther(bidAmount);
-    
+
     const tx = await this.contract!.placeBid(tokenId, { value: bidInWei });
-    
+
     return tx;
   }
 
   // End an auction
   async endAuction(tokenId: number): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
-    
+
     const tx = await this.contract!.endAuction(tokenId);
-    
+
     return tx;
   }
 
   // Delist an NFT
   async delistNFT(tokenId: number): Promise<ethers.ContractTransactionResponse> {
     this.checkInitialized();
-    
+
     const tx = await this.contract!.delistNFT(tokenId);
-    
+
     return tx;
   }
 
   // Get NFT metadata
   async getNFTMetadata(tokenId: number): Promise<NFTMetadata> {
     this.checkInitialized();
-    
+
     const metadata = await this.contract!.getNFTMetadata(tokenId);
-    
+
     return {
       name: metadata[0],
       description: metadata[1],
@@ -192,44 +195,46 @@ export class Web3Service {
   // Get listing information
   async getListing(tokenId: number): Promise<Listing> {
     this.checkInitialized();
-    
+
     const listing = await this.contract!.getListing(tokenId);
-    
+
     return {
       seller: listing[0],
       price: ethers.formatEther(listing[1]),
-      isAuction: listing[2],
-      auctionEndTime: listing[3].toString(),
-      currentBid: ethers.formatEther(listing[4]),
-      highestBidder: listing[5]
+      isActive: listing[2],
+      isAuction: listing[3],
+      auctionEndTime: listing[4].toString(),
+      startingPrice: ethers.formatEther(listing[5]),
+      highestBid: ethers.formatEther(listing[6]),
+      highestBidder: listing[7]
     };
   }
 
   // Get user's NFTs
   async getUserNFTs(userAddress: string): Promise<number[]> {
     this.checkInitialized();
-    
+
     const tokenIds = await this.contract!.getUserNFTs(userAddress);
-    
+
     return tokenIds.map((id: bigint) => Number(id));
   }
 
   // Get user's listings
   async getUserListings(userAddress: string): Promise<number[]> {
     this.checkInitialized();
-    
+
     const tokenIds = await this.contract!.getUserListings(userAddress);
-    
+
     return tokenIds.map((id: bigint) => Number(id));
   }
 
   // Get contract info
   async getContractInfo() {
     this.checkInitialized();
-    
+
     const name = await this.contract!.name();
     const symbol = await this.contract!.symbol();
-    
+
     return {
       name,
       symbol,
@@ -254,21 +259,21 @@ export class Web3Service {
     if (error.code === 'ACTION_REJECTED') {
       return 'Transaction was rejected by user';
     }
-    
+
     if (error.code === 'INSUFFICIENT_FUNDS') {
       return 'Insufficient funds for transaction';
     }
-    
+
     if (error.message) {
       return error.message;
     }
-    
+
     return 'An unknown error occurred';
   }
 
   async getExternalNFTMetadata(contractAddress: string, tokenId: string): Promise<any> {
     if (!this.provider) {
-       throw new Error('Web3Service not initialized');
+      throw new Error('Web3Service not initialized');
     }
 
     try {
@@ -280,7 +285,7 @@ export class Web3Service {
       ];
 
       const contract = new ethers.Contract(contractAddress, ERC721_ABI, this.provider);
-      
+
       // Fetch basic on-chain data
       const [tokenURI, owner] = await Promise.all([
         contract.tokenURI(tokenId),
@@ -316,13 +321,13 @@ export class Web3Service {
         source: 'external',
         // Add default collateral lending data structure so the UI doesn't break
         collateral_lending: {
-            max_loan: { eth: 0, usd: 0 },
-            interest_rate: { annual_percentage: '0%' },
-            loan_terms: {
-                '3_months': { monthly_payment: 0 },
-                '6_months': { monthly_payment: 0 },
-                '12_months': { monthly_payment: 0 }
-            }
+          max_loan: { eth: 0, usd: 0 },
+          interest_rate: { annual_percentage: '0%' },
+          loan_terms: {
+            '3_months': { monthly_payment: 0 },
+            '6_months': { monthly_payment: 0 },
+            '12_months': { monthly_payment: 0 }
+          }
         }
       };
 

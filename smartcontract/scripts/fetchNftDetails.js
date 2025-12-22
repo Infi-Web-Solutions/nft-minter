@@ -2,18 +2,18 @@ const { ethers } = require('ethers');
 const fs = require('fs');
 const path = require('path');
 
-const TESTNET_URL="https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE"
+const TESTNET_URL = "https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE"
 
-const ETHERSCAN_API_KEY="UKBK8JQV3H56272HGXQVGEY9UNZIMG4DSE"
+const ETHERSCAN_API_KEY = "UKBK8JQV3H56272HGXQVGEY9UNZIMG4DSE"
 
-const CONTRACT_ADDRESS="0xAB6FEdb0AdB537166425fd2bBd1F416b99899201"
-const TX_HASH="0x66769ae350688f8361e3435b871a739a0942cbdbd3a01ceca021dbe753876ff1"
+const CONTRACT_ADDRESS = "0xAB6FEdb0AdB537166425fd2bBd1F416b99899201"
+const TX_HASH = "0x66769ae350688f8361e3435b871a739a0942cbdbd3a01ceca021dbe753876ff1"
 
 async function main() {
   const args = require('minimist')(process.argv.slice(2));
   const rpc = args.rpc || process.env.TESTNET_URL || TESTNET_URL;
   const contractAddress = CONTRACT_ADDRESS;
-  const tokenArg = args.token || process.env.TOKEN_ID || "42";
+  const tokenArg = args.token || process.env.TOKEN_ID || "49";
   const gateway = args.gateway || process.env.IPFS_GATEWAY || 'https://ipfs.io/ipfs/';
 
   if (!rpc) {

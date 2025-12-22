@@ -1447,7 +1447,27 @@ export const getExternalNft = async (req, res) => {
         
         // If not in our database, fetch from blockchain (external NFT)
         console.log(`[DEBUG] NFT not in database, fetching from blockchain`);
-        const nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+
+        // Special case: if this is our own NFT marketplace contract, use its full ABI
+        // to also read on-chain listing info reliably (price + isActive).
+        let nftData;
+        if (
+            web3Utils.contractAddress &&
+            contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()
+        ) {
+            console.log('[DEBUG] Contract matches marketplace contractAddress; using on-chain marketplace helpers');
+            try {
+                // Basic metadata (tokenURI/owner) is already handled in web3Utils.getExternalNftMetadata
+                // but we want full listing as in fetchNftDetails.js
+                const meta = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+                nftData = meta;
+            } catch (e) {
+                console.warn('[DEBUG] Marketplace-specific metadata fetch failed, falling back to generic external metadata', e.message);
+                nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+            }
+        } else {
+            nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+        }
         
         if (!nftData.success) {
             return res.status(404).json({
@@ -1457,6 +1477,37 @@ export const getExternalNft = async (req, res) => {
         }
         
         console.log(`[DEBUG] External NFT fetched - Name: ${nftData.name}, Image: ${nftData.image ? 'yes' : 'no'}`);
+
+        // Derive listing / price info if available (e.g. our NFTMarketplace contract)
+        let listing = nftData.listing || null;
+        // If this is our main marketplace contract and listing is missing from generic path,
+        // fetch it explicitly using the core marketplace ABI (more reliable).
+        if (!listing && web3Utils.contractAddress &&
+            contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+            try {
+                const raw = await web3Utils.getOnChainListing(token_id);
+                const rawPrice = raw.price || raw[1];
+                const isActive = typeof raw.isActive !== 'undefined' ? raw.isActive : raw[2];
+                const isAuction = typeof raw.isAuction !== 'undefined' ? raw.isAuction : raw[3];
+                const priceEth = rawPrice && rawPrice !== '0'
+                    ? web3Utils.web3.utils.fromWei(rawPrice.toString(), 'ether')
+                    : null;
+                listing = {
+                    seller: raw.seller || raw[0],
+                    priceEth,
+                    isActive,
+                    isAuction
+                };
+                console.log('[DEBUG] On-chain marketplace listing fetched in controller:', listing);
+            } catch (e) {
+                console.warn('[DEBUG] Failed to fetch on-chain listing in controller:', e.message);
+            }
+        }
+
+        const priceEth = listing && listing.isActive && listing.priceEth
+            ? parseFloat(listing.priceEth)
+            : null;
+        const isListed = !!(listing && listing.isActive && listing.priceEth);
         
         // Format response similar to internal NFTs
         const formattedData = {
@@ -1472,9 +1523,9 @@ export const getExternalNft = async (req, res) => {
             collection: nftData.collection_name,
             category: 'External NFT',
             contract_address: contract_address,
-            is_listed: false,
-            is_auction: false,
-            price: null,
+            is_listed: isListed,
+            is_auction: listing ? !!listing.isAuction : false,
+            price: priceEth,
             source: 'external',
             blockchain_data: {
                 contract_address: contract_address,

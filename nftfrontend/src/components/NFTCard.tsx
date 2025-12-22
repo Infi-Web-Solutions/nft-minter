@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useWeb3 } from '@/hooks/useWeb3';
-import { toast} from 'sonner';
+import { toast } from 'sonner';
 import { useWallet } from '@/contexts/WalletContext';
 import { useNavigate } from 'react-router-dom';
 import { nftService } from '@/services/nftService';
@@ -51,7 +51,7 @@ const getImageUrl = (url: string) => {
   // Strip any extra query params
   const clean = url.split('?')[0];
   if (clean.startsWith('ipfs://')) {
-    return clean.replace('ipfs://', 'https://ipfs.io/ipfs/');
+    return clean.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
   }
   return clean;
 };
@@ -105,12 +105,12 @@ const NFTCard = ({
       console.log('[NFTCard] Like already in progress, ignoring click');
       return;
     }
-    
+
     if (!id || !address) {
       toast.error('NFT ID or wallet address not found');
       return;
     }
-    
+
     setIsLiking(true);
     console.log('[NFTCard] Toggling like for NFT:', id, 'Current liked state:', liked);
     try {
@@ -128,119 +128,119 @@ const NFTCard = ({
 
 
 
-//     const handleBuy = () => {
-//     if (!tokenId || !price) {
-//       toast.error('Missing tokenId or price');
-//       return;
-//     }
-//     if (isOwner) {
-//       toast.error('You already own this NFT.');
-//       return;
-//     }
-//     if (!is_listed) {
-//       toast.error('This NFT is not listed for sale.');
-//       return;
-//     }
+  //     const handleBuy = () => {
+  //     if (!tokenId || !price) {
+  //       toast.error('Missing tokenId or price');
+  //       return;
+  //     }
+  //     if (isOwner) {
+  //       toast.error('You already own this NFT.');
+  //       return;
+  //     }
+  //     if (!is_listed) {
+  //       toast.error('This NFT is not listed for sale.');
+  //       return;
+  //     }
 
-//     // Show confirmation toast
-//       toast.custom((t: any) => (
-//       <div className="bg-background p-4 rounded-md shadow-lg flex flex-col gap-3 w-80">
-//         <div className="text-sm font-medium">
-//           Are you sure you want to buy this NFT for {price} ETH?
-//         </div>
-//         <div className="flex justify-end gap-2">
-//           <button
-//             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-//             onClick={async () => {
-//               toast.dismiss(t.id); // close toast
-//               await proceedBuy(); // call your original buy logic
-//             }}
-//           >
-//             Confirm
-//           </button>
-//           <button
-//             className="px-3 py-1 bg-gray-300 text-black rounded hover:bg-gray-400"
-//             onClick={() => toast.dismiss(t.id)}
-//           >
-//             Cancel
-//           </button>
-//         </div>
-//       </div>
-//     ), { duration: Infinity });
-//   }
+  //     // Show confirmation toast
+  //       toast.custom((t: any) => (
+  //       <div className="bg-background p-4 rounded-md shadow-lg flex flex-col gap-3 w-80">
+  //         <div className="text-sm font-medium">
+  //           Are you sure you want to buy this NFT for {price} ETH?
+  //         </div>
+  //         <div className="flex justify-end gap-2">
+  //           <button
+  //             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+  //             onClick={async () => {
+  //               toast.dismiss(t.id); // close toast
+  //               await proceedBuy(); // call your original buy logic
+  //             }}
+  //           >
+  //             Confirm
+  //           </button>
+  //           <button
+  //             className="px-3 py-1 bg-gray-300 text-black rounded hover:bg-gray-400"
+  //             onClick={() => toast.dismiss(t.id)}
+  //           >
+  //             Cancel
+  //           </button>
+  //         </div>
+  //       </div>
+  //     ), { duration: Infinity });
+  //   }
 
-// // Move your original handleBuy code here
-// const proceedBuy = async () => {
-//   setIsBuying(true);
-//   console.log('[NFTCard] Attempting to buy NFT:', { tokenId, price });
+  // // Move your original handleBuy code here
+  // const proceedBuy = async () => {
+  //   setIsBuying(true);
+  //   console.log('[NFTCard] Attempting to buy NFT:', { tokenId, price });
 
-//   try {
-//     // Try on-chain buy if wallet is available; otherwise fall back to simulation
-//     let txHash = '';
-//     let simulated = false;
-//     if (address && window.ethereum) {
-//       console.log('[NFTCard] Calling buyNFT...');
-//       const result = await buyNFT(Number(tokenId), price.toString());
-//       console.log('[NFTCard] buyNFT result:', result);
-//       if (result && result.hash) {
-//         txHash = result.hash;
-//         toast.success('NFT purchased successfully!');
-//       } else {
-//         toast.message('Proceeding with simulated transfer for testing.');
-//         simulated = true;
-//       }
-//     } else {
-//       toast.message('No wallet detected. Proceeding with simulated transfer for testing.');
-//       simulated = true;
-//     }
+  //   try {
+  //     // Try on-chain buy if wallet is available; otherwise fall back to simulation
+  //     let txHash = '';
+  //     let simulated = false;
+  //     if (address && window.ethereum) {
+  //       console.log('[NFTCard] Calling buyNFT...');
+  //       const result = await buyNFT(Number(tokenId), price.toString());
+  //       console.log('[NFTCard] buyNFT result:', result);
+  //       if (result && result.hash) {
+  //         txHash = result.hash;
+  //         toast.success('NFT purchased successfully!');
+  //       } else {
+  //         toast.message('Proceeding with simulated transfer for testing.');
+  //         simulated = true;
+  //       }
+  //     } else {
+  //       toast.message('No wallet detected. Proceeding with simulated transfer for testing.');
+  //       simulated = true;
+  //     }
 
-//     // Notify backend to update owner (supports simulation if new_owner is provided)
-//     try {
-//       const payload: any = {
-//         transaction_hash: txHash,
-//         price: price,
-//         block_number: 0,
-//         gas_used: 0,
-//         gas_price: 0,
-//       };
-//       if (simulated && address) payload.new_owner = address;
-//       await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify(payload)
-//       });
-//       toast.success('Ownership updated.');
-//       if (afterBuy) afterBuy();
-//     } catch (err) {
-//       console.error('[NFTCard] Failed to notify backend for activity log:', err);
-//     }
-//   } catch (err: any) {
-//     console.error('Transaction error:', err);
-//     if (err?.reason === 'NFT not listed for sale' || err?.message?.includes('NFT not listed for sale')) {
-//       toast.error('This NFT is not listed for sale.');
-//     } else if (err?.reason === 'Incorrect price' || err?.message?.includes('Incorrect price')) {
-//       toast.error('Incorrect price for this NFT.');
-//     } else if (err?.code === 'INSUFFICIENT_FUNDS' || err?.message?.includes('insufficient funds')) {
-//       // Allow user to simulate purchase for testing
-//       try {
-//         toast.message('Insufficient funds. Proceeding with simulated transfer for testing.');
-//         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
-//           method: 'POST',
-//           headers: { 'Content-Type': 'application/json' },
-//           body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
-//         });
-//         toast.success('Ownership updated (simulated).');
-//         if (afterBuy) afterBuy();
-//       } catch (e) {
-//         toast.error('Simulation failed.');
-//       }
-//     } else {
-//       toast.error('Transaction failed: ' + (err?.message || 'Unknown error'));
-//     }
-//   } finally {
-//     setIsBuying(false);
-//   }
-// };
+  //     // Notify backend to update owner (supports simulation if new_owner is provided)
+  //     try {
+  //       const payload: any = {
+  //         transaction_hash: txHash,
+  //         price: price,
+  //         block_number: 0,
+  //         gas_used: 0,
+  //         gas_price: 0,
+  //       };
+  //       if (simulated && address) payload.new_owner = address;
+  //       await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
+  //         method: 'POST',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify(payload)
+  //       });
+  //       toast.success('Ownership updated.');
+  //       if (afterBuy) afterBuy();
+  //     } catch (err) {
+  //       console.error('[NFTCard] Failed to notify backend for activity log:', err);
+  //     }
+  //   } catch (err: any) {
+  //     console.error('Transaction error:', err);
+  //     if (err?.reason === 'NFT not listed for sale' || err?.message?.includes('NFT not listed for sale')) {
+  //       toast.error('This NFT is not listed for sale.');
+  //     } else if (err?.reason === 'Incorrect price' || err?.message?.includes('Incorrect price')) {
+  //       toast.error('Incorrect price for this NFT.');
+  //     } else if (err?.code === 'INSUFFICIENT_FUNDS' || err?.message?.includes('insufficient funds')) {
+  //       // Allow user to simulate purchase for testing
+  //       try {
+  //         toast.message('Insufficient funds. Proceeding with simulated transfer for testing.');
+  //         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
+  //           method: 'POST',
+  //           headers: { 'Content-Type': 'application/json' },
+  //           body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
+  //         });
+  //         toast.success('Ownership updated (simulated).');
+  //         if (afterBuy) afterBuy();
+  //       } catch (e) {
+  //         toast.error('Simulation failed.');
+  //       }
+  //     } else {
+  //       toast.error('Transaction failed: ' + (err?.message || 'Unknown error'));
+  //     }
+  //   } finally {
+  //     setIsBuying(false);
+  //   }
+  // };
 
 
   const handleListNFT = async () => {
@@ -299,12 +299,12 @@ const NFTCard = ({
       }
     } catch (err: any) {
       console.error('[NFTCard] List NFT failed:', err);
-      
+
       // Handle user rejection
-      if (err?.code === 4001 || 
-          err?.code === 'ACTION_REJECTED' || 
-          err?.message?.includes('User denied') || 
-          err?.message?.includes('user rejected')) {
+      if (err?.code === 4001 ||
+        err?.code === 'ACTION_REJECTED' ||
+        err?.message?.includes('User denied') ||
+        err?.message?.includes('user rejected')) {
         toast.error('Transaction cancelled by user');
         return;
       }
@@ -325,7 +325,7 @@ const NFTCard = ({
     }
   };
 
-   const handleBuy = async () => {
+  const handleBuy = async () => {
     if (!tokenId || !price) {
       toast.error('Please try again. NFT information is missing.');
       return;
@@ -349,14 +349,14 @@ const NFTCard = ({
 
     setIsBuying(true);
     console.log('[NFTCard] Attempting to buy NFT:', { tokenId, price });
-    
+
     let simulated = false;
 
     try {
       // Ensure we're on Sepolia network
       const web3Provider = new ethers.BrowserProvider(window.ethereum);
       const network = await web3Provider.getNetwork();
-      
+
       if (network.chainId !== BigInt(NETWORK_CONFIG.chainIdDecimal)) {
         toast.loading('Switching to Sepolia network...', { id: 'network-switch' });
         const { switchToSepoliaNetwork } = await import('@/config');
@@ -371,7 +371,7 @@ const NFTCard = ({
       // Check balance
       const balance = await web3Provider.getBalance(address);
       const priceInWei = ethers.parseEther(price.toString());
-      
+
       if (balance < priceInWei) {
         toast.error('Insufficient balance in your wallet to complete this purchase.');
         return;
@@ -381,7 +381,7 @@ const NFTCard = ({
       console.log('[NFTCard] Calling buyNFT...');
       const result = await buyNFT(Number(tokenId), price.toString());
       console.log('[NFTCard] buyNFT result:', result);
-      
+
       if (!result || !result.hash) {
         toast.error('Transaction failed to process. Please try again.');
         return;
@@ -401,7 +401,7 @@ const NFTCard = ({
           gas_price: 0,
         };
         if (simulated && address) payload.new_owner = address;
-        
+
         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -416,7 +416,7 @@ const NFTCard = ({
 
     } catch (error: any) {
       console.error('Transaction error:', error);
-      
+
       if (error?.message?.includes('insufficient funds') || error?.code === 'INSUFFICIENT_FUNDS') {
         // Allow user to simulate purchase for testing
         try {
@@ -450,7 +450,7 @@ const NFTCard = ({
       toast.error('Please connect your wallet first');
       return;
     }
-    
+
     if (!loanId) {
       toast.error('Loan ID is missing');
       return;
@@ -458,30 +458,30 @@ const NFTCard = ({
 
     try {
       toast.loading('Funding Loan...');
-      
+
       // Initialize service
       await collateralLendingService.initialize(provider);
-      
+
       // Fund loan
       // We don't need to pass price anymore, the service fetches the exact principal from chain
       await collateralLendingService.fundLoan(Number(loanId));
-      
+
       // Update backend status
       await fetch(apiUrl(`/loans/${loanId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            status: 'Funded',
-            lender: address,
-            startTime: Math.floor(Date.now() / 1000)
+          status: 'Funded',
+          lender: address,
+          startTime: Math.floor(Date.now() / 1000)
         })
       });
 
       toast.dismiss();
       toast.success('Loan Funded Successfully!');
-      
+
       if (afterBuy) afterBuy();
-      
+
     } catch (error: any) {
       console.error('Error funding loan:', error);
       toast.dismiss();
@@ -532,20 +532,59 @@ const NFTCard = ({
             {image.includes('mt=video') ? 'Video NFT' : 'Audio NFT'}
           </div>
         ) : (
-          <img 
-            src={getImageUrl(image)} 
+          <img
+            src={getImageUrl(image)}
             alt={title}
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={(e) => {
-              console.error('[NFTCard] Image failed to load:', (e.target as HTMLImageElement).src);
-              (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
+              const img = e.target as HTMLImageElement;
+              const currentSrc = img.src;
+              console.warn('[NFTCard] Image failed to load:', currentSrc);
+
+              // List of gateways to try in order
+              const gateways = [
+                'https://gateway.pinata.cloud/ipfs/',
+                'https://dweb.link/ipfs/',
+                'https://cloudflare-ipfs.com/ipfs/',
+                'https://ipfs.io/ipfs/'
+              ];
+
+              // Extract hash from current URL if possible
+              let hash = '';
+              for (const gw of gateways) {
+                if (currentSrc.includes(gw)) {
+                  hash = currentSrc.split(gw)[1];
+                  console.log(`[NFTCard] Extracted hash: ${hash} from gateway: ${gw}`);
+                  break;
+                }
+              }
+
+              if (!hash) {
+                console.warn('[NFTCard] Could not extract hash from URL:', currentSrc);
+              }
+
+              // If we found a hash, try the next gateway
+              if (hash) {
+                const currentGatewayIndex = gateways.findIndex(gw => currentSrc.includes(gw));
+                if (currentGatewayIndex !== -1 && currentGatewayIndex < gateways.length - 1) {
+                  const nextGateway = gateways[currentGatewayIndex + 1];
+                  console.log(`[NFTCard] Retrying with next gateway: ${nextGateway}`);
+                  img.src = `${nextGateway}${hash}`;
+                  return;
+                } else {
+                  console.warn('[NFTCard] All gateways exhausted or unknown gateway.');
+                }
+              }
+
+              // Fallback to placeholder if all gateways fail or no hash found
+              img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxOCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVDwvdGV4dD48L3N2Zz4=';
             }}
           />
         )}
         <div className="absolute top-3 right-3 flex space-x-2">
-          <Button 
-            variant="secondary" 
-            size="sm" 
+          <Button
+            variant="secondary"
+            size="sm"
             className="h-8 w-8 p-0 bg-background/80 backdrop-blur hover:bg-background"
             onClick={e => { e.stopPropagation(); handleLike(); }}
             disabled={isLiking || !canLike}
@@ -576,15 +615,15 @@ const NFTCard = ({
           </div>
         )}
       </div>
-      
+
       <CardContent className="p-4 flex-1 flex flex-col">
         <div className="space-y-3 flex-1">
           <p className="text-sm text-muted-foreground truncate">
             {typeof collection === 'string' ? collection : collection?.name || 'Unknown Collection'}
           </p>
-          <h3 className="font-semibold text-lg leading-tight overflow-hidden" style={{ 
-            display: '-webkit-box', 
-            WebkitLineClamp: 2, 
+          <h3 className="font-semibold text-lg leading-tight overflow-hidden" style={{
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             minHeight: '3rem'
           }}>{title}</h3>
@@ -644,7 +683,7 @@ const NFTCard = ({
                   )}
 
                   {loanStatus === 'Requested' && !isOwner && !isWrapped && (
-                     <Button
+                    <Button
                       size="sm"
                       className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
                       onClick={(e) => {
@@ -656,8 +695,8 @@ const NFTCard = ({
                       {isLoanBorrower ? "Requested Loan" : "Fund Loan"}
                     </Button>
                   )}
-                  {loanStatus === 'Requested' && isOwner && !isWrapped &&(
-                     <Button
+                  {loanStatus === 'Requested' && isOwner && !isWrapped && (
+                    <Button
                       size="sm"
                       className={`${isLoanBorrower ? "bg-blue-500 hover:bg-blue-600" : "bg-green-600 hover:bg-green-700"} text-white whitespace-nowrap text-xs px-2`}
                       // onClick={(e) => {
@@ -669,7 +708,7 @@ const NFTCard = ({
                       Requested Loan
                     </Button>
                   )}
-                  
+
                   {/* NFT is actively loaned - show collateral badge instead of buy button */}
                   {loanStatus === 'Funded' && !isWrapped && (
                     <Button
@@ -678,8 +717,8 @@ const NFTCard = ({
                       disabled={!isLoanBorrower && !isLoanLender}
                       onClick={(e) => {
                         if ((isLoanBorrower || isLoanLender) && onRequestLoan) {
-                           e.stopPropagation();
-                           onRequestLoan();
+                          e.stopPropagation();
+                          onRequestLoan();
                         }
                       }}
                       title={isLoanBorrower ? "Click to repay loan" : (isLoanLender ? "Click to manage loan" : "This NFT is currently used as loan collateral")}
@@ -687,7 +726,7 @@ const NFTCard = ({
                       {isLoanBorrower ? "Repay Loan" : (isLoanLender ? "Manage Loan" : "🔒 Collateral")}
                     </Button>
                   )}
-                  
+
                   {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && !isWrapped && !isRentable && (
                     <Button
                       size="sm"
@@ -710,10 +749,10 @@ const NFTCard = ({
                         console.log('Manage Listing Button Clicked');
                         e.stopPropagation();
                         if (onRent) {
-                            console.log('Calling onRent');
-                            onRent();
+                          console.log('Calling onRent');
+                          onRent();
                         } else {
-                            console.log('onRent is undefined');
+                          console.log('onRent is undefined');
                         }
                       }}
                       title="Manage your rental listing"

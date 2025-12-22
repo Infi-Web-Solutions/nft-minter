@@ -36,8 +36,8 @@ interface CollateralLeasingSidebarProps {
   initialLeasingType?: 'collateral' | 'wrapped' | 'marketplace';
 }
 
-const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({ 
-  open, 
+const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
+  open,
   onOpenChange,
   initialContractAddress,
   initialTokenId,
@@ -56,23 +56,23 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }, 1000);
     return () => clearInterval(timer);
   }, []);
-  
+
   // Search State
   const [contractAddress, setContractAddress] = useState('');
   const [tokenId, setTokenId] = useState('');
   const [loading, setLoading] = useState(false);
   const [nftData, setNftData] = useState<any>(null);
   const [notFound, setNotFound] = useState(false);
-  
+
   // Loan Creation State
   const [selectedTerm, setSelectedTerm] = useState('6_months');
   const [processing, setProcessing] = useState(false);
-  
+
   // Manage Loan State
   const [loanIdInput, setLoanIdInput] = useState('');
   const [loanDetails, setLoanDetails] = useState<LoanDetails | null>(null);
   const [fetchingLoan, setFetchingLoan] = useState(false);
-  
+
   // Pending Withdrawal State
   const [pendingWithdrawal, setPendingWithdrawal] = useState<string>('0');
 
@@ -85,7 +85,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const [wrappedContractAddress, setWrappedContractAddress] = useState<string>('');
   const [selectedWrappedNFT, setSelectedWrappedNFT] = useState<WrappedNFT | null>(null);
   const [isWNFT, setIsWNFT] = useState(false);
-  
+
   // FeeManager Configuration State
   const [feeManagerConfigured, setFeeManagerConfigured] = useState<boolean | null>(null);
   const [isUserAdmin, setIsUserAdmin] = useState<boolean>(false);
@@ -125,7 +125,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     const hours = Math.floor((seconds % (24 * 3600)) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
-    
+
     if (days > 0) return `${days}d ${hours}h ${minutes}m`;
     if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
     return `${minutes}m ${secs}s`;
@@ -140,11 +140,11 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         try {
           await collateralLendingService.initialize(provider);
           await checkPendingWithdrawal();
-          
+
           // Initialize wrapped leasing service with user's wallet
           await wrappedLeasingApiService.initialize(provider, signer);
           await leasingMarketplaceService.initialize(provider, signer);
-          
+
           // Check marketplace balance
           try {
             const balance = await leasingMarketplaceService.getPendingBalance(address);
@@ -155,7 +155,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
           // Check marketplace status now that service is initialized
           await checkMarketplaceStatus();
-          
+
           // Get contract info for display
           try {
             const contractInfo = await wrappedLeasingApiService.getContractInfo();
@@ -163,15 +163,15 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           } catch (error) {
             console.error('Error getting contract info:', error);
           }
-          
+
           // Check FeeManager configuration status
           try {
             const isConfigured = await wrappedLeasingApiService.isFeeManagerConfigured();
             setFeeManagerConfigured(isConfigured);
-            
+
             // For demo purposes, assume user is admin if connected (in real app, check properly)
             setIsUserAdmin(!!address);
-            
+
             if (!isConfigured) {
               console.log('FeeManager not configured.');
             }
@@ -195,39 +195,39 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       }
 
       if (initialLoanId) {
-          // If we have a loan ID, go directly to manage tab and fetch it
-          setLoanIdInput(initialLoanId);
-          setActiveTab('manage');
-          handleFetchLoan(initialLoanId);
+        // If we have a loan ID, go directly to manage tab and fetch it
+        setLoanIdInput(initialLoanId);
+        setActiveTab('manage');
+        handleFetchLoan(initialLoanId);
       } else if (initialContractAddress && initialTokenId) {
-          setContractAddress(initialContractAddress);
-          setTokenId(initialTokenId);
-          
-          // If explicit type is provided, use it
-          if (initialLeasingType) {
-              setLeasingType(initialLeasingType);
-              if (initialLoanId) {
-                  setListingId(Number(initialLoanId));
-              }
-              handleSearch(initialContractAddress, initialTokenId);
-          } else {
-              // Otherwise infer it
-              const checkTypeAndSearch = async () => {
-                  try {
-                      const id = await leasingMarketplaceService.getListingIdForNFT(initialContractAddress, initialTokenId);
-                      if (id) {
-                          setLeasingType('marketplace');
-                          setListingId(id);
-                      } else {
-                          setLeasingType('collateral');
-                      }
-                  } catch (e) {
-                      setLeasingType('collateral');
-                  }
-                  handleSearch(initialContractAddress, initialTokenId);
-              };
-              checkTypeAndSearch();
+        setContractAddress(initialContractAddress);
+        setTokenId(initialTokenId);
+
+        // If explicit type is provided, use it
+        if (initialLeasingType) {
+          setLeasingType(initialLeasingType);
+          if (initialLoanId) {
+            setListingId(Number(initialLoanId));
           }
+          handleSearch(initialContractAddress, initialTokenId);
+        } else {
+          // Otherwise infer it
+          const checkTypeAndSearch = async () => {
+            try {
+              const id = await leasingMarketplaceService.getListingIdForNFT(initialContractAddress, initialTokenId);
+              if (id) {
+                setLeasingType('marketplace');
+                setListingId(id);
+              } else {
+                setLeasingType('collateral');
+              }
+            } catch (e) {
+              setLeasingType('collateral');
+            }
+            handleSearch(initialContractAddress, initialTokenId);
+          };
+          checkTypeAndSearch();
+        }
       }
     }
   }, [open, initialContractAddress, initialTokenId, initialLoanId, initialLeasingType]);
@@ -338,7 +338,68 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           toast.error('Could not load wrapped NFT details');
         }
       } else {
-        // Regular NFT flow: backend first, then blockchain fallback
+        // Regular NFT flow
+        // 1) Special case: our own NFT Marketplace contract – use on-chain metadata + listing like fetchNftDetails.js
+        try {
+          const { getNFTMarketplaceAddress } = await import('@/services/configService');
+          const marketplaceAddr = (await getNFTMarketplaceAddress()).toLowerCase();
+
+          if (addrTrimmed.toLowerCase() === marketplaceAddr) {
+            const numericTokenId = Number(idTrimmed);
+
+            try {
+              const [meta, listing, owner] = await Promise.all([
+                web3Service.getNFTMetadata(numericTokenId),
+                web3Service.getListing(numericTokenId).catch(() => null),
+                web3Service.getContract().ownerOf(numericTokenId).catch(() => null),
+              ]);
+
+              // Resolve metadata image URI similar to fetchNftDetails.js
+              let imageUrl = meta.imageURI || '';
+              if (imageUrl.startsWith('ipfs://')) {
+                imageUrl = imageUrl.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+              }
+
+              const priceEth = listing && listing.isActive ? listing.price : '0';
+              const isListed =
+                !!listing && listing.isActive && (Number(listing.price) > 0 || listing.isAuction);
+
+              const marketplaceNftData: any = {
+                name: meta.name || `NFT #${idTrimmed}`,
+                description: meta.description || '',
+                image_url: imageUrl,
+                collection: meta.collectionName || 'Local Collection',
+                owner_address: owner || undefined,
+                token_id: idTrimmed,
+                contract_address: addrTrimmed,
+                price: priceEth,
+                is_listed: isListed,
+                source: 'local',
+                // Provide minimal collateral_lending structure so UI stays compatible
+                collateral_lending: {
+                  max_loan: { eth: 0, usd: 0 },
+                  interest_rate: { annual_percentage: '0%' },
+                  loan_terms: {
+                    '3_months': { monthly_payment: 0 },
+                    '6_months': { monthly_payment: 0 },
+                    '12_months': { monthly_payment: 0 },
+                  },
+                },
+              };
+
+              setNftData(marketplaceNftData);
+              setIsWNFT(false);
+              toast.success('NFT loaded from marketplace contract');
+              return;
+            } catch (marketErr) {
+              console.warn('Marketplace on-chain fetch failed, falling back to backend/external', marketErr);
+            }
+          }
+        } catch (cfgErr) {
+          console.warn('Failed to resolve NFT marketplace address, continuing with generic external flow', cfgErr);
+        }
+
+        // 2) Generic external flow: backend first, then generic ERC721 on-chain fetch
         const res = await fetch(apiUrl('/nfts/external/'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -455,12 +516,12 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const handleTransactionError = (error: any, defaultMessage: string) => {
     console.error(defaultMessage, error);
     toast.dismiss();
-    
+
     // Check for user rejection
-    if (error?.code === 4001 || 
-        error?.code === 'ACTION_REJECTED' || 
-        error?.message?.includes('User denied') || 
-        error?.message?.includes('user rejected')) {
+    if (error?.code === 4001 ||
+      error?.code === 'ACTION_REJECTED' ||
+      error?.message?.includes('User denied') ||
+      error?.message?.includes('user rejected')) {
       toast.error('Transaction cancelled by user');
       return;
     }
@@ -484,8 +545,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
     // Validate ownership
     if (address && nftData.owner_address.toLowerCase() !== address.toLowerCase()) {
-        toast.error('You do not own this NFT. You can only create loans for NFTs you own.');
-        return;
+      toast.error('You do not own this NFT. You can only create loans for NFTs you own.');
+      return;
     }
 
     // Validate that the address is actually a contract
@@ -495,11 +556,11 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         toast.error('Invalid Contract Address. You entered a wallet address. Please enter the NFT Collection Address.');
         return;
       }
-      
+
       // Prevent using the Collateral Contract Address as the NFT Address
       if (contractAddress.toLowerCase() === "0x6c963e6EfBAe88Db30272202a9e6352ab7Ecb56e".toLowerCase()) {
-         toast.error('Invalid NFT Address. You entered the Collateral Lending Contract address. Please enter the NFT Collection Address.');
-         return;
+        toast.error('Invalid NFT Address. You entered the Collateral Lending Contract address. Please enter the NFT Collection Address.');
+        return;
       }
 
     } catch (err) {
@@ -515,17 +576,17 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       try {
         const onChainOwner = await collateralLendingService.getNFTOwner(contractAddress, tokenId);
         if (onChainOwner.toLowerCase() !== address.toLowerCase()) {
-            toast.dismiss();
-            toast.error(`Ownership verification failed. The blockchain says this NFT is owned by ${onChainOwner.slice(0,6)}...${onChainOwner.slice(-4)}`);
-            setProcessing(false);
-            return;
-        }
-      } catch (err) {
-          console.error('Error verifying ownership:', err);
           toast.dismiss();
-          toast.error('Failed to verify NFT ownership on-chain. Ensure the Token ID exists.');
+          toast.error(`Ownership verification failed. The blockchain says this NFT is owned by ${onChainOwner.slice(0, 6)}...${onChainOwner.slice(-4)}`);
           setProcessing(false);
           return;
+        }
+      } catch (err) {
+        console.error('Error verifying ownership:', err);
+        toast.dismiss();
+        toast.error('Failed to verify NFT ownership on-chain. Ensure the Token ID exists.');
+        setProcessing(false);
+        return;
       }
       toast.dismiss();
 
@@ -538,7 +599,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       // 2. Calculate params
       // Get term data (fallback to 3_months for test duration)
       const termData = nftData.collateral_lending.loan_terms[selectedTerm] || nftData.collateral_lending.loan_terms['3_months'];
-      
+
       // Duration in seconds (approximate)
       const durationMap: Record<string, number> = {
         '5_minutes': 5 * 60, // Test duration
@@ -547,7 +608,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         '12_months': 365 * 24 * 3600
       };
       const duration = durationMap[selectedTerm];
-      
+
       // Interest BPS (e.g. 10% = 1000)
       // Assuming interest_rate.annual_percentage is like "12%"
       const interestRateString = nftData.collateral_lending.interest_rate.annual_percentage;
@@ -569,26 +630,26 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
       if (loanId) {
         toast.success(`Loan Requested Successfully! Loan ID: ${loanId}`);
-        
+
         // Save loan to backend
         try {
-            await fetch(apiUrl('/loans/'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    loanId: loanId.toString(),
-                    nftContract: contractAddress,
-                    tokenId: tokenId,
-                    borrower: address,
-                    principal: principal,
-                    interestBps: interestBps,
-                    duration: duration,
-                    transactionHash: null // We don't have the hash easily here unless we capture the receipt better, but it's optional
-                })
-            });
+          await fetch(apiUrl('/loans/'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              loanId: loanId.toString(),
+              nftContract: contractAddress,
+              tokenId: tokenId,
+              borrower: address,
+              principal: principal,
+              interestBps: interestBps,
+              duration: duration,
+              transactionHash: null // We don't have the hash easily here unless we capture the receipt better, but it's optional
+            })
+          });
         } catch (backendError) {
-            console.error('Failed to save loan to backend:', backendError);
-            // Don't block the UI, just log it
+          console.error('Failed to save loan to backend:', backendError);
+          // Don't block the UI, just log it
         }
 
         setLoanIdInput(loanId.toString());
@@ -612,19 +673,19 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     try {
       const details = await collateralLendingService.getLoanDetails(parseInt(id));
       setLoanDetails(details);
-      
+
       // Also fetch NFT details to show image/owner
       if (details.nftContract && details.tokenId) {
-          // Reuse the search logic
-          setContractAddress(details.nftContract);
-          setTokenId(details.tokenId.toString());
-          
-          // We need to call the backend to get metadata
-          const res = await fetch(apiUrl(`/nfts/external/${details.nftContract}/${details.tokenId}`));
-          const data = await res.json();
-          if (data.success) {
-            setNftData(data.data);
-          }
+        // Reuse the search logic
+        setContractAddress(details.nftContract);
+        setTokenId(details.tokenId.toString());
+
+        // We need to call the backend to get metadata
+        const res = await fetch(apiUrl(`/nfts/external/${details.nftContract}/${details.tokenId}`));
+        const data = await res.json();
+        if (data.success) {
+          setNftData(data.data);
+        }
       }
 
     } catch (error) {
@@ -641,7 +702,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     try {
       toast.loading('Funding Loan...');
       const receipt = await collateralLendingService.fundLoan(loanDetails.loanId, loanDetails.principal);
-      
+
       // Update backend with lender and status
       try {
         await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
@@ -660,10 +721,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       toast.dismiss();
       toast.success('Loan Funded Successfully! Money sent to borrower.');
       toast.info('Note: If the borrower cannot receive ETH directly, they may need to manually withdraw from the contract.', { duration: 5000 });
-      
+
       // Refresh loan details to show updated status
       await handleFetchLoan();
-      
+
       // Check if borrower has pending withdrawal
       await checkPendingWithdrawal();
     } catch (error: any) {
@@ -679,10 +740,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     try {
       toast.loading('Calculating Repayment...');
       const repayAmount = await collateralLendingService.computeRepayAmount(loanDetails.loanId);
-      
+
       toast.loading(`Repaying ${repayAmount} ETH...`);
       await collateralLendingService.repayLoan(loanDetails.loanId, repayAmount);
-      
+
       // Update backend status
       try {
         await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
@@ -697,10 +758,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       toast.dismiss();
       toast.success('Loan Repaid Successfully! NFT Unlocked.');
       toast.info('Note: If the lender cannot receive ETH directly, they may need to manually withdraw from the contract.', { duration: 5000 });
-      
+
       // Refresh loan details
       await handleFetchLoan();
-      
+
       // Check if lender has pending withdrawal
       await checkPendingWithdrawal();
     } catch (error: any) {
@@ -716,7 +777,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     try {
       toast.loading('Liquidating Loan...');
       const receipt = await collateralLendingService.liquidateLoan(loanDetails.loanId);
-      
+
       // Update backend status
       try {
         await fetch(apiUrl(`/loans/${loanDetails.loanId}`), {
@@ -742,9 +803,9 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         });
         // Ensure it's not listed
         await fetch(apiUrl(`/nfts/${loanDetails.tokenId}/set_listed/`), {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ is_listed: false })
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_listed: false })
         });
       } catch (err) {
         console.error("Failed to update NFT owner after liquidation", err);
@@ -752,7 +813,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
       toast.dismiss();
       toast.success('Loan Liquidated! NFT transferred to you.');
-      
+
       // Refresh loan details
       await handleFetchLoan(loanDetails.loanId.toString());
     } catch (error: any) {
@@ -796,7 +857,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   };
 
   // ===== WRAPPED LEASING FUNCTIONS =====
-  
+
 
   const loadWrappedNFTs = async () => {
     if (!address) return;
@@ -827,21 +888,21 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setProcessing(true);
     try {
       console.log('wrapNFT via API:', contractAddress, tokenId, renterAddress, durationDays);
-      
+
       // Step 1: Check if NFT needs approval
       toast.loading('Checking NFT approval...', { id: 'wrap' });
-      
+
       try {
         const validation = await wrappedLeasingApiService.validateNFT(contractAddress, tokenId, address);
-        
+
         if (validation.needsApproval) {
           toast.dismiss('wrap');
           toast.loading('NFT needs approval. Requesting approval...', { id: 'wrap' });
-          
+
           // Approve the NFT
           try {
             const approvalResult = await wrappedLeasingApiService.approveNFTForWrapping(contractAddress, tokenId);
-            
+
             if (approvalResult.alreadyApproved) {
               toast.dismiss('wrap');
               toast.info('NFT is already approved');
@@ -851,16 +912,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
             }
           } catch (approvalError: any) {
             toast.dismiss('wrap');
-            
+
             // Check for user rejection
-            if (approvalError?.message?.includes('User denied') || 
-                approvalError?.message?.includes('user rejected') ||
-                approvalError?.code === 4001) {
+            if (approvalError?.message?.includes('User denied') ||
+              approvalError?.message?.includes('user rejected') ||
+              approvalError?.code === 4001) {
               toast.error('Approval cancelled by user');
               setProcessing(false);
               return;
             }
-            
+
             throw new Error(`Failed to approve NFT: ${approvalError.message}`);
           }
         }
@@ -887,14 +948,14 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       toast.dismiss('wrap');
 
       toast.success(`NFT Wrapped Successfully! wID: ${result.wId}`);
-      
+
       // Reset form
       setContractAddress('');
       setTokenId('');
       setRenterAddress('');
       setDurationDays('30');
       setNftData(null);
-      
+
       // Refresh list and switch to manage tab
       await loadWrappedNFTs();
       setActiveTab('manage');
@@ -938,20 +999,20 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       // Get FeeManager address from backend config
       const { getFeeManagerAddress } = await import('@/services/configService');
       const feeManagerAddr = await getFeeManagerAddress();
-      
+
       if (!feeManagerAddr) {
         toast.error('FeeManager address not found in backend configuration');
         return;
       }
 
       toast.loading('Configuring FeeManager on WrappedLeasing...', { id: 'feemanager' });
-      
+
       const result = await wrappedLeasingApiService.setFeeManager(feeManagerAddr);
-      
+
       toast.dismiss('feemanager');
       toast.success('FeeManager configured successfully!');
       console.log('FeeManager configured:', result);
-      
+
       // Update state
       setFeeManagerConfigured(true);
     } catch (error: any) {
@@ -971,7 +1032,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     try {
       const info = await wrappedLeasingApiService.getWrappedInfo(searchWId);
       const status = await wrappedLeasingApiService.getLeaseStatus(searchWId);
-      
+
       setWrappedNFTs([{
         wId: searchWId,
         ...info,
@@ -987,59 +1048,59 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
 
   // ===== MARKETPLACE FUNCTIONS =====
-  
+
 
   const [isLister, setIsLister] = useState(false);
 
   const checkMarketplaceStatus = async () => {
     if (!contractAddress || !tokenId) return;
-    
+
     // Check if owner is marketplace
     try {
-        const id = await leasingMarketplaceService.getListingIdForNFT(contractAddress, tokenId);
-        setListingId(id);
-        
-        if (id) {
-            setIsMarketplaceOwner(true);
-            // Fetch details to check if I am the lister
-            const listing = await leasingMarketplaceService.getListingDetails(id);
-            console.log('[CollateralLeasingSidebar] Listing details:', listing);
-            
-            if (address && listing.owner.toLowerCase() === address.toLowerCase()) {
-                setIsLister(true);
-            } else {
-                setIsLister(false);
-            }
-            
-            // Store listing details for display
-            const pricePerSecond = listing.pricePerSecond;
-            const pricePerDay = ethers.formatEther(pricePerSecond * 86400n);
-            const minDays = Number(listing.minDuration) / 86400;
-            const maxDays = Number(listing.maxDuration) / 86400;
-            
-            setListingDetails({
-                pricePerSecond,
-                pricePerDay,
-                minDays,
-                maxDays
-            });
-            
-            // Set default rent duration to min days
-            setRentDuration(Math.max(1, Math.ceil(minDays)).toString());
-            
-            console.log('[CollateralLeasingSidebar] Listing price info:', {
-                pricePerSecond: pricePerSecond.toString(),
-                pricePerDay,
-                minDays,
-                maxDays
-            });
+      const id = await leasingMarketplaceService.getListingIdForNFT(contractAddress, tokenId);
+      setListingId(id);
+
+      if (id) {
+        setIsMarketplaceOwner(true);
+        // Fetch details to check if I am the lister
+        const listing = await leasingMarketplaceService.getListingDetails(id);
+        console.log('[CollateralLeasingSidebar] Listing details:', listing);
+
+        if (address && listing.owner.toLowerCase() === address.toLowerCase()) {
+          setIsLister(true);
         } else {
-            setIsMarketplaceOwner(false);
-            setIsLister(false);
-            setListingDetails(null);
+          setIsLister(false);
         }
+
+        // Store listing details for display
+        const pricePerSecond = listing.pricePerSecond;
+        const pricePerDay = ethers.formatEther(pricePerSecond * 86400n);
+        const minDays = Number(listing.minDuration) / 86400;
+        const maxDays = Number(listing.maxDuration) / 86400;
+
+        setListingDetails({
+          pricePerSecond,
+          pricePerDay,
+          minDays,
+          maxDays
+        });
+
+        // Set default rent duration to min days
+        setRentDuration(Math.max(1, Math.ceil(minDays)).toString());
+
+        console.log('[CollateralLeasingSidebar] Listing price info:', {
+          pricePerSecond: pricePerSecond.toString(),
+          pricePerDay,
+          minDays,
+          maxDays
+        });
+      } else {
+        setIsMarketplaceOwner(false);
+        setIsLister(false);
+        setListingDetails(null);
+      }
     } catch (e) {
-        console.error("Error checking marketplace status", e);
+      console.error("Error checking marketplace status", e);
     }
   };
 
@@ -1049,7 +1110,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       setRentalCost(null);
       return;
     }
-    
+
     setCalculatingCost(true);
     try {
       const cost = await leasingMarketplaceService.calculateCost(listingId, parseInt(rentDuration));
@@ -1086,14 +1147,14 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
   useEffect(() => {
     if (leasingType === 'marketplace' && nftData) {
-        checkMarketplaceStatus();
+      checkMarketplaceStatus();
     }
   }, [leasingType, nftData]);
 
   const handleListForRent = async () => {
     if (!contractAddress || !tokenId || !listingPrice || !minDuration || !maxDuration) {
-        toast.error('Please fill all fields');
-        return;
+      toast.error('Please fill all fields');
+      return;
     }
 
     // If this is a wNFT sub-lease, enforce that requested maxDuration does not exceed
@@ -1110,64 +1171,64 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         return;
       }
     }
-    
+
     setProcessing(true);
     try {
-        toast.loading('Listing NFT for rent...');
-        const { receipt, listingId: newListingId } = await leasingMarketplaceService.listForRent(
-            contractAddress, 
-            tokenId, 
-            listingPrice, 
-            parseInt(minDuration), 
-            parseInt(maxDuration)
-        );
-        toast.dismiss();
-        toast.success('NFT Listed for Rent!');
-        
-        // Save listing to backend
+      toast.loading('Listing NFT for rent...');
+      const { receipt, listingId: newListingId } = await leasingMarketplaceService.listForRent(
+        contractAddress,
+        tokenId,
+        listingPrice,
+        parseInt(minDuration),
+        parseInt(maxDuration)
+      );
+      toast.dismiss();
+      toast.success('NFT Listed for Rent!');
+
+      // Save listing to backend
+      try {
+        const pricePerSecond = ethers.parseEther(listingPrice) / 86400n;
+        await fetch(apiUrl('/listings/'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            listingId: newListingId || Date.now(), // fallback if we can't get ID
+            nftAddress: contractAddress,
+            tokenId: tokenId,
+            owner: address,
+            pricePerSecond: pricePerSecond.toString(),
+            minDuration: parseInt(minDuration) * 86400,
+            maxDuration: parseInt(maxDuration) * 86400,
+            status: 'Active'
+          })
+        });
+        console.log('[CollateralLeasingSidebar] Listing saved to backend');
+      } catch (err) {
+        console.error("Failed to save listing to backend", err);
+      }
+
+      // Also update NFT rentable status
+      if (nftData && nftData.id) {
         try {
-            const pricePerSecond = ethers.parseEther(listingPrice) / 86400n;
-            await fetch(apiUrl('/listings/'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    listingId: newListingId || Date.now(), // fallback if we can't get ID
-                    nftAddress: contractAddress,
-                    tokenId: tokenId,
-                    owner: address,
-                    pricePerSecond: pricePerSecond.toString(),
-                    minDuration: parseInt(minDuration) * 86400,
-                    maxDuration: parseInt(maxDuration) * 86400,
-                    status: 'Active'
-                })
-            });
-            console.log('[CollateralLeasingSidebar] Listing saved to backend');
+          await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_rentable: true })
+          });
         } catch (err) {
-            console.error("Failed to save listing to backend", err);
+          console.error("Failed to update backend rentable status", err);
         }
+      }
 
-        // Also update NFT rentable status
-        if (nftData && nftData.id) {
-            try {
-                await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_rentable: true })
-                });
-            } catch (err) {
-                console.error("Failed to update backend rentable status", err);
-            }
-        }
-
-        // Refresh
-        await checkMarketplaceStatus();
-        // Also refresh NFT data to show new owner (Marketplace)
-        handleSearch();
+      // Refresh
+      await checkMarketplaceStatus();
+      // Also refresh NFT data to show new owner (Marketplace)
+      handleSearch();
     } catch (error: any) {
-        toast.dismiss();
-        handleTransactionError(error, 'Failed to list NFT');
+      toast.dismiss();
+      handleTransactionError(error, 'Failed to list NFT');
     } finally {
-        setProcessing(false);
+      setProcessing(false);
     }
   };
 
@@ -1176,115 +1237,115 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       toast.error('Please wait for cost calculation to complete');
       return;
     }
-    
+
     setProcessing(true);
     try {
-        toast.loading(`Renting NFT for Ξ ${rentalCost.totalRequired}...`, { id: 'rent' });
-        
-        // Need to convert back to BigInt for the transaction
-        const cost = await leasingMarketplaceService.calculateCost(listingId, parseInt(rentDuration));
-        
-        const result = await leasingMarketplaceService.rent(listingId, Number(rentDuration), ethers.parseEther(rentalCost.totalRequired));
-        toast.dismiss('rent');
-        toast.success('NFT Rented Successfully! You now have a Wrapped NFT.');
-        
-        // Update listing status in backend
+      toast.loading(`Renting NFT for Ξ ${rentalCost.totalRequired}...`, { id: 'rent' });
+
+      // Need to convert back to BigInt for the transaction
+      const cost = await leasingMarketplaceService.calculateCost(listingId, parseInt(rentDuration));
+
+      const result = await leasingMarketplaceService.rent(listingId, Number(rentDuration), ethers.parseEther(rentalCost.totalRequired));
+      toast.dismiss('rent');
+      toast.success('NFT Rented Successfully! You now have a Wrapped NFT.');
+
+      // Update listing status in backend
+      try {
+        const expiresAt = Date.now() + parseInt(rentDuration) * 86400 * 1000;
+        await fetch(apiUrl(`/listings/${listingId}/status`), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'Rented',
+            rentedBy: address,
+            rentalExpiresAt: expiresAt
+          })
+        });
+        console.log('[CollateralLeasingSidebar] Listing status updated to Rented');
+      } catch (err) {
+        console.error("Failed to update listing status", err);
+      }
+
+      // Update NFT rentable status
+      if (nftData && nftData.id) {
         try {
-            const expiresAt = Date.now() + parseInt(rentDuration) * 86400 * 1000;
-            await fetch(apiUrl(`/listings/${listingId}/status`), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    status: 'Rented',
-                    rentedBy: address,
-                    rentalExpiresAt: expiresAt
-                })
-            });
-            console.log('[CollateralLeasingSidebar] Listing status updated to Rented');
+          await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_rentable: false })
+          });
         } catch (err) {
-            console.error("Failed to update listing status", err);
+          console.error("Failed to update backend rentable status", err);
+        }
+      }
+
+      // Store rental transaction in backend
+      if (result.rentalDetails) {
+        // Fetch listing details to get the original owner (Lessor)
+        let lessor = nftData?.owner_address || '';
+        try {
+          const listingInfo = await leasingMarketplaceService.getListingDetails(listingId);
+          lessor = listingInfo.owner;
+        } catch (e) {
+          console.warn('Could not fetch listing details for owner, using nftData fallback');
         }
 
-        // Update NFT rentable status
-        if (nftData && nftData.id) {
-            try {
-                await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_rentable: false })
-                });
-            } catch (err) {
-                console.error("Failed to update backend rentable status", err);
-            }
+        // 1. Save Rental Transaction
+        try {
+          await fetch(apiUrl('/rental-transactions/'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'Rented',
+              listingId: listingId,
+              nftAddress: contractAddress,
+              tokenId: tokenId,
+              owner: lessor,
+              renter: address,
+              rentAmount: rentalCost.rentAmount.toString(),
+              depositAmount: rentalCost.deposit.toString(),
+              rentDuration: Number(rentDuration) * 86400,
+              expiresAt: new Date(result.rentalDetails.expiresAt * 1000),
+              wrappedTokenId: result.rentalDetails.wId,
+              transactionHash: result.receipt.hash,
+              blockNumber: result.receipt.blockNumber
+            })
+          });
+          console.log('Rental transaction stored in backend');
+        } catch (err) {
+          console.error("Failed to store rental transaction in backend", err);
         }
 
-        // Store rental transaction in backend
-        if (result.rentalDetails) {
-            // Fetch listing details to get the original owner (Lessor)
-            let lessor = nftData?.owner_address || '';
-            try {
-                const listingInfo = await leasingMarketplaceService.getListingDetails(listingId);
-                lessor = listingInfo.owner;
-            } catch (e) {
-                console.warn('Could not fetch listing details for owner, using nftData fallback');
-            }
-
-            // 1. Save Rental Transaction
-            try {
-                await fetch(apiUrl('/rental-transactions/'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        type: 'Rented',
-                        listingId: listingId,
-                        nftAddress: contractAddress,
-                        tokenId: tokenId,
-                        owner: lessor,
-                        renter: address,
-                        rentAmount: rentalCost.rentAmount.toString(),
-                        depositAmount: rentalCost.deposit.toString(),
-                        rentDuration: Number(rentDuration) * 86400,
-                        expiresAt: new Date(result.rentalDetails.expiresAt * 1000),
-                        wrappedTokenId: result.rentalDetails.wId,
-                        transactionHash: result.receipt.hash,
-                        blockNumber: result.receipt.blockNumber
-                    })
-                });
-                console.log('Rental transaction stored in backend');
-            } catch (err) {
-                console.error("Failed to store rental transaction in backend", err);
-            }
-
-            // 2. Explicitly Save Wrapped NFT Record
-            try {
-                await wrappedLeasingApiService.saveWrappedNFT({
-                    wId: result.rentalDetails.wId.toString(),
-                    originalNftContract: contractAddress,
-                    originalTokenId: tokenId,
-                    owner: lessor,
-                    renter: address || '',
-                    validUntil: result.rentalDetails.expiresAt,
-                    durationSeconds: Number(rentDuration) * 86400,
-                    feePaid: cost.wrapFee.toString(),
-                    transactionHash: result.receipt.hash
-                });
-                console.log('Wrapped NFT record saved explicitly');
-            } catch (err) {
-                console.error("Failed to save wrapped NFT record explicitly", err);
-            }
+        // 2. Explicitly Save Wrapped NFT Record
+        try {
+          await wrappedLeasingApiService.saveWrappedNFT({
+            wId: result.rentalDetails.wId.toString(),
+            originalNftContract: contractAddress,
+            originalTokenId: tokenId,
+            owner: lessor,
+            renter: address || '',
+            validUntil: result.rentalDetails.expiresAt,
+            durationSeconds: Number(rentDuration) * 86400,
+            feePaid: cost.wrapFee.toString(),
+            transactionHash: result.receipt.hash
+          });
+          console.log('Wrapped NFT record saved explicitly');
+        } catch (err) {
+          console.error("Failed to save wrapped NFT record explicitly", err);
         }
+      }
 
-        // Clear rental cost state
-        setRentalCost(null);
-        
-        // Close sidebar and refresh
-        toast.info('The wrapped NFT has been minted to your wallet. Check your profile to manage it.', { duration: 5000 });
-        handleClose();
+      // Clear rental cost state
+      setRentalCost(null);
+
+      // Close sidebar and refresh
+      toast.info('The wrapped NFT has been minted to your wallet. Check your profile to manage it.', { duration: 5000 });
+      handleClose();
     } catch (error: any) {
-        toast.dismiss('rent');
-        handleTransactionError(error, 'Failed to rent NFT');
+      toast.dismiss('rent');
+      handleTransactionError(error, 'Failed to rent NFT');
     } finally {
-        setProcessing(false);
+      setProcessing(false);
     }
   };
 
@@ -1292,47 +1353,47 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     if (!listingId) return;
     setProcessing(true);
     try {
-        toast.loading('Cancelling listing...');
-        await leasingMarketplaceService.cancelListing(listingId);
-        toast.dismiss();
-        toast.success('Listing Cancelled & NFT Returned');
-        
-        // Update backend status
-        if (nftData && nftData.id) {
-            try {
-                await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ is_rentable: false })
-                });
-            } catch (err) {
-                console.error("Failed to update backend rentable status", err);
-            }
-        }
+      toast.loading('Cancelling listing...');
+      await leasingMarketplaceService.cancelListing(listingId);
+      toast.dismiss();
+      toast.success('Listing Cancelled & NFT Returned');
 
-        await checkMarketplaceStatus();
-        handleSearch();
+      // Update backend status
+      if (nftData && nftData.id) {
+        try {
+          await fetch(apiUrl(`/nfts/${nftData.id}/set_rentable/`), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_rentable: false })
+          });
+        } catch (err) {
+          console.error("Failed to update backend rentable status", err);
+        }
+      }
+
+      await checkMarketplaceStatus();
+      handleSearch();
     } catch (e: any) {
-        toast.dismiss();
-        handleTransactionError(e, 'Failed to cancel');
+      toast.dismiss();
+      handleTransactionError(e, 'Failed to cancel');
     } finally {
-        setProcessing(false);
+      setProcessing(false);
     }
   };
 
   const handleMarketplaceWithdraw = async () => {
     setProcessing(true);
     try {
-        toast.loading('Withdrawing funds...');
-        await leasingMarketplaceService.withdraw();
-        toast.dismiss();
-        toast.success('Funds withdrawn!');
-        setMarketplaceBalance('0');
+      toast.loading('Withdrawing funds...');
+      await leasingMarketplaceService.withdraw();
+      toast.dismiss();
+      toast.success('Funds withdrawn!');
+      setMarketplaceBalance('0');
     } catch (error: any) {
-        toast.dismiss();
-        handleTransactionError(error, 'Failed to withdraw');
+      toast.dismiss();
+      handleTransactionError(error, 'Failed to withdraw');
     } finally {
-        setProcessing(false);
+      setProcessing(false);
     }
   };
 
@@ -1340,30 +1401,30 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     if (!address) return;
     setRentalsLoading(true);
     try {
-        const rentals = await leasingMarketplaceService.getMyRentals(address);
-        setMyRentals(rentals);
+      const rentals = await leasingMarketplaceService.getMyRentals(address);
+      setMyRentals(rentals);
     } catch (e) {
-        console.error("Error loading rentals", e);
+      console.error("Error loading rentals", e);
     } finally {
-        setRentalsLoading(false);
+      setRentalsLoading(false);
     }
   };
 
   const handleRefundDeposit = async (listingId: number) => {
     setProcessing(true);
     try {
-        toast.loading('Refunding deposit...');
-        await leasingMarketplaceService.refundDeposit(listingId);
-        toast.dismiss();
-        toast.success('Deposit Refunded!');
-        // Refresh
-        await loadMyRentals();
-        await leasingMarketplaceService.getPendingBalance(address!).then(b => setMarketplaceBalance(ethers.formatEther(b)));
+      toast.loading('Refunding deposit...');
+      await leasingMarketplaceService.refundDeposit(listingId);
+      toast.dismiss();
+      toast.success('Deposit Refunded!');
+      // Refresh
+      await loadMyRentals();
+      await leasingMarketplaceService.getPendingBalance(address!).then(b => setMarketplaceBalance(ethers.formatEther(b)));
     } catch (error: any) {
-        toast.dismiss();
-        handleTransactionError(error, 'Failed to refund deposit');
+      toast.dismiss();
+      handleTransactionError(error, 'Failed to refund deposit');
     } finally {
-        setProcessing(false);
+      setProcessing(false);
     }
   };
 
@@ -1422,11 +1483,11 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                 NFT Leasing
               </h2>
               <p className="text-sm text-muted-foreground mt-1">
-                {leasingType === 'wrapped' 
-                  ? 'Wrap & lend your NFTs safely' 
+                {leasingType === 'wrapped'
+                  ? 'Wrap & lend your NFTs safely'
                   : leasingType === 'collateral'
-                  ? 'Borrow against your NFTs'
-                  : 'Explore leasing options'}
+                    ? 'Borrow against your NFTs'
+                    : 'Explore leasing options'}
               </p>
             </div>
             <Button variant="ghost" size="icon" onClick={handleClose} className="shrink-0">
@@ -1449,8 +1510,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                         </div>
                       </div>
                     </div>
-                    <Button 
-                      onClick={handleWithdrawETH} 
+                    <Button
+                      onClick={handleWithdrawETH}
                       disabled={processing}
                       className="bg-yellow-600 hover:bg-yellow-700 shrink-0"
                       size="sm"
@@ -1476,10 +1537,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                     value={leasingType}
                     onChange={(e) => setLeasingType(e.target.value)}
                   >
-                  
+
                     <option value="marketplace">Leasing Marketplace</option>
                     <option value="collateral">Collateral Leasing</option>
-             
+
                   </select>
                 </div>
 
@@ -1527,7 +1588,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                           <Info className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
                           <div className="flex-1">
                             <p className="text-xs text-muted-foreground">
-                              Wrap your NFT into a time-limited wNFT. The renter receives the wNFT for the specified duration. 
+                              Wrap your NFT into a time-limited wNFT. The renter receives the wNFT for the specified duration.
                               After expiry, you can unwrap to get your original NFT back.
                             </p>
                           </div>
@@ -1698,7 +1759,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                     <CardContent className="p-6 space-y-4">
                       <div className="flex gap-4">
                         <div className="w-24 h-24 rounded-lg overflow-hidden shrink-0">
-                          <img src={getNFTImageUrl(nftData)} alt={nftData.name} className="w-full h-full object-cover" 
+                          <img src={getNFTImageUrl(nftData)} alt={nftData.name} className="w-full h-full object-cover"
                             onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/150?text=NFT'; }} />
                         </div>
                         <div>
@@ -1741,7 +1802,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                           <div className="text-sm text-muted-foreground mb-1">Collection</div>
                           <div className="font-semibold">{nftData.collection || 'N/A'}</div>
                         </div>
-                          <div className="bg-card/50 rounded-lg p-3 col-span-2">
+                        <div className="bg-card/50 rounded-lg p-3 col-span-2">
                           <div className="text-sm text-muted-foreground mb-1">Owner</div>
                           <div className="flex items-center gap-2">
                             <code className="text-xs bg-black/20 p-1 rounded flex-1 truncate">
@@ -1757,10 +1818,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                             </Button>
                           </div>
                           {address && nftData.owner_address.toLowerCase() !== address.toLowerCase() && (
-                              <div className="text-xs text-red-500 mt-2 flex items-center gap-1 font-medium bg-red-500/10 p-2 rounded">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  You do not own this NFT
-                              </div>
+                            <div className="text-xs text-red-500 mt-2 flex items-center gap-1 font-medium bg-red-500/10 p-2 rounded">
+                              <AlertTriangle className="h-3 w-3" />
+                              You do not own this NFT
+                            </div>
                           )}
                         </div>
                         <div className="bg-card/50 rounded-lg p-3 col-span-2">
@@ -1812,19 +1873,19 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                           </div>
 
                           <div className="bg-card/30 rounded-lg p-3 text-sm space-y-2">
-                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Interest Rate:</span>
-                                <span className="font-semibold">{nftData.collateral_lending.interest_rate.annual_percentage} APR</span>
-                             </div>
-                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Monthly Payment:</span>
-                                <span className="font-semibold">
-                                    Ξ{nftData.collateral_lending.loan_terms[selectedTerm]?.monthly_payment || nftData.collateral_lending.loan_terms['3_months']?.monthly_payment || '0.00'}
-                                </span>
-                             </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Interest Rate:</span>
+                              <span className="font-semibold">{nftData.collateral_lending.interest_rate.annual_percentage} APR</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Monthly Payment:</span>
+                              <span className="font-semibold">
+                                Ξ{nftData.collateral_lending.loan_terms[selectedTerm]?.monthly_payment || nftData.collateral_lending.loan_terms['3_months']?.monthly_payment || '0.00'}
+                              </span>
+                            </div>
                           </div>
 
-                          <Button 
+                          <Button
                             className="w-full bg-gradient-to-r from-purple-500 to-blue-600"
                             onClick={handleCreateLoan}
                             disabled={processing}
@@ -1846,7 +1907,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                   This NFT is listed on the marketplace.
                                 </p>
                               </div>
-                              
+
                               {/* Listing Details */}
                               {listingDetails && (
                                 <div className="bg-card/50 rounded-lg p-3 space-y-2">
@@ -1865,18 +1926,18 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                   </div>
                                 </div>
                               )}
-                              
+
                               {/* Rent Duration Input - only for renters */}
                               {!isLister && (
                                 <>
                                   <div className="space-y-2">
                                     <Label>Rent Duration (Days)</Label>
-                                    <Input 
-                                      type="number" 
+                                    <Input
+                                      type="number"
                                       min={listingDetails?.minDays || 1}
                                       max={listingDetails?.maxDays || 30}
-                                      value={rentDuration} 
-                                      onChange={(e) => setRentDuration(e.target.value)} 
+                                      value={rentDuration}
+                                      onChange={(e) => setRentDuration(e.target.value)}
                                     />
                                     {listingDetails && (
                                       <p className="text-xs text-muted-foreground">
@@ -1884,7 +1945,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                       </p>
                                     )}
                                   </div>
-                                  
+
                                   {/* Cost Breakdown */}
                                   {calculatingCost ? (
                                     <div className="bg-muted/30 rounded-lg p-4 flex items-center justify-center">
@@ -1920,10 +1981,10 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                   )}
                                 </>
                               )}
-                              
-                              <Button 
-                                onClick={handleRentNFT} 
-                                disabled={processing || isLister || !rentalCost} 
+
+                              <Button
+                                onClick={handleRentNFT}
+                                disabled={processing || isLister || !rentalCost}
                                 className="w-full bg-green-600 hover:bg-green-700"
                               >
                                 {processing ? (
@@ -1939,15 +2000,15 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
                               {isLister && (
                                 <div className="pt-2 border-t border-border/50">
-                                    <p className="text-xs text-muted-foreground mb-2 text-center">You listed this NFT.</p>
-                                    <Button 
-                                        onClick={handleCancelListing} 
-                                        disabled={processing} 
-                                        variant="destructive" 
-                                        className="w-full"
-                                    >
-                                        {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cancel Listing & Retrieve NFT'}
-                                    </Button>
+                                  <p className="text-xs text-muted-foreground mb-2 text-center">You listed this NFT.</p>
+                                  <Button
+                                    onClick={handleCancelListing}
+                                    disabled={processing}
+                                    variant="destructive"
+                                    className="w-full"
+                                  >
+                                    {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cancel Listing & Retrieve NFT'}
+                                  </Button>
                                 </div>
                               )}
                             </div>
@@ -1960,7 +2021,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                     You own this NFT. List it on the marketplace.
                                   </p>
                                 </div>
-                                
+
                                 <div className="grid grid-cols-2 gap-3">
                                   <div className="space-y-2">
                                     <Label className="text-xs">Price/Day (ETH)</Label>
@@ -1975,7 +2036,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                     <Input value={maxDuration} onChange={(e) => setMaxDuration(e.target.value)} />
                                   </div>
                                 </div>
-                                
+
                                 <Button onClick={handleListForRent} disabled={processing} className="w-full">
                                   {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'List for Rent'}
                                 </Button>
@@ -1997,56 +2058,56 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                 {leasingType === 'marketplace' ? (
                   <div className="space-y-4">
                     <Card className="glass-card">
-                        <CardContent className="p-6">
-                            <h3 className="font-semibold mb-4">Marketplace Balance</h3>
-                            <div className="text-3xl font-bold mb-4">Ξ {marketplaceBalance}</div>
-                            <Button onClick={handleMarketplaceWithdraw} disabled={processing || marketplaceBalance === '0'} className="w-full">
-                                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Withdraw Funds'}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                    
-                    <div className="flex justify-between items-center mt-6 mb-2">
-                        <h3 className="font-semibold">My Active Rentals</h3>
-                        <Button variant="ghost" size="sm" onClick={loadMyRentals}>
-                            <RefreshCw className={`h-4 w-4 ${rentalsLoading ? 'animate-spin' : ''}`} />
+                      <CardContent className="p-6">
+                        <h3 className="font-semibold mb-4">Marketplace Balance</h3>
+                        <div className="text-3xl font-bold mb-4">Ξ {marketplaceBalance}</div>
+                        <Button onClick={handleMarketplaceWithdraw} disabled={processing || marketplaceBalance === '0'} className="w-full">
+                          {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Withdraw Funds'}
                         </Button>
+                      </CardContent>
+                    </Card>
+
+                    <div className="flex justify-between items-center mt-6 mb-2">
+                      <h3 className="font-semibold">My Active Rentals</h3>
+                      <Button variant="ghost" size="sm" onClick={loadMyRentals}>
+                        <RefreshCw className={`h-4 w-4 ${rentalsLoading ? 'animate-spin' : ''}`} />
+                      </Button>
                     </div>
-                    
+
                     {myRentals.length === 0 ? (
-                        <div className="text-center text-sm text-muted-foreground py-4 bg-muted/30 rounded-lg">
-                            No active rentals found.
-                        </div>
+                      <div className="text-center text-sm text-muted-foreground py-4 bg-muted/30 rounded-lg">
+                        No active rentals found.
+                      </div>
                     ) : (
-                        <div className="space-y-3">
-                            {myRentals.map(rental => (
-                                <Card key={rental.listingId} className="glass-card">
-                                    <CardContent className="p-4">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <span className="font-bold text-sm">Listing #{rental.listingId}</span>
-                                            <Badge variant="outline">wID: {rental.wId}</Badge>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground space-y-1 mb-3">
-                                            <div>Deposit: {ethers.formatEther(rental.deposit)} ETH</div>
-                                            <div>Expires: {new Date(rental.expiresAt * 1000).toLocaleDateString()}</div>
-                                        </div>
-                                        <Button 
-                                            size="sm" 
-                                            variant="outline" 
-                                            className="w-full"
-                                            onClick={() => handleRefundDeposit(rental.listingId)}
-                                            disabled={processing || Date.now() / 1000 < rental.expiresAt}
-                                        >
-                                            {Date.now() / 1000 < rental.expiresAt ? 'Lease Active' : 'Refund Deposit'}
-                                        </Button>
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
+                      <div className="space-y-3">
+                        {myRentals.map(rental => (
+                          <Card key={rental.listingId} className="glass-card">
+                            <CardContent className="p-4">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="font-bold text-sm">Listing #{rental.listingId}</span>
+                                <Badge variant="outline">wID: {rental.wId}</Badge>
+                              </div>
+                              <div className="text-xs text-muted-foreground space-y-1 mb-3">
+                                <div>Deposit: {ethers.formatEther(rental.deposit)} ETH</div>
+                                <div>Expires: {new Date(rental.expiresAt * 1000).toLocaleDateString()}</div>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => handleRefundDeposit(rental.listingId)}
+                                disabled={processing || Date.now() / 1000 < rental.expiresAt}
+                              >
+                                {Date.now() / 1000 < rental.expiresAt ? 'Lease Active' : 'Refund Deposit'}
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
                     )}
 
                     <div className="text-center text-sm text-muted-foreground mt-4">
-                        <p>To manage active listings, use the search in the "New Loan" tab.</p>
+                      <p>To manage active listings, use the search in the "New Loan" tab.</p>
                     </div>
                   </div>
                 ) : leasingType === 'wrapped' ? (
@@ -2147,7 +2208,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                     <ShieldCheck className="h-4 w-4 text-purple-500" />
                                     On-Chain Details
                                   </h5>
-                                  
+
                                   <div className="grid grid-cols-1 gap-2 text-xs">
                                     <div className="flex justify-between items-center">
                                       <span className="text-muted-foreground">Wrapped ID:</span>
@@ -2267,9 +2328,9 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                   /* ===== COLLATERAL LOAN MANAGEMENT ===== */
                   <>
                     <div className="flex gap-2">
-                      <Input 
-                        placeholder="Enter Loan ID" 
-                        value={loanIdInput} 
+                      <Input
+                        placeholder="Enter Loan ID"
+                        value={loanIdInput}
                         onChange={(e) => setLoanIdInput(e.target.value)}
                       />
                       <Button onClick={() => handleFetchLoan()} disabled={fetchingLoan}>
@@ -2329,46 +2390,46 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                     {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Repay Loan & Unlock NFT'}
                                   </Button>
                                 )}
-                                
+
                                 {/* Liquidation Check */}
                                 {currentTime > loanDetails.startTime + loanDetails.duration ? (
-                                   <div className="bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-                                     <div className="flex items-center gap-2 text-red-500 font-bold mb-2">
-                                       <AlertTriangle className="h-4 w-4" /> Loan Expired
-                                     </div>
-                                     <p className="text-xs text-muted-foreground mb-3">The loan duration has passed. The lender can now liquidate the NFT.</p>
-                                     {address && address.toLowerCase() === loanDetails.lender.toLowerCase() && (
-                                       <Button className="w-full bg-red-600 hover:bg-red-700" onClick={handleLiquidateLoan} disabled={processing}>
-                                         {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Liquidate NFT'}
-                                       </Button>
-                                     )}
-                                   </div>
-                                ) : (
-                                    <div className="bg-blue-500/10 p-3 rounded-lg border border-blue-500/20 mt-3">
-                                        <div className="flex items-center gap-2 text-blue-500 font-bold mb-2">
-                                            <Clock className="h-4 w-4" /> Time Remaining
-                                        </div>
-                                        <div className="text-xl font-mono text-center mb-2">
-                                            {formatTimeRemaining(Math.max(0, (loanDetails.startTime + loanDetails.duration) - currentTime))}
-                                        </div>
-                                        <p className="text-xs text-muted-foreground text-center">
-                                            Loan expires on {new Date((loanDetails.startTime + loanDetails.duration) * 1000).toLocaleString()}
-                                        </p>
+                                  <div className="bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                                    <div className="flex items-center gap-2 text-red-500 font-bold mb-2">
+                                      <AlertTriangle className="h-4 w-4" /> Loan Expired
                                     </div>
+                                    <p className="text-xs text-muted-foreground mb-3">The loan duration has passed. The lender can now liquidate the NFT.</p>
+                                    {address && address.toLowerCase() === loanDetails.lender.toLowerCase() && (
+                                      <Button className="w-full bg-red-600 hover:bg-red-700" onClick={handleLiquidateLoan} disabled={processing}>
+                                        {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : 'Liquidate NFT'}
+                                      </Button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="bg-blue-500/10 p-3 rounded-lg border border-blue-500/20 mt-3">
+                                    <div className="flex items-center gap-2 text-blue-500 font-bold mb-2">
+                                      <Clock className="h-4 w-4" /> Time Remaining
+                                    </div>
+                                    <div className="text-xl font-mono text-center mb-2">
+                                      {formatTimeRemaining(Math.max(0, (loanDetails.startTime + loanDetails.duration) - currentTime))}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground text-center">
+                                      Loan expires on {new Date((loanDetails.startTime + loanDetails.duration) * 1000).toLocaleString()}
+                                    </p>
+                                  </div>
                                 )}
                               </>
                             )}
-                            
+
                             {loanDetails.status === LoanStatus.Repaid && (
-                                <div className="flex items-center justify-center gap-2 text-green-500 font-medium p-3 bg-green-500/10 rounded-lg">
-                                    <ShieldCheck className="h-5 w-5" /> Loan Repaid & NFT Returned
-                                </div>
+                              <div className="flex items-center justify-center gap-2 text-green-500 font-medium p-3 bg-green-500/10 rounded-lg">
+                                <ShieldCheck className="h-5 w-5" /> Loan Repaid & NFT Returned
+                              </div>
                             )}
-                            
+
                             {loanDetails.status === LoanStatus.Liquidated && (
-                                <div className="flex items-center justify-center gap-2 text-red-500 font-medium p-3 bg-red-500/10 rounded-lg">
-                                    <AlertTriangle className="h-5 w-5" /> Loan Liquidated
-                                </div>
+                              <div className="flex items-center justify-center gap-2 text-red-500 font-medium p-3 bg-red-500/10 rounded-lg">
+                                <AlertTriangle className="h-5 w-5" /> Loan Liquidated
+                              </div>
                             )}
                           </div>
                         </CardContent>

@@ -768,6 +768,21 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    // Get on-chain listing info from the core NFT marketplace contract
+    async getOnChainListing(tokenId) {
+        try {
+            if (!this.contract) {
+                throw new Error('Marketplace contract not initialized');
+            }
+            console.log(`[Web3] Getting on-chain listing for token ID: ${tokenId}`);
+            const listing = await this.contract.methods.getListing(tokenId).call();
+            return listing;
+        } catch (error) {
+            console.error('[Web3] Error getting on-chain listing:', error.message);
+            throw error;
+        }
+    }
+
     async getContractInfo() {
         try {
             const name = await this.contract.methods.name().call();
@@ -1222,10 +1237,10 @@ class NFTMarketplaceWeb3 {
             const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
             const gasPrice = await this.web3.eth.getGasPrice();
             const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100); // 10% increase
-            
+
             const gas = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({ 
-                from: fromAddress, 
+            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({
+                from: fromAddress,
                 gas,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: nonce
@@ -1248,10 +1263,10 @@ class NFTMarketplaceWeb3 {
             const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
             const gasPrice = await this.web3.eth.getGasPrice();
             const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
-            
+
             const gas = await this.feeManagerContract.methods.setLendingAprBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({ 
-                from: fromAddress, 
+            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({
+                from: fromAddress,
                 gas,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: nonce
@@ -1274,10 +1289,10 @@ class NFTMarketplaceWeb3 {
             const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
             const gasPrice = await this.web3.eth.getGasPrice();
             const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
-            
+
             const gas = await this.feeManagerContract.methods.setLeasingFeeBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({ 
-                from: fromAddress, 
+            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({
+                from: fromAddress,
                 gas,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: nonce
@@ -1300,10 +1315,10 @@ class NFTMarketplaceWeb3 {
             const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
             const gasPrice = await this.web3.eth.getGasPrice();
             const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
-            
+
             const gas = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ 
-                from: fromAddress, 
+            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({
+                from: fromAddress,
                 gas,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: nonce
@@ -1452,50 +1467,50 @@ class NFTMarketplaceWeb3 {
             };
 
             console.log('[Web3] Setting FeeManager values...');
-            
+
             // Get base gas price and nonce for all transactions
             const baseGasPrice = await this.web3.eth.getGasPrice();
             const increasedGasPrice = BigInt(baseGasPrice) * BigInt(110) / BigInt(100); // 10% increase
             let currentNonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
-            
+
             // Set Marketplace Fee
             const gas1 = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).estimateGas({ from: fromAddress });
-            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({ 
-                from: fromAddress, 
+            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({
+                from: fromAddress,
                 gas: gas1,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: currentNonce++
             });
-            
+
             // Wait a bit between transactions to avoid nonce issues
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
+
             // Set Lending APR
             const gas2 = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).estimateGas({ from: fromAddress });
-            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({ 
-                from: fromAddress, 
+            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({
+                from: fromAddress,
                 gas: gas2,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: currentNonce++
             });
-            
+
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
+
             // Set Leasing Fee
             const gas3 = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).estimateGas({ from: fromAddress });
-            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({ 
-                from: fromAddress, 
+            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({
+                from: fromAddress,
                 gas: gas3,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: currentNonce++
             });
-            
+
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
+
             // Set Treasury
             const gas4 = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
-            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ 
-                from: fromAddress, 
+            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({
+                from: fromAddress,
                 gas: gas4,
                 gasPrice: increasedGasPrice.toString(),
                 nonce: currentNonce++
@@ -1554,8 +1569,8 @@ class NFTMarketplaceWeb3 {
     async getExternalNftMetadata(contractAddress, tokenId) {
         try {
             console.log(`[Web3] Fetching external NFT metadata for ${contractAddress} #${tokenId}`);
-            
-            // Generic ERC721 ABI
+
+            // Generic ERC721 ABI + optional marketplace getListing
             const erc721Abi = [
                 {
                     "inputs": [],
@@ -1584,11 +1599,35 @@ class NFTMarketplaceWeb3 {
                     "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
                     "stateMutability": "view",
                     "type": "function"
+                },
+                // Optional: marketplace listing info (NFTMarketplace-style)
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "getListing",
+                    "outputs": [
+                        {
+                            "components": [
+                                { "internalType": "address", "name": "seller", "type": "address" },
+                                { "internalType": "uint256", "name": "price", "type": "uint256" },
+                                { "internalType": "bool", "name": "isActive", "type": "bool" },
+                                { "internalType": "bool", "name": "isAuction", "type": "bool" },
+                                { "internalType": "uint256", "name": "auctionEndTime", "type": "uint256" },
+                                { "internalType": "uint256", "name": "startingPrice", "type": "uint256" },
+                                { "internalType": "uint256", "name": "highestBid", "type": "uint256" },
+                                { "internalType": "address", "name": "highestBidder", "type": "address" }
+                            ],
+                            "internalType": "struct NFTMarketplace.Listing",
+                            "name": "",
+                            "type": "tuple"
+                        }
+                    ],
+                    "stateMutability": "view",
+                    "type": "function"
                 }
             ];
 
             const contract = new this.web3.eth.Contract(erc721Abi, contractAddress);
-            
+
             // Fetch on-chain data
             const [tokenURI, owner, name, symbol] = await Promise.all([
                 contract.methods.tokenURI(tokenId).call().catch(() => ''),
@@ -1604,10 +1643,10 @@ class NFTMarketplaceWeb3 {
             // Resolve IPFS URI
             let metadataUrl = tokenURI;
             if (tokenURI.startsWith('ipfs://')) {
-                metadataUrl = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                metadataUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
             } else if (!tokenURI.startsWith('http')) {
                 // Assume it's a raw IPFS hash if not http/https
-                metadataUrl = `https://ipfs.io/ipfs/${tokenURI}`;
+                metadataUrl = `https://gateway.pinata.cloud/ipfs/${tokenURI}`;
             }
 
             console.log(`[Web3] Resolved metadata URL: ${metadataUrl}`);
@@ -1620,33 +1659,69 @@ class NFTMarketplaceWeb3 {
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
-                    metadata = await response.json();
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.startsWith('image/')) {
+                        console.log(`[Web3] Metadata URL points directly to an image: ${metadataUrl}`);
+                        metadata = { image: metadataUrl, name: `NFT #${tokenId}` };
+                    } else {
+                        metadata = await response.json();
+                    }
                     console.log(`[Web3] Fetched metadata:`, metadata);
                 }
             } catch (err) {
                 console.warn(`[Web3] Failed to fetch metadata JSON from ${metadataUrl}:`, err.message);
                 // Try fallback gateway
                 if (tokenURI.startsWith('ipfs://')) {
-                     const fallbackUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-                     console.log(`[Web3] Trying fallback gateway: ${fallbackUrl}`);
-                     try {
+                    const fallbackUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+                    console.log(`[Web3] Trying fallback gateway: ${fallbackUrl}`);
+                    try {
                         const response = await fetch(fallbackUrl);
                         if (response.ok) {
-                            metadata = await response.json();
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.startsWith('image/')) {
+                                console.log(`[Web3] Fallback URL points directly to an image: ${fallbackUrl}`);
+                                metadata = { image: fallbackUrl, name: `NFT #${tokenId}` };
+                            } else {
+                                metadata = await response.json();
+                            }
                             console.log(`[Web3] Fetched metadata from fallback:`, metadata);
                         }
-                     } catch (fallbackErr) {
-                         console.warn(`[Web3] Fallback gateway failed:`, fallbackErr.message);
-                     }
+                    } catch (fallbackErr) {
+                        console.warn(`[Web3] Fallback gateway failed:`, fallbackErr.message);
+                    }
                 }
             }
 
             // Resolve image IPFS URI
             let imageUrl = metadata.image || metadata.image_url || '';
             if (imageUrl.startsWith('ipfs://')) {
-                imageUrl = imageUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                imageUrl = imageUrl.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
             } else if (imageUrl && !imageUrl.startsWith('http')) {
-                 imageUrl = `https://ipfs.io/ipfs/${imageUrl}`;
+                imageUrl = `https://gateway.pinata.cloud/ipfs/${imageUrl}`;
+            }
+
+            // Optional: try to read on-chain listing info (if contract supports getListing)
+            let listingInfo = null;
+            try {
+                const rawListing = await contract.methods.getListing(tokenId).call();
+                if (rawListing) {
+                    const rawPrice = rawListing.price || rawListing[1];
+                    const isActive = typeof rawListing.isActive !== 'undefined' ? rawListing.isActive : rawListing[2];
+                    const isAuction = typeof rawListing.isAuction !== 'undefined' ? rawListing.isAuction : rawListing[3];
+                    const priceEth = rawPrice && rawPrice !== '0'
+                        ? this.web3.utils.fromWei(rawPrice.toString(), 'ether')
+                        : null;
+                    listingInfo = {
+                        seller: rawListing.seller || rawListing[0],
+                        priceEth,
+                        isActive,
+                        isAuction
+                    };
+                    console.log('[Web3] Listing info fetched for external NFT:', listingInfo);
+                }
+            } catch (e) {
+                // Many external ERC721s won't have getListing; that's fine.
+                console.log('[Web3] getListing not supported or failed for external NFT:', e.message);
             }
 
             return {
@@ -1659,7 +1734,8 @@ class NFTMarketplaceWeb3 {
                 collection_name: name,
                 symbol: symbol,
                 metadata: metadata,
-                attributes: metadata.attributes || []
+                attributes: metadata.attributes || [],
+                listing: listingInfo
             };
 
         } catch (error) {
