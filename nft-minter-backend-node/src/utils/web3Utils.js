@@ -1570,7 +1570,7 @@ class NFTMarketplaceWeb3 {
         try {
             console.log(`[Web3] Fetching external NFT metadata for ${contractAddress} #${tokenId}`);
 
-            // Generic ERC721 ABI + optional marketplace getListing
+            // Generic ERC721 ABI + marketplace functions
             const erc721Abi = [
                 {
                     "inputs": [],
@@ -1600,7 +1600,6 @@ class NFTMarketplaceWeb3 {
                     "stateMutability": "view",
                     "type": "function"
                 },
-                // Optional: marketplace listing info (NFTMarketplace-style)
                 {
                     "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
                     "name": "getListing",
@@ -1617,6 +1616,31 @@ class NFTMarketplaceWeb3 {
                                 { "internalType": "address", "name": "highestBidder", "type": "address" }
                             ],
                             "internalType": "struct NFTMarketplace.Listing",
+                            "name": "",
+                            "type": "tuple"
+                        }
+                    ],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                // getNFTMetadata for marketplace NFTs - THIS IS THE KEY ADDITION
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "getNFTMetadata",
+                    "outputs": [
+                        {
+                            "components": [
+                                { "internalType": "string", "name": "name", "type": "string" },
+                                { "internalType": "string", "name": "description", "type": "string" },
+                                { "internalType": "string", "name": "metadataURI", "type": "string" },
+                                { "internalType": "string", "name": "category", "type": "string" },
+                                { "internalType": "uint256", "name": "royaltyPercentage", "type": "uint256" },
+                                { "internalType": "address", "name": "creator", "type": "address" },
+                                { "internalType": "uint256", "name": "createdAt", "type": "uint256" },
+                                { "internalType": "string", "name": "collection", "type": "string" },
+                                { "internalType": "bool", "name": "exists", "type": "bool" }
+                            ],
+                            "internalType": "struct NFTMarketplace.NFTMetadata",
                             "name": "",
                             "type": "tuple"
                         }
@@ -1645,7 +1669,6 @@ class NFTMarketplaceWeb3 {
             if (tokenURI.startsWith('ipfs://')) {
                 metadataUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
             } else if (!tokenURI.startsWith('http')) {
-                // Assume it's a raw IPFS hash if not http/https
                 metadataUrl = `https://gateway.pinata.cloud/ipfs/${tokenURI}`;
             }
 
@@ -1670,7 +1693,6 @@ class NFTMarketplaceWeb3 {
                 }
             } catch (err) {
                 console.warn(`[Web3] Failed to fetch metadata JSON from ${metadataUrl}:`, err.message);
-                // Try fallback gateway
                 if (tokenURI.startsWith('ipfs://')) {
                     const fallbackUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
                     console.log(`[Web3] Trying fallback gateway: ${fallbackUrl}`);
@@ -1679,7 +1701,6 @@ class NFTMarketplaceWeb3 {
                         if (response.ok) {
                             const contentType = response.headers.get('content-type');
                             if (contentType && contentType.startsWith('image/')) {
-                                console.log(`[Web3] Fallback URL points directly to an image: ${fallbackUrl}`);
                                 metadata = { image: fallbackUrl, name: `NFT #${tokenId}` };
                             } else {
                                 metadata = await response.json();
@@ -1692,6 +1713,33 @@ class NFTMarketplaceWeb3 {
                 }
             }
 
+            // ========== NEW: Try to fetch on-chain metadata using getNFTMetadata ==========
+            try {
+                const onChainMeta = await contract.methods.getNFTMetadata(tokenId).call();
+                console.log('[Web3] On-chain getNFTMetadata result:', onChainMeta);
+
+                if (onChainMeta && onChainMeta.exists) {
+                    // Override with on-chain name and description
+                    if (onChainMeta.name) {
+                        metadata.name = onChainMeta.name;
+                    }
+                    if (onChainMeta.description) {
+                        metadata.description = onChainMeta.description;
+                    }
+                    if (onChainMeta.metadataURI && !metadata.image) {
+                        let imageUri = onChainMeta.metadataURI;
+                        if (imageUri.startsWith('ipfs://')) {
+                            imageUri = imageUri.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+                        }
+                        metadata.image = imageUri;
+                    }
+                    console.log(`[Web3] Using on-chain metadata: name="${metadata.name}", description="${metadata.description}"`);
+                }
+            } catch (e) {
+                console.log('[Web3] getNFTMetadata not available or failed:', e.message);
+            }
+            // ========== END NEW CODE ==========
+
             // Resolve image IPFS URI
             let imageUrl = metadata.image || metadata.image_url || '';
             if (imageUrl.startsWith('ipfs://')) {
@@ -1700,7 +1748,7 @@ class NFTMarketplaceWeb3 {
                 imageUrl = `https://gateway.pinata.cloud/ipfs/${imageUrl}`;
             }
 
-            // Optional: try to read on-chain listing info (if contract supports getListing)
+            // Optional: try to read on-chain listing info
             let listingInfo = null;
             try {
                 const rawListing = await contract.methods.getListing(tokenId).call();
@@ -1720,7 +1768,6 @@ class NFTMarketplaceWeb3 {
                     console.log('[Web3] Listing info fetched for external NFT:', listingInfo);
                 }
             } catch (e) {
-                // Many external ERC721s won't have getListing; that's fine.
                 console.log('[Web3] getListing not supported or failed for external NFT:', e.message);
             }
 
@@ -1743,7 +1790,7 @@ class NFTMarketplaceWeb3 {
             return { success: false, error: error.message };
         }
     }
-}
+};
 
 // Create singleton instance
 const web3Utils = new NFTMarketplaceWeb3();

@@ -338,68 +338,12 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           toast.error('Could not load wrapped NFT details');
         }
       } else {
-        // Regular NFT flow
-        // 1) Special case: our own NFT Marketplace contract – use on-chain metadata + listing like fetchNftDetails.js
-        try {
-          const { getNFTMarketplaceAddress } = await import('@/services/configService');
-          const marketplaceAddr = (await getNFTMarketplaceAddress()).toLowerCase();
+        // Regular NFT flow - Unified path for both Local Marketplace and External NFTs
+        // We use the backend endpoint which handles:
+        // 1. Checking local DB
+        // 2. Fetching from blockchain (using correct ABI for Marketplace vs Generic for others)
+        // 3. Saving to DB automatically
 
-          if (addrTrimmed.toLowerCase() === marketplaceAddr) {
-            const numericTokenId = Number(idTrimmed);
-
-            try {
-              const [meta, listing, owner] = await Promise.all([
-                web3Service.getNFTMetadata(numericTokenId),
-                web3Service.getListing(numericTokenId).catch(() => null),
-                web3Service.getContract().ownerOf(numericTokenId).catch(() => null),
-              ]);
-
-              // Resolve metadata image URI similar to fetchNftDetails.js
-              let imageUrl = meta.imageURI || '';
-              if (imageUrl.startsWith('ipfs://')) {
-                imageUrl = imageUrl.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-              }
-
-              const priceEth = listing && listing.isActive ? listing.price : '0';
-              const isListed =
-                !!listing && listing.isActive && (Number(listing.price) > 0 || listing.isAuction);
-
-              const marketplaceNftData: any = {
-                name: meta.name || `NFT #${idTrimmed}`,
-                description: meta.description || '',
-                image_url: imageUrl,
-                collection: meta.collectionName || 'Local Collection',
-                owner_address: owner || undefined,
-                token_id: idTrimmed,
-                contract_address: addrTrimmed,
-                price: priceEth,
-                is_listed: isListed,
-                source: 'local',
-                // Provide minimal collateral_lending structure so UI stays compatible
-                collateral_lending: {
-                  max_loan: { eth: 0, usd: 0 },
-                  interest_rate: { annual_percentage: '0%' },
-                  loan_terms: {
-                    '3_months': { monthly_payment: 0 },
-                    '6_months': { monthly_payment: 0 },
-                    '12_months': { monthly_payment: 0 },
-                  },
-                },
-              };
-
-              setNftData(marketplaceNftData);
-              setIsWNFT(false);
-              toast.success('NFT loaded from marketplace contract');
-              return;
-            } catch (marketErr) {
-              console.warn('Marketplace on-chain fetch failed, falling back to backend/external', marketErr);
-            }
-          }
-        } catch (cfgErr) {
-          console.warn('Failed to resolve NFT marketplace address, continuing with generic external flow', cfgErr);
-        }
-
-        // 2) Generic external flow: backend first, then generic ERC721 on-chain fetch
         const res = await fetch(apiUrl('/nfts/external/'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -412,7 +356,19 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         const data = await res.json();
 
         if (data.success && data.data) {
-          setNftData(data.data);
+          // Ensure we map the fields correctly from the backend response
+          const backendNft = data.data;
+          const mappedNftData = {
+            ...backendNft,
+            name: backendNft.name || `NFT #${idTrimmed}`,
+            description: backendNft.description || 'No description available',
+            image_url: backendNft.image_url || backendNft.image || '',
+            collection: backendNft.collection || backendNft.nft_collection || 'Unknown Collection',
+            owner_address: backendNft.owner_address || backendNft.owner,
+            contract_address: backendNft.contract_address || addrTrimmed,
+            token_id: backendNft.token_id || idTrimmed,
+          };
+          setNftData(mappedNftData);
           setIsWNFT(false);
           toast.success('NFT found!');
         } else {
@@ -437,6 +393,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           }
         }
       }
+
+
     } catch (error) {
       console.error('Error fetching NFT:', error);
       setNotFound(true);
@@ -471,7 +429,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                     <option value="program">Leasing Program (Coming Soon)</option>
                   </select>
                 </div>
-
+  
                 {leasingType === 'program' ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <p>Leasing Program is coming soon!</p>
@@ -506,7 +464,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                     </Button>
                   </div>
                 )}
-
+  
                 {nftData && leasingType !== 'program' && (
                   // ... (render NFT card details)
                 )}

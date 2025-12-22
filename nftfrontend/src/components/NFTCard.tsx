@@ -44,6 +44,7 @@ interface NFTCardProps {
   isRented?: boolean;
   onReturn?: () => void;
   onSubLease?: () => void;
+  nftType?: 'NFT' | 'Rent' | 'wNFT' | 'wwNFT' | 'For Sale' | 'Auction' | 'Rented' | 'For Rent';
 }
 
 const getImageUrl = (url: string) => {
@@ -86,6 +87,7 @@ const NFTCard = ({
   loanLender,
   onReturn,
   onSubLease,
+  nftType = 'NFT',
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
   const { address, provider } = useWallet();
@@ -97,8 +99,6 @@ const NFTCard = ({
   const isOwner = address && owner_address?.toLowerCase() === address.toLowerCase();
   const isLoanBorrower = address && loanBorrower && address.toLowerCase() === loanBorrower.toLowerCase();
   const isLoanLender = address && loanLender && address.toLowerCase() === loanLender.toLowerCase();
-
-
 
   const handleLike = async () => {
     if (isLiking) {
@@ -125,123 +125,6 @@ const NFTCard = ({
       setIsLiking(false);
     }
   };
-
-
-
-  //     const handleBuy = () => {
-  //     if (!tokenId || !price) {
-  //       toast.error('Missing tokenId or price');
-  //       return;
-  //     }
-  //     if (isOwner) {
-  //       toast.error('You already own this NFT.');
-  //       return;
-  //     }
-  //     if (!is_listed) {
-  //       toast.error('This NFT is not listed for sale.');
-  //       return;
-  //     }
-
-  //     // Show confirmation toast
-  //       toast.custom((t: any) => (
-  //       <div className="bg-background p-4 rounded-md shadow-lg flex flex-col gap-3 w-80">
-  //         <div className="text-sm font-medium">
-  //           Are you sure you want to buy this NFT for {price} ETH?
-  //         </div>
-  //         <div className="flex justify-end gap-2">
-  //           <button
-  //             className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
-  //             onClick={async () => {
-  //               toast.dismiss(t.id); // close toast
-  //               await proceedBuy(); // call your original buy logic
-  //             }}
-  //           >
-  //             Confirm
-  //           </button>
-  //           <button
-  //             className="px-3 py-1 bg-gray-300 text-black rounded hover:bg-gray-400"
-  //             onClick={() => toast.dismiss(t.id)}
-  //           >
-  //             Cancel
-  //           </button>
-  //         </div>
-  //       </div>
-  //     ), { duration: Infinity });
-  //   }
-
-  // // Move your original handleBuy code here
-  // const proceedBuy = async () => {
-  //   setIsBuying(true);
-  //   console.log('[NFTCard] Attempting to buy NFT:', { tokenId, price });
-
-  //   try {
-  //     // Try on-chain buy if wallet is available; otherwise fall back to simulation
-  //     let txHash = '';
-  //     let simulated = false;
-  //     if (address && window.ethereum) {
-  //       console.log('[NFTCard] Calling buyNFT...');
-  //       const result = await buyNFT(Number(tokenId), price.toString());
-  //       console.log('[NFTCard] buyNFT result:', result);
-  //       if (result && result.hash) {
-  //         txHash = result.hash;
-  //         toast.success('NFT purchased successfully!');
-  //       } else {
-  //         toast.message('Proceeding with simulated transfer for testing.');
-  //         simulated = true;
-  //       }
-  //     } else {
-  //       toast.message('No wallet detected. Proceeding with simulated transfer for testing.');
-  //       simulated = true;
-  //     }
-
-  //     // Notify backend to update owner (supports simulation if new_owner is provided)
-  //     try {
-  //       const payload: any = {
-  //         transaction_hash: txHash,
-  //         price: price,
-  //         block_number: 0,
-  //         gas_used: 0,
-  //         gas_price: 0,
-  //       };
-  //       if (simulated && address) payload.new_owner = address;
-  //       await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
-  //         method: 'POST',
-  //         headers: { 'Content-Type': 'application/json' },
-  //         body: JSON.stringify(payload)
-  //       });
-  //       toast.success('Ownership updated.');
-  //       if (afterBuy) afterBuy();
-  //     } catch (err) {
-  //       console.error('[NFTCard] Failed to notify backend for activity log:', err);
-  //     }
-  //   } catch (err: any) {
-  //     console.error('Transaction error:', err);
-  //     if (err?.reason === 'NFT not listed for sale' || err?.message?.includes('NFT not listed for sale')) {
-  //       toast.error('This NFT is not listed for sale.');
-  //     } else if (err?.reason === 'Incorrect price' || err?.message?.includes('Incorrect price')) {
-  //       toast.error('Incorrect price for this NFT.');
-  //     } else if (err?.code === 'INSUFFICIENT_FUNDS' || err?.message?.includes('insufficient funds')) {
-  //       // Allow user to simulate purchase for testing
-  //       try {
-  //         toast.message('Insufficient funds. Proceeding with simulated transfer for testing.');
-  //         await fetch(apiUrl(`/nfts/${tokenId}/transfer/`), {
-  //           method: 'POST',
-  //           headers: { 'Content-Type': 'application/json' },
-  //           body: JSON.stringify({ new_owner: address, transaction_hash: `simulated_${tokenId}`, price })
-  //         });
-  //         toast.success('Ownership updated (simulated).');
-  //         if (afterBuy) afterBuy();
-  //       } catch (e) {
-  //         toast.error('Simulation failed.');
-  //       }
-  //     } else {
-  //       toast.error('Transaction failed: ' + (err?.message || 'Unknown error'));
-  //     }
-  //   } finally {
-  //     setIsBuying(false);
-  //   }
-  // };
-
 
   const handleListNFT = async () => {
     if (!tokenId || !price) {
@@ -520,12 +403,33 @@ const NFTCard = ({
     }
   };
 
+  // Helper to get badge color
+  const getBadgeColor = (type: string) => {
+    switch (type) {
+      case 'Rent': return 'bg-green-600 hover:bg-green-700'; // Legacy support
+      case 'For Rent': return 'bg-green-600 hover:bg-green-700';
+      case 'Rented': return 'bg-red-600 hover:bg-red-700';
+      case 'Auction': return 'bg-orange-600 hover:bg-orange-700';
+      case 'For Sale': return 'bg-blue-600 hover:bg-blue-700';
+      case 'wNFT': return 'bg-purple-600 hover:bg-purple-700';
+      case 'wwNFT': return 'bg-indigo-600 hover:bg-indigo-700';
+      default: return 'bg-gray-600 hover:bg-gray-700'; // NFT
+    }
+  };
+
   return (
     <Card
       className="group overflow-hidden border-0 bg-card hover:shadow-lg transition-all duration-300 hover:-translate-y-1 h-full flex flex-col min-w-0 cursor-pointer"
       onClick={onClick || handleCardClick}
     >
       <div className="relative aspect-square overflow-hidden bg-muted">
+        {/* NFT Type Badge */}
+        <div className="absolute top-3 left-3 z-10">
+          <Badge className={`${getBadgeColor(nftType)} text-white border-0`}>
+            {nftType}
+          </Badge>
+        </div>
+
         {/* Display image or media poster */}
         {image && (image.includes('mt=video') || image.includes('mt=audio')) ? (
           <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
@@ -609,9 +513,9 @@ const NFTCard = ({
         )}
         {isRentable && !isOwner && (
           <div className="absolute bottom-3 left-3">
-            <Badge className="bg-green-600 hover:bg-green-700 flex items-center space-x-1">
-              <span className="text-xs">🏠 For Rent</span>
-            </Badge>
+            {/* <Badge className="bg-green-600 hover:bg-green-700 flex items-center space-x-1">
+              <span className="text-xs"></span>
+            </Badge> */}
           </div>
         )}
       </div>
@@ -651,7 +555,7 @@ const NFTCard = ({
                         disabled
                         title="This NFT is currently wrapped"
                       >
-                        🎁 Wrapped
+                        Wrapped
                       </Button>
                       {/* {onReturn && (
                         <Button

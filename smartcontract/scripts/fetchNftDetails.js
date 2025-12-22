@@ -13,7 +13,7 @@ async function main() {
   const args = require('minimist')(process.argv.slice(2));
   const rpc = args.rpc || process.env.TESTNET_URL || TESTNET_URL;
   const contractAddress = CONTRACT_ADDRESS;
-  const tokenArg = args.token || process.env.TOKEN_ID || "49";
+  const tokenArg = args.token || process.env.TOKEN_ID || "48";
   const gateway = args.gateway || process.env.IPFS_GATEWAY || 'https://ipfs.io/ipfs/';
 
   if (!rpc) {

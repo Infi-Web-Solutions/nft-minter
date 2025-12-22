@@ -815,19 +815,19 @@ export const setNftRentable = async (req, res) => {
     try {
         const { token_id } = req.params;
         const { is_rentable } = req.body;
-        
+
         const nft = await NFT.findOne({ token_id });
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
-        
+
         nft.is_rentable = is_rentable;
         // If rentable, it's technically not "listed for sale" in the traditional sense, 
         // but we might want to keep is_listed false to avoid confusion in the marketplace
         if (is_rentable) {
-            nft.is_listed = false; 
+            nft.is_listed = false;
         }
-        
+
         await nft.save();
         return res.json({ success: true, is_rentable: nft.is_rentable });
     } catch (error) {
@@ -1316,28 +1316,28 @@ const calculateLoanDetails = (nftPriceETH) => {
     const ETH_TO_USD = 1700; // Convert ETH to USD (you can make this dynamic)
     const LTV_RATIO = 0.60; // 60% Loan-to-Value ratio (conservative)
     const ANNUAL_INTEREST_RATE = 0.03; // 3% APR
-    
+
     const nftValueETH = parseFloat(nftPriceETH);
     const nftValueUSD = nftValueETH * ETH_TO_USD;
-    
+
     // Calculate max loan amount (60% of NFT value)
     const maxLoanETH = nftValueETH * LTV_RATIO;
     const maxLoanUSD = nftValueUSD * LTV_RATIO;
-    
+
     // Calculate interest for different loan periods
     const calculateInterestForPeriod = (principal, rate, months) => {
         const monthlyRate = rate / 12;
         const totalInterest = principal * monthlyRate * months;
         const totalRepayment = principal + totalInterest;
         const monthlyPayment = totalRepayment / months;
-        
+
         return {
             total_interest: parseFloat(totalInterest.toFixed(4)),
             total_repayment: parseFloat(totalRepayment.toFixed(4)),
             monthly_payment: parseFloat(monthlyPayment.toFixed(4))
         };
     };
-    
+
     return {
         nft_value: {
             eth: parseFloat(nftValueETH.toFixed(4)),
@@ -1386,16 +1386,16 @@ export const getExternalNft = async (req, res) => {
         // Support both POST (body) and GET (params)
         const contract_address = req.body.contract_address || req.params.contract;
         const token_id = req.body.token_id || req.params.tokenId;
-        
+
         console.log(`[DEBUG] getExternalNft called with contract: ${contract_address}, token: ${token_id}`);
-        
+
         if (!contract_address || !token_id) {
             return res.status(400).json({
                 success: false,
                 error: 'Both contract_address and token_id are required'
             });
         }
-        
+
         // Always check internal database first for ANY contract
         // This handles NFTs that were minted through this platform
         console.log(`[DEBUG] Checking internal database for contract: ${contract_address}, token_id: ${token_id}`);
@@ -1405,13 +1405,46 @@ export const getExternalNft = async (req, res) => {
             token_id: parseInt(token_id),
             contract_address: contract_address.toLowerCase()
         });
-        
+
         if (internalNft) {
             console.log(`[DEBUG] Found NFT in internal database - Name: ${internalNft.name}`);
-            
+
+            // For marketplace contract NFTs, fetch fresh on-chain metadata
+            console.log('[DEBUG] Checking if marketplace contract:', {
+                web3UtilsAddress: web3Utils.contractAddress,
+                requestAddress: contract_address.toLowerCase(),
+                match: web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()
+            });
+
+            if (web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+                console.log('[DEBUG] Marketplace NFT - fetching fresh on-chain metadata');
+                try {
+                    const onChainMeta = await web3Utils.contract.methods.getNFTMetadata(token_id).call();
+                    console.log('[DEBUG] Fresh on-chain metadata:', onChainMeta);
+
+                    internalNft.name = onChainMeta.name || onChainMeta[0];
+                    internalNft.description = onChainMeta.description || onChainMeta[1];
+
+                    const imageURI = onChainMeta.imageURI || onChainMeta[2];
+                    if (imageURI) {
+                        let resolvedImage = imageURI;
+                        if (imageURI.startsWith('ipfs://')) {
+                            resolvedImage = imageURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+                        }
+                        internalNft.image_url = resolvedImage;
+                        internalNft.token_uri = imageURI;
+                    }
+
+                    await internalNft.save();
+                    console.log('[DEBUG] Database updated with fresh metadata');
+                } catch (e) {
+                    console.warn('[DEBUG] Failed to fetch fresh metadata:', e.message);
+                }
+            }
+
             // Calculate loan details based on NFT price
             const loanDetails = calculateLoanDetails(internalNft.price);
-            
+
             // Return data from our database (most complete data)
             const formattedData = {
                 id: `local_${internalNft._id}`,
@@ -1438,13 +1471,13 @@ export const getExternalNft = async (req, res) => {
                 properties: [],
                 collateral_lending: loanDetails // Add loan calculation details
             };
-            
+
             return res.json({
                 success: true,
                 data: formattedData
             });
         }
-        
+
         // If not in our database, fetch from blockchain (external NFT)
         console.log(`[DEBUG] NFT not in database, fetching from blockchain`);
 
@@ -1468,14 +1501,14 @@ export const getExternalNft = async (req, res) => {
         } else {
             nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
         }
-        
+
         if (!nftData.success) {
             return res.status(404).json({
                 success: false,
                 error: 'NFT not found on blockchain'
             });
         }
-        
+
         console.log(`[DEBUG] External NFT fetched - Name: ${nftData.name}, Image: ${nftData.image ? 'yes' : 'no'}`);
 
         // Derive listing / price info if available (e.g. our NFTMarketplace contract)
@@ -1508,7 +1541,7 @@ export const getExternalNft = async (req, res) => {
             ? parseFloat(listing.priceEth)
             : null;
         const isListed = !!(listing && listing.isActive && listing.priceEth);
-        
+
         // Format response similar to internal NFTs
         const formattedData = {
             id: `external_${contract_address}_${token_id}`,
@@ -1535,14 +1568,15 @@ export const getExternalNft = async (req, res) => {
                 symbol: nftData.symbol,
                 metadata: nftData.metadata
             },
-            properties: nftData.attributes || []
+            properties: nftData.attributes || [],
+            collateral_lending: calculateLoanDetails(priceEth) // Add loan calculation for external NFTs too
         };
-        
+
         return res.json({
             success: true,
             data: formattedData
         });
-        
+
     } catch (error) {
         console.error(`[ERROR] getExternalNft: ${error}`);
         return res.status(500).json({

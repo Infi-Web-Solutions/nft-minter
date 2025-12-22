@@ -162,7 +162,7 @@ const Marketplace = () => {
                   }
                 }
 
-                const wnftNft: NFT = {
+                const wnftNft: NFT & { nftType?: string } = {
                   id: `wnft_${l.listingId}`,
                   title: displayName,
                   name: displayName,
@@ -182,7 +182,8 @@ const Marketplace = () => {
                   createdAt: l.createdAt,
                   source: 'local',
                   contract_address: wrappedLeasingAddress,
-                  isWrapped: true
+                  isWrapped: true,
+                  nftType: info.originalNft.toLowerCase() === wrappedLeasingAddress.toLowerCase() ? 'wwNFT' : 'wNFT'
                 };
 
                 return { type: 'wrapped', data: wnftNft };
@@ -666,6 +667,22 @@ const Marketplace = () => {
                   }
                 }
 
+                let badgeType = (nft as any).nftType;
+
+                if (!badgeType) {
+                  if (isRented) {
+                    badgeType = 'Rented';
+                  } else if (nft.isAuction || nft.is_auction) {
+                    badgeType = 'Auction';
+                  } else if (isRentable) {
+                    badgeType = 'For Rent';
+                  } else if (nft.is_listed) {
+                    badgeType = 'For Sale';
+                  } else {
+                    badgeType = 'NFT';
+                  }
+                }
+
                 return (
                   <NFTCard
                     key={`nft-${nft.source || 'local'}-${nft.token_id ?? nft.id}-${typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'unknown'}`}
@@ -688,6 +705,7 @@ const Marketplace = () => {
                     loanStatus={loanInfo?.status}
                     loanBorrower={loanInfo?.borrower}
                     loanId={loanInfo?.loanId}
+                    nftType={badgeType as any}
                     onRequestLoan={() => {
                       setSelectedLoanNft({
                         contract: contractAddr,
