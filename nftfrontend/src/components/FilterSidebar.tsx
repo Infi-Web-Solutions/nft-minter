@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,26 +15,27 @@ interface FilterSidebarProps {
   };
   onFilterChange: (filterType: string, value: any) => void;
   onClearAll: () => void;
+  dynamicCollections?: string[];
 }
 
-const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, onClearAll }) => {
+const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, onClearAll, dynamicCollections = [] }) => {
   const handleStatusChange = (status: string, checked: boolean) => {
-    const newStatus = checked 
-      ? [...filters.status, status]
+    const newStatus = checked
+      ? Array.from(new Set([...filters.status, status]))
       : filters.status.filter(s => s !== status);
     onFilterChange('status', newStatus);
   };
 
   const handleCollectionChange = (collection: string, checked: boolean) => {
-    const newCollections = checked 
-      ? [...filters.collections, collection]
+    const newCollections = checked
+      ? Array.from(new Set([...filters.collections, collection]))
       : filters.collections.filter(c => c !== collection);
     onFilterChange('collections', newCollections);
   };
 
   const handleBlockchainChange = (blockchain: string, checked: boolean) => {
-    const newBlockchains = checked 
-      ? [...filters.blockchain, blockchain]
+    const newBlockchains = checked
+      ? Array.from(new Set([...filters.blockchain, blockchain]))
       : filters.blockchain.filter(b => b !== blockchain);
     onFilterChange('blockchain', newBlockchains);
   };
@@ -60,6 +60,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, 
     ...filters.blockchain.map(b => ({ type: 'blockchain', value: b })),
   ];
 
+  const statusOptions = ['Buy Now', 'On Auction', 'New', 'Has Offers', 'On Rent', 'Loan', 'Rented'];
+
   return (
     <div className="w-80 space-y-6 p-6 bg-card border-r">
       <div className="flex items-center justify-between">
@@ -72,9 +74,9 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, 
       <div className="space-y-4">
         <h4 className="font-medium">Status</h4>
         <div className="space-y-3">
-          {['Buy Now', 'On Auction', 'New', 'Has Offers'].map((status) => (
+          {statusOptions.map((status) => (
             <div key={status} className="flex items-center space-x-2">
-              <Checkbox 
+              <Checkbox
                 id={status}
                 checked={filters.status.includes(status)}
                 onCheckedChange={(checked) => handleStatusChange(status, checked as boolean)}
@@ -89,12 +91,12 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, 
 
       <div className="space-y-4">
         <h4 className="font-medium">Price Range</h4>
-        <Slider 
+        <Slider
           value={filters.priceRange}
           onValueChange={handlePriceRangeChange}
-          max={100} 
-          step={1} 
-          className="w-full" 
+          max={100}
+          step={1}
+          className="w-full"
         />
         <div className="flex justify-between text-sm text-muted-foreground">
           <span>{filters.priceRange[0]} ETH</span>
@@ -107,16 +109,20 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, 
       <div className="space-y-4">
         <h4 className="font-medium">Collections</h4>
         <div className="space-y-3">
-          {['CryptoPunks', 'Bored Ape Yacht Club', 'Azuki', 'CloneX'].map((collection) => (
-            <div key={collection} className="flex items-center space-x-2">
-              <Checkbox 
-                id={collection}
-                checked={filters.collections.includes(collection)}
-                onCheckedChange={(checked) => handleCollectionChange(collection, checked as boolean)}
-              />
-              <label htmlFor={collection} className="text-sm cursor-pointer">{collection}</label>
-            </div>
-          ))}
+          {dynamicCollections.length > 0 ? (
+            dynamicCollections.map((collection) => (
+              <div key={collection} className="flex items-center space-x-2">
+                <Checkbox
+                  id={collection}
+                  checked={filters.collections.includes(collection)}
+                  onCheckedChange={(checked) => handleCollectionChange(collection, checked as boolean)}
+                />
+                <label htmlFor={collection} className="text-sm cursor-pointer">{collection}</label>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">No collections found</p>
+          )}
         </div>
       </div>
 
@@ -125,9 +131,9 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, 
       <div className="space-y-4">
         <h4 className="font-medium">Blockchain</h4>
         <div className="space-y-3">
-          {['Ethereum', 'Polygon', 'Solana'].map((chain) => (
+          {['Ethereum'].map((chain) => (
             <div key={chain} className="flex items-center space-x-2">
-              <Checkbox 
+              <Checkbox
                 id={chain}
                 checked={filters.blockchain.includes(chain)}
                 onCheckedChange={(checked) => handleBlockchainChange(chain, checked as boolean)}
@@ -144,8 +150,8 @@ const FilterSidebar: React.FC<FilterSidebarProps> = ({ filters, onFilterChange, 
             {activeFilters.map((filter, index) => (
               <Badge key={index} variant="secondary" className="flex items-center gap-1">
                 {filter.value}
-                <X 
-                  className="h-3 w-3 cursor-pointer" 
+                <X
+                  className="h-3 w-3 cursor-pointer"
                   onClick={() => removeFilter(filter.type, filter.value)}
                 />
               </Badge>

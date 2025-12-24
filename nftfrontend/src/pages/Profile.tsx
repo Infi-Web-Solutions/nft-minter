@@ -32,7 +32,7 @@ const Profile = () => {
   const coverImageRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState({
-    id:'',
+    id: '',
     username: '',
     bio: '',
     avatar_url: '',
@@ -69,7 +69,7 @@ const Profile = () => {
   const [isLoadingRentals, setIsLoadingRentals] = useState(false);
   const [activeLoans, setActiveLoans] = useState<Map<string, { status: string, borrower: string, loanId: string }>>(new Map());
   const [showCollateralSidebar, setShowCollateralSidebar] = useState(false);
-  const [selectedLoanNft, setSelectedLoanNft] = useState<{contract: string, tokenId: string, loanId?: string, leasingType?: 'collateral' | 'wrapped' | 'marketplace'} | null>(null);
+  const [selectedLoanNft, setSelectedLoanNft] = useState<{ contract: string, tokenId: string, loanId?: string, leasingType?: 'collateral' | 'wrapped' | 'marketplace' } | null>(null);
   const [contractAddress, setContractAddress] = useState<string>('');
   const [activeListings, setActiveListings] = useState<Map<string, { listingId: number, status: string }>>(new Map<string, { listingId: number, status: string }>());
 
@@ -101,51 +101,51 @@ const Profile = () => {
         }
       } catch (e) { /* ignore */ }
     };
-    
-    const fetchActiveLoans = async () => {
-        try {
-            const res = await fetch(apiUrl('/loans/open'));
-            const data = await res.json();
-            if (data.success) {
-                const loanMap = new Map<string, { status: string, borrower: string, loanId: string, lender: string }>();
-                const myLended: any[] = [];
 
-                await Promise.all(data.data.map(async (loan: any) => {
-                    const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
-                    loanMap.set(key, { status: loan.status, borrower: loan.borrower, loanId: loan.loanId, lender: loan.lender });
-                    
-                    // If current user is the lender, fetch NFT details
-                    if (address && loan.lender && loan.lender.toLowerCase() === address.toLowerCase()) {
-                         try {
-                             // Try to fetch from backend first
-                             let nftData = null;
-                             const nftRes = await fetch(apiUrl(`/nfts/external/${loan.nftContract}/${loan.tokenId}`));
-                             const nftResData = await nftRes.json();
-                             if (nftResData.success) {
-                                 nftData = nftResData.data;
-                             }
-                             
-                             if (nftData) {
-                                 myLended.push({
-                                     ...nftData,
-                                     loanId: loan.loanId,
-                                     loanStatus: loan.status,
-                                     loanBorrower: loan.borrower,
-                                     loanLender: loan.lender
-                                 });
-                             }
-                         } catch (e) {
-                             console.error('Failed to fetch lended NFT details', e);
-                         }
-                    }
-                }));
-                
-                setActiveLoans(loanMap);
-                setLendedNFTs(myLended);
+    const fetchActiveLoans = async () => {
+      try {
+        const res = await fetch(apiUrl('/loans/open'));
+        const data = await res.json();
+        if (data.success) {
+          const loanMap = new Map<string, { status: string, borrower: string, loanId: string, lender: string }>();
+          const myLended: any[] = [];
+
+          await Promise.all(data.data.map(async (loan: any) => {
+            const key = `${loan.nftContract.toLowerCase()}-${loan.tokenId}`;
+            loanMap.set(key, { status: loan.status, borrower: loan.borrower, loanId: loan.loanId, lender: loan.lender });
+
+            // If current user is the lender, fetch NFT details
+            if (address && loan.lender && loan.lender.toLowerCase() === address.toLowerCase()) {
+              try {
+                // Try to fetch from backend first
+                let nftData = null;
+                const nftRes = await fetch(apiUrl(`/nfts/external/${loan.nftContract}/${loan.tokenId}`));
+                const nftResData = await nftRes.json();
+                if (nftResData.success) {
+                  nftData = nftResData.data;
+                }
+
+                if (nftData) {
+                  myLended.push({
+                    ...nftData,
+                    loanId: loan.loanId,
+                    loanStatus: loan.status,
+                    loanBorrower: loan.borrower,
+                    loanLender: loan.lender
+                  });
+                }
+              } catch (e) {
+                console.error('Failed to fetch lended NFT details', e);
+              }
             }
-        } catch (err) {
-            console.error('Failed to fetch active loans', err);
+          }));
+
+          setActiveLoans(loanMap);
+          setLendedNFTs(myLended);
         }
+      } catch (err) {
+        console.error('Failed to fetch active loans', err);
+      }
     };
 
     fetchFollowers();
@@ -156,23 +156,23 @@ const Profile = () => {
   // Fetch active marketplace listings
   useEffect(() => {
     const fetchListings = async () => {
-        try {
-            // First try to get listings from backend API
-            const res = await fetch(apiUrl('/listings/active'));
-            const data = await res.json();
-            
-            if (data.success && data.data) {
-                const listingMap = new Map<string, { listingId: number, status: string }>();
-                data.data.forEach((l: any) => {
-                    const key = `${l.nftAddress.toLowerCase()}-${String(l.tokenId)}`;
-                    listingMap.set(key, { listingId: l.listingId, status: l.status });
-                });
-                setActiveListings(listingMap);
-                setAllListings(data.data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch active listings', err);
+      try {
+        // First try to get listings from backend API
+        const res = await fetch(apiUrl('/listings/active'));
+        const data = await res.json();
+
+        if (data.success && data.data) {
+          const listingMap = new Map<string, { listingId: number, status: string }>();
+          data.data.forEach((l: any) => {
+            const key = `${l.nftAddress.toLowerCase()}-${String(l.tokenId)}`;
+            listingMap.set(key, { listingId: l.listingId, status: l.status });
+          });
+          setActiveListings(listingMap);
+          setAllListings(data.data);
         }
+      } catch (err) {
+        console.error('Failed to fetch active listings', err);
+      }
     };
     fetchListings();
   }, []);
@@ -180,66 +180,66 @@ const Profile = () => {
   // Filter and enrich my listings
   useEffect(() => {
     if (!address || allListings.length === 0) {
-        setMyListings([]);
-        return;
+      setMyListings([]);
+      return;
     }
 
     const fetchMyListings = async () => {
-        setIsLoadingRentals(true);
-        try {
-            const myActiveListings = allListings.filter((l: any) => 
-                l.owner && l.owner.toLowerCase() === address.toLowerCase() &&
-                l.status === 'Active'
-            );
+      setIsLoadingRentals(true);
+      try {
+        const myActiveListings = allListings.filter((l: any) =>
+          l.owner && l.owner.toLowerCase() === address.toLowerCase() &&
+          l.status === 'Active'
+        );
 
-            const enrichedListings = await Promise.all(myActiveListings.map(async (l: any) => {
-                // Try to find in combinedNFTs first
-                const existing = combinedNFTs.find((n: any) => 
-                    (n.contract_address || n.collection)?.toLowerCase() === l.nftAddress.toLowerCase() && 
-                    String(n.token_id) === String(l.tokenId)
-                );
-                
-                if (existing) {
-                    return { 
-                        ...existing, 
-                        ...l, 
-                        id: existing.id || `listing_${l.listingId}`,
-                        pricePerSecond: l.pricePerSecond // Ensure listing price overrides
-                    };
-                }
-                
-                // Fetch external metadata
-                try {
-                    const res = await fetch(apiUrl(`/nfts/external/${l.nftAddress}/${l.tokenId}`));
-                    const data = await res.json();
-                    if (data.success) {
-                        return { 
-                            ...data.data, 
-                            ...l, 
-                            id: `listing_${l.listingId}`,
-                            collection: data.data.collection || 'Unknown Collection'
-                        };
-                    }
-                } catch (e) {
-                    console.error('Error fetching listing metadata', e);
-                }
-                return { 
-                    ...l, 
-                    id: `listing_${l.listingId}`, 
-                    name: `NFT #${l.tokenId}`, 
-                    collection: 'Unknown',
-                    image_url: '' // Placeholder
-                };
-            }));
-            
-            setMyListings(enrichedListings);
-        } catch (error) {
-            console.error('Error processing my listings:', error);
-        } finally {
-            setIsLoadingRentals(false);
-        }
+        const enrichedListings = await Promise.all(myActiveListings.map(async (l: any) => {
+          // Try to find in combinedNFTs first
+          const existing = combinedNFTs.find((n: any) =>
+            (n.contract_address || n.collection)?.toLowerCase() === l.nftAddress.toLowerCase() &&
+            String(n.token_id) === String(l.tokenId)
+          );
+
+          if (existing) {
+            return {
+              ...existing,
+              ...l,
+              id: existing.id || `listing_${l.listingId}`,
+              pricePerSecond: l.pricePerSecond // Ensure listing price overrides
+            };
+          }
+
+          // Fetch external metadata
+          try {
+            const res = await fetch(apiUrl(`/nfts/external/${l.nftAddress}/${l.tokenId}`));
+            const data = await res.json();
+            if (data.success) {
+              return {
+                ...data.data,
+                ...l,
+                id: `listing_${l.listingId}`,
+                collection: data.data.collection || 'Unknown Collection'
+              };
+            }
+          } catch (e) {
+            console.error('Error fetching listing metadata', e);
+          }
+          return {
+            ...l,
+            id: `listing_${l.listingId}`,
+            name: `NFT #${l.tokenId}`,
+            collection: 'Unknown',
+            image_url: '' // Placeholder
+          };
+        }));
+
+        setMyListings(enrichedListings);
+      } catch (error) {
+        console.error('Error processing my listings:', error);
+      } finally {
+        setIsLoadingRentals(false);
+      }
     };
-    
+
     fetchMyListings();
   }, [address, allListings, combinedNFTs]);
 
@@ -249,25 +249,27 @@ const Profile = () => {
     const fetchNFTs = async () => {
       setIsLoadingNFTs(true);
       try {
-        const nfts = await nftService.getCombinedNFTs(address);
-        
-        // Filter for Created tab
-        const created = nfts.filter((nft: any) => 
-            nft.creator_address && nft.creator_address.toLowerCase() === address.toLowerCase()
-        );
-        setCreatedNFTs(created);
-        const owned = nfts.filter((nft: any) => {
-            const isOwner = nft.owner_address && nft.owner_address.toLowerCase() === address.toLowerCase();
-            const isRentable = nft.isRentable || activeListings.has(`${(nft.contract_address || nft.collection).toLowerCase()}-${nft.token_id}`);
-            return isOwner && !isRentable;
-        });
+        // Fetch owned and created NFTs in parallel
+        const [owned, created] = await Promise.all([
+          nftService.getUserCollectedNFTs(address),
+          nftService.getUserCreatedNFTs(address)
+        ]);
+
         setOwnedNFTs(owned);
-        
-        // Combined for other uses if needed, but we rely on specific state for tabs
-        setCombinedNFTs(nfts);
+        setCreatedNFTs(created);
+
+        // Combine them for the "Collected" tab, ensuring uniqueness
+        const uniqueNFTs = new Map();
+        owned.forEach((nft: any) => uniqueNFTs.set(nft.id, nft));
+        created.forEach((nft: any) => {
+          if (!uniqueNFTs.has(nft.id)) {
+            uniqueNFTs.set(nft.id, nft);
+          }
+        });
+        setCombinedNFTs(Array.from(uniqueNFTs.values()));
 
         // Favorites
-        const favorites = nfts.filter((nft: any) => likedNFTIds.has(String(nft.id)));
+        const favorites = Array.from(uniqueNFTs.values()).filter((nft: any) => likedNFTIds.has(String(nft.id)));
         setFavoriteNFTs(favorites);
 
       } catch (error) {
@@ -287,38 +289,38 @@ const Profile = () => {
     const fetchWrappedNFTs = async () => {
       try {
         const [wrapped, contractInfo] = await Promise.all([
-            wrappedLeasingApiService.getUserWrappedNFTs(address),
-            wrappedLeasingApiService.getContractInfo()
+          wrappedLeasingApiService.getUserWrappedNFTs(address),
+          wrappedLeasingApiService.getContractInfo()
         ]);
-        
+
         const enrichedWrapped = await Promise.all(wrapped.map(async (w: any) => {
-             try {
-                 // Fetch metadata for the original NFT
-                 const res = await fetch(apiUrl(`/nfts/external/${w.originalNft}/${w.originalTokenId}`));
-                 const data = await res.json();
-                 if (data.success) {
-                     return {
-                         ...w,
-                         ...data.data, // This should have name, image, description, attributes
-                         id: `wrapped_${w.wId}`, // Unique ID for React key
-                         collection: data.data.collection || 'Wrapped NFT',
-                         isWrapped: true,
-                         wrappedContractAddress: contractInfo.wrappedLeasingAddress
-                     };
-                 }
-             } catch (e) {
-                 console.error('Failed to fetch metadata for wrapped NFT', w.wId, e);
-             }
-             return {
-                 ...w,
-                 id: `wrapped_${w.wId}`,
-                 name: `Wrapped NFT #${w.wId}`,
-                 collection: 'Wrapped Collection',
-                 isWrapped: true,
-                 wrappedContractAddress: contractInfo.wrappedLeasingAddress
-             };
+          try {
+            // Fetch metadata for the original NFT
+            const res = await fetch(apiUrl(`/nfts/external/${w.originalNft}/${w.originalTokenId}`));
+            const data = await res.json();
+            if (data.success) {
+              return {
+                ...w,
+                ...data.data, // This should have name, image, description, attributes
+                id: `wrapped_${w.wId}`, // Unique ID for React key
+                collection: data.data.collection || 'Wrapped NFT',
+                isWrapped: true,
+                wrappedContractAddress: contractInfo.wrappedLeasingAddress
+              };
+            }
+          } catch (e) {
+            console.error('Failed to fetch metadata for wrapped NFT', w.wId, e);
+          }
+          return {
+            ...w,
+            id: `wrapped_${w.wId}`,
+            name: `Wrapped NFT #${w.wId}`,
+            collection: 'Wrapped Collection',
+            isWrapped: true,
+            wrappedContractAddress: contractInfo.wrappedLeasingAddress
+          };
         }));
-        
+
         setMyWrappedRentals(enrichedWrapped);
       } catch (e) {
         console.error('Failed to fetch wrapped NFTs', e);
@@ -383,25 +385,7 @@ const Profile = () => {
     items
   };
 
-  // Merge owned and created NFTs for Combined/Collected view
-  useEffect(() => {
-    const uniqueNFTs = new Map();
-    
-    // Add owned NFTs first
-    ownedNFTs.forEach((nft: any) => {
-      uniqueNFTs.set(nft.id, nft);
-    });
-    
-    // Add created NFTs (if not already present)
-    // This ensures created NFTs are shown in "Collected" tab
-    createdNFTs.forEach((nft: any) => {
-      if (!uniqueNFTs.has(nft.id)) {
-        uniqueNFTs.set(nft.id, nft);
-      }
-    });
-    
-    setCombinedNFTs(Array.from(uniqueNFTs.values()));
-  }, [ownedNFTs, createdNFTs]);
+  // combinedNFTs is now handled in the main fetchNFTs effect
 
   // Debug: Log whenever combinedNFTs changes
   useEffect(() => {
@@ -430,7 +414,7 @@ const Profile = () => {
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64String = reader.result as string;
-        
+
         // Update local state immediately for preview
         setProfile(prev => ({
           ...prev,
@@ -447,7 +431,7 @@ const Profile = () => {
             [type === 'profile' ? 'profile_image' : 'cover_image']: base64String
           })
         });
-        
+
         const data = await response.json();
         if (data.success) {
           setProfile(prev => ({
@@ -478,7 +462,7 @@ const Profile = () => {
         },
         body: JSON.stringify(data)
       });
-      
+
       const result = await response.json();
       if (result.success) {
         setProfile(prev => ({
@@ -499,7 +483,7 @@ const Profile = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       if (!address) return;
-      
+
       try {
         const response = await fetch(apiUrl(`/profiles/${address}/`));
         const data = await response.json();
@@ -519,18 +503,7 @@ const Profile = () => {
     fetchProfile();
   }, [address]);
 
-  // Fetch created NFTs
-  useEffect(() => {
-    if (!address) return;
-    const fetchCreatedNFTs = async () => {
-      try {
-        const res = await fetch(apiUrl(`/profiles/${address}/created/`));
-        const data = await res.json();
-        if (data.success) setCreatedNFTs(data.data);
-      } catch (e) { /* ignore */ }
-    };
-    fetchCreatedNFTs();
-  }, [address]);
+  // createdNFTs is now handled in the main fetchNFTs effect
 
 
 
@@ -555,7 +528,7 @@ const Profile = () => {
       toast.error('Please connect your wallet first');
       return;
     }
-    
+
     try {
       // Pass the full NFT ID to the API call
       const result = await nftService.toggleNFTLike(nft.id, address);
@@ -563,9 +536,9 @@ const Profile = () => {
         // Use the actual liked state from the backend
         const actualLikedState = result.liked !== undefined ? result.liked : newLikedState;
         // Update the combined NFTs state immediately
-        setCombinedNFTs(prevNfts => 
-          prevNfts.map(n => 
-            n.id === nft.id 
+        setCombinedNFTs(prevNfts =>
+          prevNfts.map(n =>
+            n.id === nft.id
               ? { ...n, liked: actualLikedState }
               : n
           )
@@ -585,11 +558,11 @@ const Profile = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <WalletGuard message="Connect your wallet to view and manage your profile">
         {/* Profile Header */}
         <div className="relative mb-8">
-          <div 
+          <div
             className="h-48 md:h-80 w-full bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 relative group overflow-hidden"
             style={profile.banner_url ? { backgroundImage: `url(${profile.banner_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
           >
@@ -611,7 +584,7 @@ const Profile = () => {
               onChange={(e) => handleImageUpload(e, 'cover')}
             />
           </div>
-          
+
           <div className="container mx-auto px-4">
             <div className="relative -mt-20 md:-mt-24 pb-4">
               <div className="flex flex-col md:flex-row gap-6 items-start">
@@ -638,7 +611,7 @@ const Profile = () => {
                     onChange={(e) => handleImageUpload(e, 'profile')}
                   />
                 </div>
-                
+
                 <div className="flex-1 pt-2 md:pt-24 w-full">
                   <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                     <div>
@@ -649,27 +622,27 @@ const Profile = () => {
                       <p className="text-muted-foreground mb-6 max-w-2xl text-lg">
                         {profile.bio || "Digital artist and NFT creator passionate about blockchain technology."}
                       </p>
-                      
+
                       <div className="flex flex-wrap gap-6 text-sm mb-4">
                         <div className="flex items-center gap-2">
-                            <span className="font-bold text-lg">{userStats.items}</span> 
-                            <span className="text-muted-foreground">Items</span>
+                          <span className="font-bold text-lg">{userStats.items}</span>
+                          <span className="text-muted-foreground">Items</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="font-bold text-lg">{userStats.collections}</span>
-                            <span className="text-muted-foreground">Collections</span>
+                          <span className="font-bold text-lg">{userStats.collections}</span>
+                          <span className="text-muted-foreground">Collections</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="font-bold text-lg">{userStats.followers}</span>
-                            <span className="text-muted-foreground">Followers</span>
+                          <span className="font-bold text-lg">{userStats.followers}</span>
+                          <span className="text-muted-foreground">Followers</span>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className="font-bold text-lg">{userStats.following}</span>
-                            <span className="text-muted-foreground">Following</span>
+                          <span className="font-bold text-lg">{userStats.following}</span>
+                          <span className="text-muted-foreground">Following</span>
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex gap-3 w-full md:w-auto">
                       <Button variant="outline" className="flex-1 md:flex-none gap-2">
                         <Copy className="h-4 w-4" />
@@ -695,32 +668,32 @@ const Profile = () => {
 
         {/* Profile Content */}
         <div className="container mx-auto px-4 py-4">
-            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
+          <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
             <div className="border-b border-border/50 mb-8 overflow-x-auto">
-                <TabsList className="w-full justify-start bg-transparent p-0 h-auto space-x-2 md:space-x-6" style={{
-                       display: 'flex',
-                       justifyContent: 'space-between',
-                      
-                    }}>
-                    {[
-                        { id: 'collected', label: 'Collected', icon: '' },
-                        { id: 'items', label: 'Created', icon: '' },
-                        { id: 'favorite', label: 'Favorites', icon: '' },
-                        { id: 'rentals', label: 'Rentals', icon: '' },
-                        { id: 'lend', label: 'Lend', icon: '' },
-                        { id: 'followers', label: 'Followers', icon: '' },
-                        { id: 'activity', label: 'Activity', icon: '' },
-                    ].map(tab => (
-                        <TabsTrigger 
-                            key={tab.id}
-                            value={tab.id}
-                            className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 md:px-4 py-3 text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none transition-all hover:text-foreground text-base"
-                        >
-                            <span className="mr-2">{tab.icon}</span>
-                            {tab.label}
-                        </TabsTrigger>
-                    ))}
-                </TabsList>
+              <TabsList className="w-full justify-start bg-transparent p-0 h-auto space-x-2 md:space-x-6" style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+
+              }}>
+                {[
+                  { id: 'collected', label: 'Collected', icon: '' },
+                  { id: 'items', label: 'Created', icon: '' },
+                  { id: 'favorite', label: 'Favorites', icon: '' },
+                  { id: 'rentals', label: 'Rentals', icon: '' },
+                  { id: 'lend', label: 'Lend', icon: '' },
+                  { id: 'followers', label: 'Followers', icon: '' },
+                  { id: 'activity', label: 'Activity', icon: '' },
+                ].map(tab => (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 md:px-4 py-3 text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none transition-all hover:text-foreground text-base"
+                  >
+                    <span className="mr-2">{tab.icon}</span>
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
             </div>
 
             {/* Collected Tab: combined NFTs */}
@@ -730,78 +703,78 @@ const Profile = () => {
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
               ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {combinedNFTs.length === 0 ? (
-                  <div className="col-span-full text-center text-muted-foreground">No collected NFTs yet.</div>
-                ) : (
-                  combinedNFTs.map((nft: any) => {
-                    // Convert numeric ID to local_ format for consistency
-                    const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
-                    
-                    // Determine loan status
-                    let contractAddr = nft.contract_address || '';
-                    if (!contractAddr) {
-                        if (nft.source === 'local' || !nft.source) {
-                            contractAddr = contractAddress;
-                        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                            contractAddr = nft.collection;
-                        }
-                    }
-                    
-                    const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                    const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
-                    const listingInfo = activeListings.get(loanKey);
-                    const isRentable = !!listingInfo;
-                    const isRented = listingInfo?.status === 'Rented';
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {combinedNFTs.length === 0 ? (
+                    <div className="col-span-full text-center text-muted-foreground">No collected NFTs yet.</div>
+                  ) : (
+                    combinedNFTs.map((nft: any) => {
+                      // Convert numeric ID to local_ format for consistency
+                      const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
 
-                    console.log('[Profile] Rendering NFT in collected tab:', {
-                      original_id: nft.id,
-                      converted_id: nftId,
-                      id_type: typeof nftId,
-                      title: nft.name,
-                      image: nft.image_url,
-                      collection: nft.collection,
-                      source: 'local',
-                      token_id: nft.token_id,
-                      liked: isNFTLiked({ ...nft, id: nftId })
-                    });
-                    return (
-                      <NFTCard
-                        key={nftId}
-                        {...nft}
-                        image={nft.image_url}
-                        tokenId={nft.token_id}
-                        id={nftId}
-                        price={nft.price ? nft.price.toString() : '0'}
-                        title={nft.name}
-                        collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
-                        owner_address={nft.owner_address}
-                        is_listed={nft.is_listed}
-                        liked={isNFTLiked({ ...nft, id: nftId })}
-                        onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
-                        canLike={true}
-                        source="local"
-                        isRentable={isRentable}
-                        isRented={isRented}
-                        onClick={() => {
-                          window.location.href = `/nft/${nftId}`;
-                        }}
-                        loanStatus={loanInfo?.status}
-                        loanBorrower={loanInfo?.borrower}
-                        loanId={loanInfo?.loanId}
-                        onRequestLoan={() => {
+                      // Determine loan status
+                      let contractAddr = nft.contract_address || '';
+                      if (!contractAddr) {
+                        if (nft.source === 'local' || !nft.source) {
+                          contractAddr = contractAddress;
+                        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                          contractAddr = nft.collection;
+                        }
+                      }
+
+                      const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
+                      const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
+                      const listingInfo = activeListings.get(loanKey);
+                      const isRentable = !!listingInfo;
+                      const isRented = listingInfo?.status === 'Rented';
+
+                      console.log('[Profile] Rendering NFT in collected tab:', {
+                        original_id: nft.id,
+                        converted_id: nftId,
+                        id_type: typeof nftId,
+                        title: nft.name,
+                        image: nft.image_url,
+                        collection: nft.collection,
+                        source: 'local',
+                        token_id: nft.token_id,
+                        liked: isNFTLiked({ ...nft, id: nftId })
+                      });
+                      return (
+                        <NFTCard
+                          key={nftId}
+                          {...nft}
+                          image={nft.image_url}
+                          tokenId={nft.token_id}
+                          id={nftId}
+                          price={nft.price ? nft.price.toString() : '0'}
+                          title={nft.name}
+                          collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
+                          owner_address={nft.owner_address}
+                          is_listed={nft.is_listed}
+                          liked={isNFTLiked({ ...nft, id: nftId })}
+                          onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
+                          canLike={true}
+                          source="local"
+                          isRentable={isRentable}
+                          isRented={isRented}
+                          onClick={() => {
+                            window.location.href = `/nft/${nftId}`;
+                          }}
+                          loanStatus={loanInfo?.status}
+                          loanBorrower={loanInfo?.borrower}
+                          loanId={loanInfo?.loanId}
+                          onRequestLoan={() => {
                             setSelectedLoanNft({
-                                contract: contractAddr,
-                                tokenId: String(nft.token_id),
-                                loanId: loanInfo?.loanId
+                              contract: contractAddr,
+                              tokenId: String(nft.token_id),
+                              loanId: loanInfo?.loanId
                             });
                             setShowCollateralSidebar(true);
-                        }}
-                      />
-                    );
-                  })
-                )}
-              </div>
+                          }}
+                        />
+                      );
+                    })
+                  )}
+                </div>
               )}
             </TabsContent>
 
@@ -812,123 +785,26 @@ const Profile = () => {
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
               ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {createdNFTs.length === 0 ? (
-                  <div className="col-span-full text-center text-muted-foreground">No created NFTs yet.</div>
-                ) : (
-                  createdNFTs.map((nft: any) => {
-                    // Convert numeric ID to local_ format for consistency
-                    const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
-                    
-                    // Determine loan status
-                    let contractAddr = nft.contract_address || '';
-                    if (!contractAddr) {
-                        if (nft.source === 'local' || !nft.source) {
-                            contractAddr = contractAddress;
-                        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                            contractAddr = nft.collection;
-                        }
-                    }
-                    
-                    const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
-                    const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
-                    const listingInfo = activeListings.get(loanKey);
-                    const isRentable = !!listingInfo;
-                    const isRented = listingInfo?.status === 'Rented';
-
-                    return (
-                      <NFTCard
-                        key={nftId}
-                        {...nft}
-                        image={nft.image_url}
-                        tokenId={nft.token_id}
-                        id={nftId}
-                        price={nft.price ? nft.price.toString() : '0'}
-                        title={nft.name}
-                        collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
-                        owner_address={nft.owner_address}
-                        is_listed={nft.is_listed}
-                        liked={isNFTLiked({ ...nft, id: nftId })}
-                        onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
-                        canLike={true}
-                        source="local"
-                        isRentable={isRentable}
-                        isRented={isRented}
-                        onClick={() => {
-                          window.location.href = `/nft/${nftId}`;
-                        }}
-                        loanStatus={loanInfo?.status}
-                        loanBorrower={loanInfo?.borrower}
-                        loanId={loanInfo?.loanId}
-                        onRequestLoan={() => {
-                            setSelectedLoanNft({
-                                contract: contractAddr,
-                                tokenId: String(nft.token_id),
-                                loanId: loanInfo?.loanId
-                            });
-                            setShowCollateralSidebar(true);
-                        }}
-                      />
-                    );
-                  })
-                )}
-              </div>
-              )}
-            </TabsContent>
-
-            {/* Favorite Tab: liked NFTs only */}
-            <TabsContent value="favorite" className="mt-8" style={{
-                       display: 'flex',
-                       justifyContent: 'space-between',
-                      
-                    }}> 
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold">My Favorite NFTs</h3>
-                {Array.from(likedNFTIds).length > 0 && (
-                  <Button 
-                    variant="outline" 
-                    onClick={() => window.location.href = '/favorites'}
-                    
-                    className="flex items-center gap-2"
-                  >
-                  View All Favorites ({Array.from(likedNFTIds).length})
-                  </Button>
-                )}
-              </div>
-              {isLoadingNFTs ? (
-                <div className="flex justify-center items-center py-20">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                </div>
-              ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {Array.from(likedNFTIds).length === 0 ? (
-                  <div className="col-span-full text-center text-muted-foreground">
-                    <div className="text-4xl mb-4">❤️</div>
-                    <p className="mb-4">No favorite NFTs yet.</p>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => window.location.href = '/marketplace'}
-                    >
-                      Explore NFTs
-                    </Button>
-                  </div>
-                ) : (
-                  // Filter combinedNFTs to show only liked NFTs
-                  combinedNFTs
-                    .filter((nft: any) => likedNFTIds.has(String(nft.id)))
-                    .map((nft: any) => {
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {createdNFTs.length === 0 ? (
+                    <div className="col-span-full text-center text-muted-foreground">No created NFTs yet.</div>
+                  ) : (
+                    createdNFTs.map((nft: any) => {
+                      // Convert numeric ID to local_ format for consistency
                       const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
-                      
+
+                      // Determine loan status
                       let contractAddr = nft.contract_address || '';
                       if (!contractAddr) {
-                          if (nft.source === 'local' || !nft.source) {
-                              contractAddr = contractAddress;
-                          } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
-                              contractAddr = nft.collection;
-                          }
+                        if (nft.source === 'local' || !nft.source) {
+                          contractAddr = contractAddress;
+                        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                          contractAddr = nft.collection;
+                        }
                       }
-                      
+
                       const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
+                      const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
                       const listingInfo = activeListings.get(loanKey);
                       const isRentable = !!listingInfo;
                       const isRented = listingInfo?.status === 'Rented';
@@ -945,8 +821,8 @@ const Profile = () => {
                           collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
                           owner_address={nft.owner_address}
                           is_listed={nft.is_listed}
-                          liked={true}
-                          onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
+                          liked={isNFTLiked({ ...nft, id: nftId })}
+                          onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                           canLike={true}
                           source="local"
                           isRentable={isRentable}
@@ -954,18 +830,115 @@ const Profile = () => {
                           onClick={() => {
                             window.location.href = `/nft/${nftId}`;
                           }}
+                          loanStatus={loanInfo?.status}
+                          loanBorrower={loanInfo?.borrower}
+                          loanId={loanInfo?.loanId}
                           onRequestLoan={() => {
-                              setSelectedLoanNft({
-                                  contract: contractAddr, // Note: contractAddr needs to be defined in this scope
-                                  tokenId: String(nft.token_id)
-                              });
-                              setShowCollateralSidebar(true);
+                            setSelectedLoanNft({
+                              contract: contractAddr,
+                              tokenId: String(nft.token_id),
+                              loanId: loanInfo?.loanId
+                            });
+                            setShowCollateralSidebar(true);
                           }}
                         />
                       );
                     })
+                  )}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Favorite Tab: liked NFTs only */}
+            <TabsContent value="favorite" className="mt-8" style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+
+            }}>
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-semibold">My Favorite NFTs</h3>
+                {Array.from(likedNFTIds).length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => window.location.href = '/favorites'}
+
+                    className="flex items-center gap-2"
+                  >
+                    View All Favorites ({Array.from(likedNFTIds).length})
+                  </Button>
                 )}
               </div>
+              {isLoadingNFTs ? (
+                <div className="flex justify-center items-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {Array.from(likedNFTIds).length === 0 ? (
+                    <div className="col-span-full text-center text-muted-foreground">
+                      <div className="text-4xl mb-4">❤️</div>
+                      <p className="mb-4">No favorite NFTs yet.</p>
+                      <Button
+                        variant="outline"
+                        onClick={() => window.location.href = '/marketplace'}
+                      >
+                        Explore NFTs
+                      </Button>
+                    </div>
+                  ) : (
+                    // Filter combinedNFTs to show only liked NFTs
+                    combinedNFTs
+                      .filter((nft: any) => likedNFTIds.has(String(nft.id)))
+                      .map((nft: any) => {
+                        const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+
+                        let contractAddr = nft.contract_address || '';
+                        if (!contractAddr) {
+                          if (nft.source === 'local' || !nft.source) {
+                            contractAddr = contractAddress;
+                          } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+                            contractAddr = nft.collection;
+                          }
+                        }
+
+                        const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
+                        const listingInfo = activeListings.get(loanKey);
+                        const isRentable = !!listingInfo;
+                        const isRented = listingInfo?.status === 'Rented';
+
+                        return (
+                          <NFTCard
+                            key={nftId}
+                            {...nft}
+                            image={nft.image_url}
+                            tokenId={nft.token_id}
+                            id={nftId}
+                            price={nft.price ? nft.price.toString() : '0'}
+                            title={nft.name}
+                            collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}
+                            owner_address={nft.owner_address}
+                            is_listed={nft.is_listed}
+                            liked={true}
+                            onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
+                            canLike={true}
+                            source="local"
+                            isRentable={isRentable}
+                            isRented={isRented}
+                            onClick={() => {
+                              window.location.href = `/nft/${nftId}`;
+                            }}
+                            onRequestLoan={() => {
+                              setSelectedLoanNft({
+                                contract: contractAddr, // Note: contractAddr needs to be defined in this scope
+                                tokenId: String(nft.token_id)
+                              });
+                              setShowCollateralSidebar(true);
+                            }}
+                          />
+                        );
+                      })
+                  )}
+                </div>
               )}
             </TabsContent>
 
@@ -999,78 +972,78 @@ const Profile = () => {
             {/* Rentals Tab */}
             {/* Rentals Tab */}
             <TabsContent value="rentals" className="mt-8">
-                {isLoadingRentals ? (
-                    <div className="flex justify-center items-center py-20">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    </div>
-                ) : (
-                <div className="space-y-8">
-                    {/* My Listings Section */}
-                    <div>
-                        <h3 className="text-xl font-bold mb-4">My Listings (For Rent)</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            {myListings.length === 0 ? (
-                                <div className="col-span-full text-center text-muted-foreground py-8 bg-muted/20 rounded-lg">
-                                    <p>You have no NFTs listed for rent.</p>
-                                </div>
-                            ) : (
-                                myListings.map((nft: any) => (
-                                    <div key={nft.id} className="relative group">
-                                        <NFTCard
-                                            {...nft}
-                                            image={nft.image_url}
-                                            tokenId={nft.tokenId}
-                                            id={nft.id}
-                                            price={nft.pricePerSecond ? (Number(nft.pricePerSecond) * 86400 / 1e18).toFixed(4) : '0'} // Show daily price
-                                            title={nft.name}
-                                            collection={nft.collection || 'Unknown Collection'}
-                                            owner_address={address}
-                                            is_listed={true}
-                                            liked={false}
-                                            canLike={false}
-                                            source="local"
-                                            isRentable={true}
-                                            onClick={() => {
-                                                // Open rental management sidebar for this listing instead of navigating away
-                                                setSelectedLoanNft({
-                                                    contract: nft.nftAddress,
-                                                    tokenId: String(nft.tokenId),
-                                                    loanId: String(nft.listingId),
-                                                    leasingType: 'marketplace'
-                                                });
-                                                setShowCollateralSidebar(true);
-                                            }}
-                                            onRequestLoan={() => {
-                                                setSelectedLoanNft({
-                                                    contract: nft.nftAddress,
-                                                    tokenId: String(nft.tokenId),
-                                                    leasingType: 'marketplace' // Or whatever type triggers the right sidebar
-                                                });
-                                                setShowCollateralSidebar(true);
-                                            }}
-                                            onRent={() => {
-                                                console.log("Manage Listing clicked for:", nft);
-                                                setSelectedLoanNft({
-                                                    contract: nft.nftAddress,
-                                                    tokenId: String(nft.tokenId),
-                                                    loanId: String(nft.listingId),
-                                                    leasingType: 'marketplace'
-                                                });
-                                                setShowCollateralSidebar(true);
-                                            }}
-                                        />
-                                        <div className="absolute top-3 right-3 bg-blue-600/90 backdrop-blur-md text-white text-xs px-2 py-1 rounded-md font-medium border border-white/10 z-10 flex items-center gap-1">
-                                            <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-                                            Listed for Rent
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                 
+              {isLoadingRentals ? (
+                <div className="flex justify-center items-center py-20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
-                )}
+              ) : (
+                <div className="space-y-8">
+                  {/* My Listings Section */}
+                  <div>
+                    <h3 className="text-xl font-bold mb-4">My Listings (For Rent)</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {myListings.length === 0 ? (
+                        <div className="col-span-full text-center text-muted-foreground py-8 bg-muted/20 rounded-lg">
+                          <p>You have no NFTs listed for rent.</p>
+                        </div>
+                      ) : (
+                        myListings.map((nft: any) => (
+                          <div key={nft.id} className="relative group">
+                            <NFTCard
+                              {...nft}
+                              image={nft.image_url}
+                              tokenId={nft.tokenId}
+                              id={nft.id}
+                              price={nft.pricePerSecond ? (Number(nft.pricePerSecond) * 86400 / 1e18).toFixed(4) : '0'} // Show daily price
+                              title={nft.name}
+                              collection={nft.collection || 'Unknown Collection'}
+                              owner_address={address}
+                              is_listed={true}
+                              liked={false}
+                              canLike={false}
+                              source="local"
+                              isRentable={true}
+                              onClick={() => {
+                                // Open rental management sidebar for this listing instead of navigating away
+                                setSelectedLoanNft({
+                                  contract: nft.nftAddress,
+                                  tokenId: String(nft.tokenId),
+                                  loanId: String(nft.listingId),
+                                  leasingType: 'marketplace'
+                                });
+                                setShowCollateralSidebar(true);
+                              }}
+                              onRequestLoan={() => {
+                                setSelectedLoanNft({
+                                  contract: nft.nftAddress,
+                                  tokenId: String(nft.tokenId),
+                                  leasingType: 'marketplace' // Or whatever type triggers the right sidebar
+                                });
+                                setShowCollateralSidebar(true);
+                              }}
+                              onRent={() => {
+                                console.log("Manage Listing clicked for:", nft);
+                                setSelectedLoanNft({
+                                  contract: nft.nftAddress,
+                                  tokenId: String(nft.tokenId),
+                                  loanId: String(nft.listingId),
+                                  leasingType: 'marketplace'
+                                });
+                                setShowCollateralSidebar(true);
+                              }}
+                            />
+                            <div className="absolute top-3 right-3 bg-blue-600/90 backdrop-blur-md text-white text-xs px-2 py-1 rounded-md font-medium border border-white/10 z-10 flex items-center gap-1">
+                              <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                              Listed for Rent
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              )}
             </TabsContent>
 
             {/* Activity Tab: user actions */}
@@ -1160,8 +1133,8 @@ const Profile = () => {
                       <div className="col-span-full text-center text-muted-foreground py-8 bg-muted/20 rounded-lg">
                         <div className="text-4xl mb-4">💸</div>
                         <p className="mb-4">You are not lending any NFTs.</p>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           onClick={() => window.location.href = '/marketplace'}
                         >
                           Find Loans to Fund
@@ -1196,12 +1169,12 @@ const Profile = () => {
                             loanLender={nft.loanLender}
                             loanId={nft.loanId}
                             onRequestLoan={() => {
-                                setSelectedLoanNft({
-                                    contract: nft.contract_address || nft.collection,
-                                    tokenId: String(nft.token_id),
-                                    loanId: nft.loanId
-                                });
-                                setShowCollateralSidebar(true);
+                              setSelectedLoanNft({
+                                contract: nft.contract_address || nft.collection,
+                                tokenId: String(nft.token_id),
+                                loanId: nft.loanId
+                              });
+                              setShowCollateralSidebar(true);
                             }}
                           />
                         );
@@ -1215,8 +1188,8 @@ const Profile = () => {
         </div>
       </WalletGuard>
 
-      <CollateralLeasingSidebar 
-        open={showCollateralSidebar} 
+      <CollateralLeasingSidebar
+        open={showCollateralSidebar}
         onOpenChange={setShowCollateralSidebar}
         initialContractAddress={selectedLoanNft?.contract}
         initialTokenId={selectedLoanNft?.tokenId}

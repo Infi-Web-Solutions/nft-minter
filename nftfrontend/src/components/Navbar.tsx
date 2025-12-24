@@ -181,8 +181,8 @@ const Navbar = () => {
                             to="/admin/offers"
                             className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
                           >
-                            <div className="text-sm font-medium">Admin Offers</div>
-                            <p className="text-sm text-muted-foreground">Manage all NFT offers</p>
+                            <div className="text-sm font-medium">My Offers</div>
+                            <p className="text-sm text-muted-foreground">Manage your NFT offers</p>
                           </Link>
                         </NavigationMenuLink>
                       </div>

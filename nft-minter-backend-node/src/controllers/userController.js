@@ -32,14 +32,14 @@ export const updateProfile = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         const data = req.body;
-        
+
         // Get or create user profile
         let profile = await UserProfile.findOneAndUpdate(
             { wallet_address: walletAddress },
             { $setOnInsert: { username: `User${walletAddress.slice(-4)}` } },
             { new: true, upsert: true }
         );
-        
+
         // Handle profile image
         if (data.profile_image) {
             const imageData = data.profile_image;
@@ -48,13 +48,13 @@ export const updateProfile = async (req, res) => {
                 const ext = format.split('/')[1];
                 const filename = `profile_${walletAddress}.${ext}`;
                 const fileBuffer = Buffer.from(imgstr, 'base64');
-                
+
                 // For now, we'll store the base64 directly or implement file storage
                 // In production, you'd want to save to a file system or cloud storage
                 profile.avatar_url = imageData; // Store base64 for now
             }
         }
-        
+
         // Handle cover image
         if (data.cover_image) {
             const imageData = data.cover_image;
@@ -63,12 +63,12 @@ export const updateProfile = async (req, res) => {
                 const ext = format.split('/')[1];
                 const filename = `cover_${walletAddress}.${ext}`;
                 const fileBuffer = Buffer.from(imgstr, 'base64');
-                
+
                 // For now, we'll store the base64 directly or implement file storage
                 profile.banner_url = imageData; // Store base64 for now
             }
         }
-        
+
         // Update other profile fields
         const fieldsToUpdate = ['username', 'bio', 'website', 'twitter', 'instagram', 'discord'];
         fieldsToUpdate.forEach(field => {
@@ -76,10 +76,10 @@ export const updateProfile = async (req, res) => {
                 profile[field] = data[field];
             }
         });
-        
+
         profile.updated_at = new Date();
         await profile.save();
-        
+
         return res.json({
             success: true,
             data: {
@@ -108,17 +108,17 @@ export const getUserProfile = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         console.log(`[DEBUG] getUserProfile called with walletAddress: ${walletAddress}`);
-        
+
         // Create a safe username using hash of wallet address
         const crypto = await import('crypto');
         const usernameHash = crypto.createHash('md5').update(walletAddress).digest('hex').substring(0, 12);
         const username = `user_${usernameHash}`;
-        
+
         try {
             // Try to get existing user first
             let user = await User.findOne({ walletAddress });
             let userCreated = false;
-            
+
             if (!user) {
                 // Create new user if doesn't exist
                 try {
@@ -142,11 +142,11 @@ export const getUserProfile = async (req, res) => {
                             });
                             await profile.save();
                         }
-                        
+
                         // Get user's NFTs
                         const userNfts = await NFT.find({ owner_address: walletAddress });
                         const createdNfts = await NFT.find({ creator_address: walletAddress });
-                        
+
                         const profileData = {
                             id: profile._id,
                             wallet_address: profile.wallet_address,
@@ -165,7 +165,7 @@ export const getUserProfile = async (req, res) => {
                             nfts_owned: userNfts.length,
                             nfts_created: createdNfts.length,
                         };
-                        
+
                         return res.json({
                             success: true,
                             data: profileData
@@ -222,7 +222,7 @@ export const getUserProfile = async (req, res) => {
                 }
             });
         }
-        
+
         // Get or create profile
         try {
             let profile = await UserProfile.findOneAndUpdate(
@@ -260,14 +260,14 @@ export const getUserProfile = async (req, res) => {
                 }
             });
         }
-        
+
         // Get user's NFTs
         const userNfts = await NFT.find({ owner_address: walletAddress });
         const createdNfts = await NFT.find({ creator_address: walletAddress });
         // console.log(`[DEBUG] NFTs found: ${userNfts.length} owned, ${createdNfts.length} created`);
-        
+
         const profile = await UserProfile.findOne({ wallet_address: walletAddress });
-        
+
         const profileData = {
             id: profile._id,
             wallet_address: profile.wallet_address,
@@ -286,7 +286,7 @@ export const getUserProfile = async (req, res) => {
             nfts_owned: userNfts.length,
             nfts_created: createdNfts.length,
         };
-         
+
         return res.json({
             success: true,
             data: profileData
@@ -395,7 +395,7 @@ export const getUserCreatedNFTs = async (req, res) => {
             is_auction: nft.is_auction,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
-            collection: nft.collection,
+            collection: nft.nft_collection || 'Default Collection',
             category: nft.category,
             created_at: nft.created_at,
         }));
@@ -411,7 +411,7 @@ export const getUserNfts = async (req, res) => {
         const { walletAddress } = req.params;
         // Only fetch NFTs owned by the user
         const owned_nfts = await NFT.find({ owner_address: walletAddress }).lean();
-        
+
         const nfts_data = owned_nfts.map(nft => ({
             id: `local_${nft._id}`,
             token_id: nft.token_id,
@@ -423,7 +423,7 @@ export const getUserNfts = async (req, res) => {
             is_auction: nft.is_auction,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
-            collection: nft.collection,
+            collection: nft.nft_collection || 'Default Collection',
             category: nft.category,
             created_at: nft.created_at,
         }));
@@ -528,13 +528,13 @@ export const getFollowing = async (req, res) => {
 //     try {
 //         const { walletAddress } = req.params;
 //         console.log(`[DEBUG] getUserLikedNfts called for user: ${walletAddress}`);
-        
+
 //         // Get local NFT favorites
 //         const favorites = await Favorite.find({ user_address: walletAddress }).populate('nft');
 //         console.log(`[DEBUG] Found ${favorites.length} local favorites for user`);
-        
+
 //         const likedNfts = [];
-        
+
 //         // Process local NFT favorites
 //         for (const favorite of favorites) {
 //             if (favorite.nft) {
@@ -560,7 +560,7 @@ export const getFollowing = async (req, res) => {
 //                 likedNfts.push(nftData);
 //             }
 //         }
-        
+
 //         console.log(`[DEBUG] Returning ${likedNfts.length} total liked NFTs`);
 //         return res.json({
 //             success: true,
@@ -577,13 +577,13 @@ export const getUserLikedNfts = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         console.log(`[DEBUG] getUserLikedNfts called for user: ${walletAddress}`);
-        
+
         // Validate wallet address
         if (!walletAddress || walletAddress.trim() === '') {
             console.log('[ERROR] Invalid wallet address provided');
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Valid wallet address is required' 
+            return res.status(400).json({
+                success: false,
+                error: 'Valid wallet address is required'
             });
         }
 
@@ -596,9 +596,9 @@ export const getUserLikedNfts = async (req, res) => {
                 options: { lean: true } // Convert to plain objects
             })
             .lean(); // Convert the entire query result to plain objects
-        
+
         console.log(`[DEBUG] Found ${favorites.length} local favorites for user`);
-        
+
         // Handle case where no favorites exist
         if (!favorites || favorites.length === 0) {
             console.log('[DEBUG] No favorites found for user');
@@ -611,7 +611,7 @@ export const getUserLikedNfts = async (req, res) => {
         }
 
         const likedNfts = [];
-        
+
         // Process local NFT favorites with error handling for each item
         for (const favorite of favorites) {
             try {
@@ -622,7 +622,7 @@ export const getUserLikedNfts = async (req, res) => {
                 }
 
                 const nft = favorite.nft;
-                
+
                 // Create clean NFT data object
                 const nftData = {
                     id: `local_${nft._id}`,
@@ -635,7 +635,7 @@ export const getUserLikedNfts = async (req, res) => {
                     is_auction: Boolean(nft.is_auction),
                     owner_address: nft.owner_address || '',
                     creator_address: nft.creator_address || '',
-                    collection: nft.collection || 'Unknown',
+                    collection: nft.nft_collection || 'Unknown',
                     category: nft.category || 'other',
                     created_at: nft.created_at || null,
                     source: 'local',
@@ -650,9 +650,9 @@ export const getUserLikedNfts = async (req, res) => {
                 continue;
             }
         }
-        
+
         console.log(`[DEBUG] Successfully processed ${likedNfts.length} out of ${favorites.length} favorites`);
-        
+
         // Return successful response
         return res.json({
             success: true,
@@ -686,8 +686,8 @@ export const getUserLikedNfts = async (req, res) => {
             statusCode = 408;
         }
 
-        return res.status(statusCode).json({ 
-            success: false, 
+        return res.status(statusCode).json({
+            success: false,
             error: errorMessage,
             details: process.env.NODE_ENV === 'development' ? {
                 originalError: error.message,
@@ -704,9 +704,9 @@ export const getUserLikedNftsAggregation = async (req, res) => {
         console.log(`[DEBUG] getUserLikedNftsAggregation called for user: ${walletAddress}`);
 
         if (!walletAddress || walletAddress.trim() === '') {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Valid wallet address is required' 
+            return res.status(400).json({
+                success: false,
+                error: 'Valid wallet address is required'
             });
         }
 
@@ -736,7 +736,7 @@ export const getUserLikedNftsAggregation = async (req, res) => {
                     'nft_data.is_auction': 1,
                     'nft_data.owner_address': 1,
                     'nft_data.creator_address': 1,
-                    'nft_data.collection': 1,
+                    'nft_data.nft_collection': 1,
                     'nft_data.category': 1,
                     'nft_data.created_at': 1
                 }
@@ -754,7 +754,7 @@ export const getUserLikedNftsAggregation = async (req, res) => {
             is_auction: Boolean(item.nft_data.is_auction),
             owner_address: item.nft_data.owner_address || '',
             creator_address: item.nft_data.creator_address || '',
-            collection: item.nft_data.collection || 'Unknown',
+            collection: item.nft_data.nft_collection || 'Unknown',
             category: item.nft_data.category || 'other',
             created_at: item.nft_data.created_at || null,
             source: 'local',
@@ -772,8 +772,8 @@ export const getUserLikedNftsAggregation = async (req, res) => {
 
     } catch (error) {
         console.error(`[ERROR] getUserLikedNftsAggregation:`, error.message);
-        return res.status(500).json({ 
-            success: false, 
+        return res.status(500).json({
+            success: false,
             error: 'Failed to fetch liked NFTs',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
@@ -786,14 +786,14 @@ export const getUserListings = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         // Find active listings by this user
-        const listings = await Listing.find({ 
+        const listings = await Listing.find({
             owner: { $regex: new RegExp(`^${walletAddress}$`, 'i') }, // Case insensitive
-            status: 'Active' 
+            status: 'Active'
         });
-        
+
         // We might want to enrich this with NFT metadata if it's stored locally
         // For now, return the listing data which contains nftAddress and tokenId
-        
+
         res.json({ success: true, data: listings });
     } catch (error) {
         console.error('[ERROR] getUserListings:', error);
@@ -806,11 +806,11 @@ export const getUserRentedOut = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         // Find rented listings by this user
-        const listings = await Listing.find({ 
+        const listings = await Listing.find({
             owner: { $regex: new RegExp(`^${walletAddress}$`, 'i') }, // Case insensitive
-            status: 'Rented' 
+            status: 'Rented'
         });
-        
+
         res.json({ success: true, data: listings });
     } catch (error) {
         console.error('[ERROR] getUserRentedOut:', error);
@@ -823,11 +823,11 @@ export const getUserRentals = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         // Find listings rented BY this user
-        const listings = await Listing.find({ 
+        const listings = await Listing.find({
             rentedBy: { $regex: new RegExp(`^${walletAddress}$`, 'i') }, // Case insensitive
-            status: 'Rented' 
+            status: 'Rented'
         });
-        
+
         res.json({ success: true, data: listings });
     } catch (error) {
         console.error('[ERROR] getUserRentals:', error);

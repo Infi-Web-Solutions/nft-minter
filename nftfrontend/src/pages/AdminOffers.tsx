@@ -6,12 +6,13 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, ArrowLeft, TrendingUp, Users, DollarSign, Clock } from 'lucide-react';
+import { Loader2, ArrowLeft, TrendingUp, User, DollarSign, Clock } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiUrl, mediaUrl } from '@/config';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { useWallet } from '@/contexts/WalletContext';
 
 interface Offer {
   id: number;
@@ -20,6 +21,8 @@ interface Offer {
   nft_image: string;
   offerer_username: string;
   offerer_avatar: string;
+  recipient_username: string;
+  recipient_avatar: string;
   from_address: string;
   to_address: string;
   price: number;
@@ -29,27 +32,23 @@ interface Offer {
 
 const AdminOffers = () => {
   const navigate = useNavigate();
+  const { address } = useWallet();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState('price-desc');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [activeTab, setActiveTab] = useState('received');
   const [searchQuery, setSearchQuery] = useState('');
-  const [stats, setStats] = useState({
-    totalOffers: 0,
-    totalValue: 0,
-    avgPrice: 0,
-    pendingOffers: 0,
-  });
 
   useEffect(() => {
-    fetchAllOffers();
-  }, []);
+    if (address) {
+      fetchAllOffers();
+    }
+  }, [address]);
 
   const fetchAllOffers = async () => {
     setLoading(true);
     try {
-      // Fetch activities with bid type (offers)
-      const response = await fetch(apiUrl('/activities/?type=bid&limit=1000'));
+      const response = await fetch(apiUrl(`/activities/?type=bid&limit=1000&user=${address}`));
       const data = await response.json();
 
       if (data.success) {
@@ -58,8 +57,10 @@ const AdminOffers = () => {
           nft_id: activity.nft?.id,
           nft_name: activity.nft?.name,
           nft_image: activity.nft?.image_url,
-          offerer_username: activity.from?.name || `User${activity.from?.address?.slice(-4)}`,
-          offerer_avatar: activity.from?.avatar,
+          offerer_username: activity.from?.username || activity.from?.name || `User${activity.from?.address?.slice(-4)}`,
+          offerer_avatar: activity.from?.avatar_url || activity.from?.avatar,
+          recipient_username: activity.to?.username || activity.to?.name || `User${activity.to?.address?.slice(-4)}`,
+          recipient_avatar: activity.to?.avatar_url || activity.to?.avatar,
           from_address: activity.from?.address,
           to_address: activity.to?.address,
           price: activity.price || 0,
@@ -68,17 +69,6 @@ const AdminOffers = () => {
         }));
 
         setOffers(offersList);
-
-        // Calculate stats
-        const totalValue = offersList.reduce((sum, offer) => sum + offer.price, 0);
-        const avgPrice = offersList.length > 0 ? totalValue / offersList.length : 0;
-
-        setStats({
-          totalOffers: offersList.length,
-          totalValue,
-          avgPrice,
-          pendingOffers: offersList.length, // All are pending until accepted
-        });
       }
     } catch (error) {
       console.error('Failed to fetch offers:', error);
@@ -107,6 +97,14 @@ const AdminOffers = () => {
   const handleFilter = (offers: Offer[]) => {
     let filtered = offers;
 
+    if (address) {
+      if (activeTab === 'received') {
+        filtered = filtered.filter(offer => offer.to_address?.toLowerCase() === address.toLowerCase());
+      } else if (activeTab === 'made') {
+        filtered = filtered.filter(offer => offer.from_address?.toLowerCase() === address.toLowerCase());
+      }
+    }
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -121,6 +119,15 @@ const AdminOffers = () => {
   };
 
   const displayedOffers = handleSort(handleFilter(offers));
+
+  const currentStats = {
+    totalOffers: displayedOffers.length,
+    totalValue: displayedOffers.reduce((sum, offer) => sum + offer.price, 0),
+    avgPrice: displayedOffers.length > 0
+      ? displayedOffers.reduce((sum, offer) => sum + offer.price, 0) / displayedOffers.length
+      : 0,
+    pendingOffers: displayedOffers.length,
+  };
 
   if (loading) {
     return (
@@ -151,20 +158,18 @@ const AdminOffers = () => {
           Back
         </Button>
 
-        {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Offers Management</h1>
-          <p className="text-muted-foreground">Monitor and manage all NFT offers on the platform</p>
+          <h1 className="text-4xl font-bold mb-2">My Offers</h1>
+          <p className="text-muted-foreground">Monitor and manage offers related to your NFTs</p>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <Card className="bg-card/50 backdrop-blur-sm">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Total Offers</p>
-                  <p className="text-3xl font-bold">{stats.totalOffers}</p>
+                  <p className="text-3xl font-bold">{currentStats.totalOffers}</p>
                 </div>
                 <TrendingUp className="h-8 w-8 text-primary opacity-50" />
               </div>
@@ -176,7 +181,7 @@ const AdminOffers = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Total Value</p>
-                  <p className="text-3xl font-bold">Ξ{stats.totalValue.toFixed(4)}</p>
+                  <p className="text-3xl font-bold">Ξ{currentStats.totalValue.toFixed(4)}</p>
                 </div>
                 <DollarSign className="h-8 w-8 text-green-500 opacity-50" />
               </div>
@@ -188,7 +193,7 @@ const AdminOffers = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Average Price</p>
-                  <p className="text-3xl font-bold">Ξ{stats.avgPrice.toFixed(4)}</p>
+                  <p className="text-3xl font-bold">Ξ{currentStats.avgPrice.toFixed(4)}</p>
                 </div>
                 <TrendingUp className="h-8 w-8 text-blue-500 opacity-50" />
               </div>
@@ -200,7 +205,7 @@ const AdminOffers = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Pending</p>
-                  <p className="text-3xl font-bold">{stats.pendingOffers}</p>
+                  <p className="text-3xl font-bold">{currentStats.pendingOffers}</p>
                 </div>
                 <Clock className="h-8 w-8 text-yellow-500 opacity-50" />
               </div>
@@ -208,10 +213,9 @@ const AdminOffers = () => {
           </Card>
         </div>
 
-        {/* Filters and Search */}
         <Card className="bg-card/50 backdrop-blur-sm mb-6">
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-muted-foreground mb-2 block">Search</label>
                 <Input
@@ -236,105 +240,140 @@ const AdminOffers = () => {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground mb-2 block">Status</label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger className="bg-background/50">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Offers</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Offers Table */}
-        <Card className="bg-card/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle>Recent Offers</CardTitle>
-            <CardDescription>Showing {displayedOffers.length} offers</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {displayedOffers.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                No offers found
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {displayedOffers.map((offer) => (
-                  <div
-                    key={offer.id}
-                    className="flex items-center gap-4 p-4 bg-background/50 rounded-lg hover:bg-background transition-colors"
-                  >
-                    {/* NFT Image */}
-                    <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-muted">
-                      {offer.nft_image && (
-                        <img
-                          src={mediaUrl(offer.nft_image)}
-                          alt={offer.nft_name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.src = 'https://via.placeholder.com/64';
-                          }}
-                        />
-                      )}
-                    </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-8">
+            <TabsTrigger value="received">Offers Received</TabsTrigger>
+            <TabsTrigger value="made">Offers Made</TabsTrigger>
+          </TabsList>
 
-                    {/* NFT and Offerer Info */}
-                    <div className="flex-1">
-                      <div className="mb-2">
-                        <p className="font-semibold">{offer.nft_name}</p>
-                        <p className="text-sm text-muted-foreground">Token #{offer.nft_id}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={offer.offerer_avatar} />
-                          <AvatarFallback>
-                            {offer.offerer_username.slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm text-muted-foreground">
-                          {offer.offerer_username}
-                        </span>
-                      </div>
-                    </div>
+          <TabsContent value="received" className="mt-0">
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle>Offers Received</CardTitle>
+                <CardDescription>Offers made by others on NFTs you own</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {renderOffersList(displayedOffers)}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-                    {/* Price and Time */}
-                    <div className="text-right">
-                      <Badge className="mb-2 bg-primary/10 text-primary">
-                        Ξ{offer.price.toFixed(4)}
-                      </Badge>
-                      <p className="text-sm text-muted-foreground">
-                        {new Date(offer.timestamp).toLocaleDateString()}
-                      </p>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => navigate(`/nft/${offer.nft_id}`)}
-                      >
-                        View NFT
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          <TabsContent value="made" className="mt-0">
+            <Card className="bg-card/50 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle>Offers Made</CardTitle>
+                <CardDescription>Offers you have made on other NFTs</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {renderOffersList(displayedOffers)}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <Footer />
     </div>
   );
+
+  function renderOffersList(offers: Offer[]) {
+    if (offers.length === 0) {
+      return (
+        <div className="text-center py-12 text-muted-foreground">
+          No offers found
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {offers.map((offer) => {
+          const isReceived = activeTab === 'received';
+          const displayUser = {
+            name: isReceived ? offer.offerer_username : offer.recipient_username,
+            avatar: isReceived ? offer.offerer_avatar : offer.recipient_avatar,
+            label: isReceived ? 'From' : 'To'
+          };
+
+          return (
+            <div
+              key={offer.id}
+              className="flex items-center gap-6 p-5 bg-background/50 rounded-xl hover:bg-background/80 transition-all border border-transparent hover:border-primary/20"
+            >
+              <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-muted shadow-inner">
+                {offer.nft_image ? (
+                  <img
+                    src={mediaUrl(offer.nft_image)}
+                    alt={offer.nft_name}
+                    className="w-full h-full object-cover transition-transform hover:scale-110"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://via.placeholder.com/80?text=No+Image';
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin opacity-20" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="mb-3">
+                  <p className="font-bold text-lg truncate">{offer.nft_name}</p>
+                  <p className="text-sm text-muted-foreground font-medium">Token #{offer.nft_id}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8 border border-border">
+                    <AvatarImage src={displayUser.avatar ? mediaUrl(displayUser.avatar) : undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary">
+                      <User className="h-4 w-4" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-muted-foreground font-medium">
+                      {displayUser.label}
+                    </span>
+                    <span className="text-sm font-semibold truncate">
+                      {displayUser.name}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right flex flex-col items-end gap-2">
+                <Badge className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-3 py-1 text-base font-bold">
+                  Ξ{offer.price.toFixed(4)}
+                </Badge>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                  <Clock className="h-3 w-3" />
+                  {new Date(offer.timestamp).toLocaleDateString(undefined, {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center pl-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/nft/${offer.nft_id}`)}
+                  className="rounded-full px-4 hover:bg-primary hover:text-primary-foreground transition-colors"
+                >
+                  View NFT
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 };
 
 export default AdminOffers;

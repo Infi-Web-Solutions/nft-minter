@@ -163,6 +163,16 @@ export const registerNft = async (req, res) => {
         );
 
         console.log("[DEBUG] NFT registered successfully with ID:", nft._id);
+
+        // Update user profile stats
+        if (data.creator_address) {
+            await UserProfile.findOneAndUpdate(
+                { wallet_address: data.creator_address },
+                { $inc: { total_created: 1 } },
+                { upsert: true }
+            );
+        }
+
         return res.json({ success: true, created: !nft.isNew, nft_id: nft._id });
     } catch (error) {
         console.error("[ERROR] register_nft:", error);
@@ -209,6 +219,22 @@ export const buyNft = async (req, res) => {
         nft.owner_address = buyer_address;
         nft.is_listed = false;
         await nft.save();
+
+        // Update user profile stats for buyer
+        await UserProfile.findOneAndUpdate(
+            { wallet_address: buyer_address },
+            { $inc: { total_collected: 1 } },
+            { upsert: true }
+        );
+
+        // Update user profile stats for seller (optional: update volume)
+        if (oldOwner) {
+            await UserProfile.findOneAndUpdate(
+                { wallet_address: oldOwner },
+                { $inc: { total_volume: nft.price } },
+                { upsert: true }
+            );
+        }
 
         // Create transaction record
         const transactionData = {
@@ -280,6 +306,13 @@ export const updateNftOwner = async (req, res) => {
         nft.owner_address = newOwner;
         nft.is_listed = false; // Assuming buy removes listing
         await nft.save();
+
+        // Update user profile stats for new owner
+        await UserProfile.findOneAndUpdate(
+            { wallet_address: newOwner },
+            { $inc: { total_collected: 1 } },
+            { upsert: true }
+        );
 
         // Create transaction record
         const transactionData = {
@@ -530,7 +563,7 @@ export const getCombinedNfts = async (req, res) => {
                 is_auction: nft.is_auction,
                 owner_address: nft.owner_address,
                 creator_address: nft.creator_address,
-                collection: nft.nft_collection,
+                collection: nft.nft_collection || 'Default Collection',
                 category: nft.category,
                 created_at: nft.created_at,
                 source: 'local',
@@ -592,7 +625,7 @@ export const getNftDetail = async (req, res) => {
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
             royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-            collection: nft.nft_collection,
+            collection: nft.nft_collection || 'Default Collection',
             category: nft.category,
             created_at: nft.created_at,
             blockchain_data
@@ -635,7 +668,7 @@ export const getNfts = async (req, res) => {
             highest_bidder: nft.highest_bidder,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
-            collection: nft.nft_collection,
+            collection: nft.nft_collection || 'Default Collection',
             category: nft.category,
             created_at: nft.created_at,
         }));
@@ -1098,7 +1131,7 @@ export const getNftByCombinedId = async (req, res) => {
                     owner_address: nft.owner_address,
                     creator_address: nft.creator_address,
                     royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-                    collection: nft.nft_collection,
+                    collection: nft.nft_collection || 'Default Collection',
                     category: nft.category,
                     created_at: nft.created_at,
                     blockchain_data: blockchainData,

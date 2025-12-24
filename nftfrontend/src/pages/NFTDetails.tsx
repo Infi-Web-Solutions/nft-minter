@@ -426,7 +426,7 @@ const NFTDetails = () => {
         return;
       }
 
-    };
+    }
   };
 
   const handleMakeOffer = () => {
@@ -857,13 +857,15 @@ const NFTDetails = () => {
                 </div>
 
                 {nft.is_listed && !isOwner && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button
-                      className="bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 transition-smooth"
-                      onClick={handleBuyNow}
-                    >
-                      Buy Now
-                    </Button>
+                  <div className={`grid ${!(nft.is_auction || nft.isAuction) ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
+                    {!(nft.is_auction || nft.isAuction) && (
+                      <Button
+                        className="bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 transition-smooth"
+                        onClick={handleBuyNow}
+                      >
+                        Buy Now
+                      </Button>
+                    )}
                     <Button variant="outline" onClick={handleMakeOffer}>
                       Make Offer
                     </Button>

@@ -598,27 +598,6 @@ const NFTCard = ({
                 <>
                   {isWrapped && (
                     <div className="flex flex-col gap-1">
-                      <Button
-                        size="sm"
-                        className="bg-purple-500/80 whitespace-nowrap text-xs px-2 cursor-not-allowed w-full"
-                        disabled
-                        title="This NFT is currently wrapped"
-                      >
-                        Wrapped
-                      </Button>
-                      {/* {onReturn && (
-                        <Button
-                          size="sm"
-                          className="bg-red-500 hover:bg-red-600 whitespace-nowrap text-xs px-2 w-full"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onReturn();
-                          }}
-                          title="Return this NFT to the owner"
-                        >
-                          Return
-                        </Button>
-                      )} */}
                       {onSubLease && (
                         <Button
                           size="sm"

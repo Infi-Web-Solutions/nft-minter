@@ -292,19 +292,47 @@ const Marketplace = () => {
     console.log('[Marketplace] allNfts state changed:', allNfts.length);
   }, [allNfts]);
 
-  // Filter and sort NFTs based on current filters
-  const filteredNfts = useMemo(() => {
-    // Combine all sources and deduplicate by ID
+  // Deduplicate NFTs by a robust key (contract + tokenId)
+  const deduplicatedNfts = useMemo(() => {
     const combinedRaw = [...allNfts, ...wrappedMarketNfts, ...externalListedNfts];
-    const seenIds = new Set();
-    const combined = combinedRaw.filter(nft => {
-      const id = String(nft.id);
-      if (seenIds.has(id)) return false;
-      seenIds.add(id);
+    const seenKeys = new Set();
+    return combinedRaw.filter(nft => {
+      let cAddr = (nft as any).contract_address || '';
+      if (!cAddr) {
+        if (nft.source === 'local' || !nft.source) {
+          cAddr = contractAddress;
+        } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
+          cAddr = nft.collection;
+        }
+      }
+
+      const tId = nft.token_id !== undefined && nft.token_id !== null ? String(nft.token_id) : String(nft.id);
+      const key = cAddr ? `${cAddr.toLowerCase()}-${tId}` : `fallback-${nft.id}`;
+
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
       return true;
     });
+  }, [allNfts, wrappedMarketNfts, externalListedNfts, contractAddress]);
 
-    console.log('[Marketplace] Starting filter with', combined.length, 'NFTs (including wrapped & external)');
+  // Calculate top 4 collections dynamically
+  const topCollections = useMemo(() => {
+    const counts: { [key: string]: number } = {};
+    deduplicatedNfts.forEach(nft => {
+      const collectionName = typeof nft.collection === 'string' ? nft.collection : nft.collection?.name;
+      if (collectionName) {
+        counts[collectionName] = (counts[collectionName] || 0) + 1;
+      }
+    });
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 4)
+      .map(([name]) => name);
+  }, [deduplicatedNfts]);
+
+  // Filter and sort NFTs based on current filters
+  const filteredNfts = useMemo(() => {
+    console.log('[Marketplace] Starting filter with', deduplicatedNfts.length, 'deduplicated NFTs');
 
     const getNumericPrice = (nft: NFT): number => {
       // prefer explicit price, then current_price, then first sell order (wei -> ETH)
@@ -325,6 +353,13 @@ const Marketplace = () => {
     };
 
     const hasStatus = (nft: NFT, statusLabel: string): boolean => {
+      const contractAddr = (nft as any).contract_address || '';
+      const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${String(nft.token_id)}` : '';
+      const listingInfo = activeListings.get(loanKey);
+      const isRentable = !!listingInfo;
+      const isRented = listingInfo?.status === 'Rented';
+      const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
+
       switch (statusLabel) {
         case 'Buy Now':
           return Boolean(nft.is_listed);
@@ -338,13 +373,19 @@ const Marketplace = () => {
         }
         case 'Has Offers':
           return Array.isArray(nft.sell_orders) && nft.sell_orders.length > 0;
+        case 'On Rent':
+          return isRentable && !isRented;
+        case 'Loan':
+          return !!loanInfo;
+        case 'Rented':
+          return isRented;
         default:
           // fallback to direct status match if provided
           return (nft.status || '') === statusLabel;
       }
     };
 
-    let filtered = combined.filter((nft) => {
+    let filtered = deduplicatedNfts.filter((nft) => {
       // Tab filter by category
       if (activeTab !== 'all' && nft.category !== activeTab) return false;
 
@@ -401,7 +442,7 @@ const Marketplace = () => {
 
     console.log('[Marketplace] Final filtered result:', filtered.length);
     return filtered;
-  }, [activeTab, filters, sortBy, allNfts, wrappedMarketNfts, externalListedNfts]);
+  }, [activeTab, filters, sortBy, deduplicatedNfts]);
 
   // Debug: Log filtered results
   useEffect(() => {
@@ -561,6 +602,7 @@ const Marketplace = () => {
               filters={filters}
               onFilterChange={handleFilterChange}
               onClearAll={handleClearAllFilters}
+              dynamicCollections={topCollections}
             />
           )}
 

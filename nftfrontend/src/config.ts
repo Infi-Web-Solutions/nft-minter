@@ -31,6 +31,12 @@ export function apiUrl(path: string): string {
 // Helper to build full media URLs safely
 export function mediaUrl(path: string): string {
   if (!path) return '';
+
+  // Handle IPFS URLs
+  if (path.startsWith('ipfs://')) {
+    return path.replace('ipfs://', 'https://ipfs.io/ipfs/');
+  }
+
   if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) return path;
 
   const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';

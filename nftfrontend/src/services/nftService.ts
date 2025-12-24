@@ -74,7 +74,7 @@ class NFTService {
       const data = await response.json();
 
       if (data.success) {
-        return data.nfts || [];
+        return data.data || [];
       } else {
         console.error('Failed to fetch user created NFTs:', data.error);
         return [];
@@ -91,7 +91,7 @@ class NFTService {
       const data = await response.json();
 
       if (data.success) {
-        return data.nfts || [];
+        return data.data || [];
       } else {
         console.error('Failed to fetch user collected NFTs:', data.error);
         return [];
@@ -154,4 +154,4 @@ class NFTService {
   }
 }
 
-export const nftService = new NFTService(); 
+export const nftService = new NFTService();
