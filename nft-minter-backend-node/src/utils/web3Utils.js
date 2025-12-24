@@ -1559,6 +1559,42 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    /**
+     * Resolve IPFS URIs with multiple gateways
+     * @private
+     */
+    _resolveIPFS(uri, usePinata = false) {
+        if (!uri) return '';
+        if (typeof uri !== 'string') return '';
+        if (uri.toLowerCase().startsWith('http') && !uri.toLowerCase().includes('/ipfs/')) return uri;
+
+        let hash = '';
+        const lowerUri = uri.toLowerCase();
+        if (lowerUri.startsWith('ipfs://')) {
+            hash = uri.substring(7);
+        } else if (lowerUri.startsWith('ipfs/')) {
+            hash = uri.substring(5);
+        } else if (lowerUri.includes('/ipfs/')) {
+            const ipfsIndex = lowerUri.indexOf('/ipfs/');
+            hash = uri.substring(ipfsIndex + 6).split('?')[0];
+        } else if (uri.match(/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[A-Za-z2-7]{57})$/)) {
+            hash = uri;
+        }
+
+        if (!hash) return uri;
+
+        const gateways = [
+            'https://ipfs.io/ipfs/',
+            'https://gateway.pinata.cloud/ipfs/',
+            'https://nftstorage.link/ipfs/',
+            'https://dweb.link/ipfs/',
+            'https://gateway.ipfs.io/ipfs/'
+        ];
+
+        const primaryGateway = usePinata ? gateways[1] : gateways[0];
+        return `${primaryGateway}${hash}`;
+    }
+
     async isConnected() {
         try {
             return await this.web3.eth.net.isListening();
@@ -1656,7 +1692,7 @@ class NFTMarketplaceWeb3 {
             const [tokenURI, owner, name, symbol] = await Promise.all([
                 contract.methods.tokenURI(tokenId).call().catch(() => ''),
                 contract.methods.ownerOf(tokenId).call().catch(() => null),
-                contract.methods.name().call().catch(() => 'Unknown Collection'),
+                contract.methods.name().call().catch(() => 'NFT Collection'),
                 contract.methods.symbol().call().catch(() => '')
             ]);
 
@@ -1665,14 +1701,8 @@ class NFTMarketplaceWeb3 {
             }
 
             // Resolve IPFS URI
-            let metadataUrl = tokenURI;
-            if (tokenURI.startsWith('ipfs://')) {
-                metadataUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-            } else if (!tokenURI.startsWith('http')) {
-                metadataUrl = `https://gateway.pinata.cloud/ipfs/${tokenURI}`;
-            }
-
-            console.log(`[Web3] Resolved metadata URL: ${metadataUrl}`);
+            let metadataUrl = this._resolveIPFS(tokenURI);
+            console.log(`[Web3] Resolved metadata URL: ${metadataUrl} (from tokenURI: ${tokenURI})`);
 
             // Fetch metadata JSON
             let metadata = {};
@@ -1693,8 +1723,9 @@ class NFTMarketplaceWeb3 {
                 }
             } catch (err) {
                 console.warn(`[Web3] Failed to fetch metadata JSON from ${metadataUrl}:`, err.message);
-                if (tokenURI.startsWith('ipfs://')) {
-                    const fallbackUrl = tokenURI.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
+                // Try fallback if it's an IPFS link
+                if (tokenURI.startsWith('ipfs://') || (tokenURI && !tokenURI.startsWith('http'))) {
+                    const fallbackUrl = this._resolveIPFS(tokenURI, true);
                     console.log(`[Web3] Trying fallback gateway: ${fallbackUrl}`);
                     try {
                         const response = await fetch(fallbackUrl);
@@ -1713,7 +1744,7 @@ class NFTMarketplaceWeb3 {
                 }
             }
 
-            // ========== NEW: Try to fetch on-chain metadata using getNFTMetadata ==========
+            // ========== Try to fetch on-chain metadata using getNFTMetadata ==========
             try {
                 const onChainMeta = await contract.methods.getNFTMetadata(tokenId).call();
                 console.log('[Web3] On-chain getNFTMetadata result:', onChainMeta);
@@ -1727,26 +1758,18 @@ class NFTMarketplaceWeb3 {
                         metadata.description = onChainMeta.description;
                     }
                     if (onChainMeta.metadataURI && !metadata.image) {
-                        let imageUri = onChainMeta.metadataURI;
-                        if (imageUri.startsWith('ipfs://')) {
-                            imageUri = imageUri.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-                        }
-                        metadata.image = imageUri;
+                        metadata.image = this._resolveIPFS(onChainMeta.metadataURI);
                     }
                     console.log(`[Web3] Using on-chain metadata: name="${metadata.name}", description="${metadata.description}"`);
                 }
             } catch (e) {
                 console.log('[Web3] getNFTMetadata not available or failed:', e.message);
             }
-            // ========== END NEW CODE ==========
 
             // Resolve image IPFS URI
-            let imageUrl = metadata.image || metadata.image_url || '';
-            if (imageUrl.startsWith('ipfs://')) {
-                imageUrl = imageUrl.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/');
-            } else if (imageUrl && !imageUrl.startsWith('http')) {
-                imageUrl = `https://gateway.pinata.cloud/ipfs/${imageUrl}`;
-            }
+            let rawImage = metadata.image || metadata.image_url || '';
+            let imageUrl = this._resolveIPFS(rawImage);
+            console.log(`[Web3] Final resolved image URL: ${imageUrl} (from raw: ${rawImage})`);
 
             // Optional: try to read on-chain listing info
             let listingInfo = null;

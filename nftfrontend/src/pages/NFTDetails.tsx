@@ -484,9 +484,9 @@ const NFTDetails = () => {
       const gateways = [
         `https://ipfs.io/ipfs/${ipfsHash}`,
         `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-        `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
+        `https://nftstorage.link/ipfs/${ipfsHash}`,
         `https://dweb.link/ipfs/${ipfsHash}`,
-        `https://ipfs.infura.io/ipfs/${ipfsHash}`
+        `https://gateway.ipfs.io/ipfs/${ipfsHash}`
       ];
 
       // Use current gateway index or default to first
@@ -552,8 +552,8 @@ const NFTDetails = () => {
 
             // Check if this is an IPFS URL and we can try another gateway
             if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') ||
-              currentSrc.includes('cloudflare-ipfs.com') || currentSrc.includes('dweb.link') ||
-              currentSrc.includes('ipfs.infura.io')) {
+              currentSrc.includes('nftstorage.link') || currentSrc.includes('dweb.link') ||
+              currentSrc.includes('gateway.ipfs.io')) {
 
               // Try next gateway
               const nextGatewayIndex = currentGatewayIndex + 1;
@@ -564,12 +564,12 @@ const NFTDetails = () => {
                 // Force re-render by updating the image URL
                 const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
                 const gateways = [
-                  `https://ipfs.io/ipfs/${ipfsHash}`,
-                  `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-                  `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
-                  `https://dweb.link/ipfs/${ipfsHash}`,
-                  `https://ipfs.infura.io/ipfs/${ipfsHash}`
-                ];
+        `https://ipfs.io/ipfs/${ipfsHash}`,
+        `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+        `https://nftstorage.link/ipfs/${ipfsHash}`,
+        `https://dweb.link/ipfs/${ipfsHash}`,
+        `https://gateway.ipfs.io/ipfs/${ipfsHash}`
+      ];
 
                 if (gateways[nextGatewayIndex]) {
                   img.src = gateways[nextGatewayIndex];
@@ -610,8 +610,8 @@ const NFTDetails = () => {
 
                     // Check if this is an IPFS URL and we can try another gateway
                     if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') ||
-                      currentSrc.includes('cloudflare-ipfs.com') || currentSrc.includes('dweb.link') ||
-                      currentSrc.includes('ipfs.infura.io')) {
+              currentSrc.includes('nftstorage.link') || currentSrc.includes('dweb.link') ||
+              currentSrc.includes('gateway.ipfs.io')) {
 
                       // Try next gateway
                       const nextGatewayIndex = currentGatewayIndex + 1;
@@ -622,12 +622,12 @@ const NFTDetails = () => {
                         // Force re-render by updating the image URL
                         const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
                         const gateways = [
-                          `https://ipfs.io/ipfs/${ipfsHash}`,
-                          `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-                          `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
-                          `https://dweb.link/ipfs/${ipfsHash}`,
-                          `https://ipfs.infura.io/ipfs/${ipfsHash}`
-                        ];
+        `https://ipfs.io/ipfs/${ipfsHash}`,
+        `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+        `https://nftstorage.link/ipfs/${ipfsHash}`,
+        `https://dweb.link/ipfs/${ipfsHash}`,
+        `https://gateway.ipfs.io/ipfs/${ipfsHash}`
+      ];
 
                         if (gateways[nextGatewayIndex]) {
                           img.src = gateways[nextGatewayIndex];

@@ -470,11 +470,11 @@ const NFTCard = ({
 
               // List of gateways to try in order
               const gateways = [
+                'https://ipfs.io/ipfs/',
                 'https://gateway.pinata.cloud/ipfs/',
-                'https://dweb.link/ipfs/',
-                'https://cloudflare-ipfs.com/ipfs/',
                 'https://nftstorage.link/ipfs/',
-                'https://ipfs.io/ipfs/'
+                'https://dweb.link/ipfs/',
+                'https://gateway.ipfs.io/ipfs/'
               ];
 
               // Extract hash from current URL
@@ -572,7 +572,7 @@ const NFTCard = ({
       <CardContent className="p-4 flex-1 flex flex-col">
         <div className="space-y-3 flex-1">
           <p className="text-sm text-muted-foreground truncate">
-            {typeof collection === 'string' ? collection : collection?.name || 'Unknown Collection'}
+            {typeof collection === 'string' ? collection : collection?.name || 'NFT Collection'}
           </p>
           <h3 className="font-semibold text-lg leading-tight overflow-hidden" style={{
             display: '-webkit-box',

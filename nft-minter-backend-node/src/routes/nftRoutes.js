@@ -22,7 +22,8 @@ import {
     getCollections,
     getExternalNft,
     setNftRentable,
-    createOffer
+    createOffer,
+    proxyImage
 } from '../controllers/nftController.js';
 
 const router = express.Router();
@@ -46,6 +47,9 @@ router.get('/combined/:combined_id/', getNftByCombinedId);
 // External NFT
 router.post('/external/', getExternalNft);
 router.get('/external/:contract/:tokenId/', getExternalNft); // GET route for external NFTs
+
+// Proxy Image (New)
+router.get('/proxy-image', proxyImage);
 
 // Blockchain
 router.get('/contract/info/', getContractInfo);

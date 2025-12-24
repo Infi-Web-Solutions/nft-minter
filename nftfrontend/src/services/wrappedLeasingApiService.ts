@@ -3,7 +3,7 @@ import axios from 'axios';
 import { ethers } from 'ethers';
 
 // Use environment variable or default to localhost
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL 
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL
   ? `${(import.meta as any).env.VITE_API_URL}/wrapped-leasing`
   : 'http://localhost:5000/api/wrapped-leasing';
 
@@ -21,7 +21,7 @@ class WrappedLeasingApiService {
   async initialize(provider: ethers.Provider, signer: ethers.Signer) {
     try {
       const contractInfo = await this.getContractInfo();
-      
+
       // WrappedLeasing ABI
       const wrappedLeasingAbi = [
         "function wrap(address nftContract, uint256 tokenId, address renterAddress, uint256 durationSeconds, string metadataURI, address originalOwner) external payable",
@@ -38,7 +38,7 @@ class WrappedLeasingApiService {
         wrappedLeasingAbi,
         signer
       );
-      
+
       return this.wrappedLeasingContract;
     } catch (error: any) {
       console.error('Initialize contract error:', error.message);
@@ -122,7 +122,7 @@ class WrappedLeasingApiService {
       if (!window.ethereum) {
         throw new Error('No Ethereum wallet found. Please install MetaMask or a compatible wallet.');
       }
-      
+
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       await this.initialize(provider, signer);
@@ -131,7 +131,7 @@ class WrappedLeasingApiService {
     try {
       // First validate all parameters
       const validation = await this.validateWrappingParams(nftContract, tokenId, renterAddress, durationDays);
-      
+
       if (!validation.valid) {
         throw new Error('Invalid wrapping parameters');
       }
@@ -146,7 +146,7 @@ class WrappedLeasingApiService {
 
       // Check if NFT needs approval
       const nftValidation = await this.validateNFT(nftContract, tokenId, currentAddress);
-      
+
       if (nftValidation.needsApproval) {
         throw new Error(`NFT needs approval for WrappedLeasing contract. Please approve first.`);
       }
@@ -330,10 +330,10 @@ class WrappedLeasingApiService {
 
       const runner = this.wrappedLeasingContract.runner as ethers.Signer;
       const currentAddress = await runner.getAddress();
-      
+
       // Check if user can unwrap
       const canUnwrap = await this.canUnwrapNFT(wId, currentAddress);
-      
+
       if (!canUnwrap.canUnwrap) {
         throw new Error(`Cannot unwrap: ${canUnwrap.error || 'Not authorized or lease still active'}`);
       }
@@ -426,6 +426,7 @@ class WrappedLeasingApiService {
             originalTokenId: nft.originalTokenId,
             owner: nft.owner,
             renter: nft.renter,
+            feePaid: nft.feePaid,
             validUntil: new Date(nft.validUntil).getTime() / 1000, // Convert to unix timestamp
             active: nft.status === 'Active',
             isActive: nft.status === 'Active',
@@ -439,17 +440,17 @@ class WrappedLeasingApiService {
       // Fallback to blockchain loop if DB fails or empty (and we suspect there might be some)
       // For now, we'll assume if DB is empty, user has no NFTs, unless we want to force check
       // But since we just deployed new contract, DB should be the source of truth.
-      
+
       const counter = await this.getWCounter();
       const nfts: any[] = [];
-      
+
       // Load last 20 wrapped NFTs for demo
       const start = Math.max(1, counter - 19);
       for (let i = counter; i >= start; i--) {
         try {
           const info = await this.getWrappedInfo(i.toString());
           const status = await this.getLeaseStatus(i.toString());
-          
+
           // Only show NFTs owned by the specified user
           if (info.owner.toLowerCase() === userAddress.toLowerCase()) {
             nfts.push({
@@ -463,7 +464,7 @@ class WrappedLeasingApiService {
           continue;
         }
       }
-      
+
       return nfts;
     } catch (error: any) {
       console.error('Get user wrapped NFTs API error:', error.message);
@@ -480,7 +481,7 @@ class WrappedLeasingApiService {
       if (!window.ethereum) {
         throw new Error('No Ethereum wallet found. Please install MetaMask or a compatible wallet.');
       }
-      
+
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       await this.initialize(provider, signer);
@@ -495,21 +496,21 @@ class WrappedLeasingApiService {
       ];
 
       const nft = new ethers.Contract(nftContract, nftAbi, this.wrappedLeasingContract!.runner);
-      
+
       // Get contract addresses
       const contractInfo = await this.getContractInfo();
       const wrappedLeasingAddr = contractInfo.wrappedLeasingAddress;
-      
+
       // Check current approval status
       const approved = await nft.getApproved(tokenId);
       if (approved.toLowerCase() === wrappedLeasingAddr.toLowerCase()) {
         return { alreadyApproved: true };
       }
-      
+
       // Approve the WrappedLeasing contract
       const tx = await nft.approve(wrappedLeasingAddr, tokenId);
       const receipt = await tx.wait();
-      
+
       return {
         success: true,
         transactionHash: receipt.transactionHash,

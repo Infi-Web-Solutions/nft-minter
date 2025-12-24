@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import axios from 'axios';
 import NFT from '../models/nft.js';
 import Transaction from '../models/transaction.js';
 import web3Utils from '../utils/web3Utils.js';
@@ -563,7 +564,7 @@ export const getCombinedNfts = async (req, res) => {
                 is_auction: nft.is_auction,
                 owner_address: nft.owner_address,
                 creator_address: nft.creator_address,
-                collection: nft.nft_collection || 'Default Collection',
+                collection: nft.nft_collection || 'NFT Collection',
                 category: nft.category,
                 created_at: nft.created_at,
                 source: 'local',
@@ -625,7 +626,7 @@ export const getNftDetail = async (req, res) => {
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
             royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-            collection: nft.nft_collection || 'Default Collection',
+            collection: nft.nft_collection || 'NFT Collection',
             category: nft.category,
             created_at: nft.created_at,
             blockchain_data
@@ -668,7 +669,7 @@ export const getNfts = async (req, res) => {
             highest_bidder: nft.highest_bidder,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
-            collection: nft.nft_collection || 'Default Collection',
+            collection: nft.nft_collection || 'NFT Collection',
             category: nft.category,
             created_at: nft.created_at,
         }));
@@ -1131,7 +1132,7 @@ export const getNftByCombinedId = async (req, res) => {
                     owner_address: nft.owner_address,
                     creator_address: nft.creator_address,
                     royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-                    collection: nft.nft_collection || 'Default Collection',
+                    collection: nft.nft_collection || 'NFT Collection',
                     category: nft.category,
                     created_at: nft.created_at,
                     blockchain_data: blockchainData,
@@ -1244,7 +1245,7 @@ export const getNftStats = async (req, res) => {
             properties.push(
                 { trait_type: 'Rarity', value: 'Common', rarity: '45%' },
                 { trait_type: 'Category', value: nft.category || 'Art', rarity: '30%' },
-                { trait_type: 'Collection', value: nft.nft_collection || 'Unknown', rarity: '25%' }
+                { trait_type: 'Collection', value: nft.nft_collection || 'NFT Collection', rarity: '25%' }
             );
         }
 
@@ -1461,10 +1462,9 @@ export const getExternalNft = async (req, res) => {
 
                     const imageURI = onChainMeta.imageURI || onChainMeta[2];
                     if (imageURI) {
-                        let resolvedImage = imageURI;
-                        if (imageURI.startsWith('ipfs://')) {
-                            resolvedImage = imageURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
-                        }
+                        // Use robust IPFS resolution from web3Utils
+                        const resolvedImage = web3Utils._resolveIPFS(imageURI);
+                        console.log(`[DEBUG] Resolved image URL: ${resolvedImage} (from: ${imageURI})`);
                         internalNft.image_url = resolvedImage;
                         internalNft.token_uri = imageURI;
                     }
@@ -1490,7 +1490,7 @@ export const getExternalNft = async (req, res) => {
                 token_uri: internalNft.token_uri,
                 owner_address: internalNft.owner_address,
                 creator_address: internalNft.creator_address,
-                collection: internalNft.nft_collection || 'NFTMarketplace',
+                collection: internalNft.nft_collection || 'NFT Collection',
                 category: internalNft.category || 'Art',
                 contract_address: contract_address,
                 is_listed: internalNft.is_listed,
@@ -1588,7 +1588,7 @@ export const getExternalNft = async (req, res) => {
                 token_uri: nftData.token_uri || '',
                 owner_address: nftData.owner_address,
                 creator_address: nftData.owner_address, // Assume owner is creator for external
-                nft_collection: nftData.collection_name || 'External Collection',
+                nft_collection: nftData.collection_name || 'NFT Collection',
                 category: 'External NFT',
                 price: priceEth,
                 is_listed: isListed,
@@ -1649,11 +1649,10 @@ export const getExternalNft = async (req, res) => {
         console.error(`[ERROR] getExternalNft: ${error}`);
         return res.status(500).json({
             success: false,
-            error: error.message
+            error: 'Failed to fetch external NFT details'
         });
     }
 };
-// Create an offer (bid) for an NFT
 
 export const createOffer = async (req, res) => {
     try {
@@ -1728,5 +1727,72 @@ export const createOffer = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Duplicate transaction hash' });
         }
         return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+/**
+ * Proxy image requests to bypass browser restrictions/CORS
+ */
+export const proxyImage = async (req, res) => {
+    const { url } = req.query;
+
+    if (!url) {
+        return res.status(400).send('URL parameter is required');
+    }
+
+    try {
+        // Basic validation to prevent abuse
+        // Allow IPFS gateways and standard image hosts
+        const allowedDomains = [
+            'ipfs.io',
+            'gateway.pinata.cloud',
+            'nftstorage.link',
+            'dweb.link',
+            'gateway.ipfs.io',
+            'arweave.net'
+        ];
+
+        const targetUrl = new URL(url);
+        const isAllowed = allowedDomains.some(domain => targetUrl.hostname.endsWith(domain));
+
+        if (!isAllowed) {
+            console.warn(`[Proxy] Blocked request to unauthorized domain: ${targetUrl.hostname}`);
+            // Optional: return res.status(403).send('Domain not allowed');
+            // For now, let's be permissive for debugging but log it
+        }
+
+        console.log(`[Proxy] Fetching image via axios: ${url}`);
+
+        const response = await axios({
+            method: 'get',
+            url: url,
+            responseType: 'stream',
+            timeout: 10000, // 10s timeout
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
+
+        // Forward content type
+        const contentType = response.headers['content-type'];
+        if (contentType) {
+            res.setHeader('Content-Type', contentType);
+        }
+
+        // Cache for performance (1 year)
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+        // Pipe the response stream to the client
+        response.data.pipe(res);
+
+    } catch (error) {
+        console.error(`[Proxy] Error fetching image: ${error.message}`);
+        if (error.response) {
+            console.error(`[Proxy] Upstream status: ${error.response.status}`);
+            return res.status(error.response.status).send(`Upstream error: ${error.response.statusText}`);
+        }
+        if (!res.headersSent) {
+            res.status(500).send('Failed to proxy image');
+        }
     }
 };
