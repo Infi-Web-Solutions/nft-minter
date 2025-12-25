@@ -140,14 +140,14 @@ export const setFeeManager = async (req, res) => {
     return res.json(result);
   } catch (error) {
     console.error('Set FeeManager error:', error.message || error);
-    
+
     // Provide more helpful error message based on error type
     let errorMessage = error.message || 'Failed to set FeeManager';
-    
+
     if (errorMessage.includes('AccessControl') || errorMessage.includes('onlyRole') || errorMessage.includes('missing role')) {
       errorMessage = 'Backend wallet does not have ADMIN_ROLE on WrappedLeasing contract. Please run the set-fee-manager-on-wrapped.js script from the deployer account.';
     }
-    
+
     return res.status(500).json({ error: errorMessage });
   }
 };
@@ -237,7 +237,7 @@ export const saveWrappedNFT = async (req, res) => {
 
     await wrappedNft.save();
     console.log(`[WrappedNFT] Saved wrapped NFT #${wId} to database`);
-    
+
     return res.json({ success: true, data: wrappedNft });
   } catch (error) {
     // Handle duplicate key error (already saved)

@@ -770,6 +770,12 @@ const Profile = () => {
                       const isRentable = !!listingInfo;
                       const isRented = listingInfo?.status === 'Rented';
 
+                      let seller = undefined;
+                      if (listingInfo) {
+                        const fullListing = allListings.find(l => l.listingId === listingInfo.listingId);
+                        seller = fullListing?.owner;
+                      }
+
                       console.log('[Profile] Rendering NFT in collected tab:', {
                         original_id: nft.id,
                         converted_id: nftId,
@@ -799,6 +805,8 @@ const Profile = () => {
                           source="local"
                           isRentable={isRentable}
                           isRented={isRented}
+                          seller={seller}
+                          creator_address={nft.creator_address}
                           onClick={() => {
                             window.location.href = `/nft/${nftId}`;
                           }}
@@ -852,6 +860,12 @@ const Profile = () => {
                       const isRentable = !!listingInfo;
                       const isRented = listingInfo?.status === 'Rented';
 
+                      let seller = undefined;
+                      if (listingInfo) {
+                        const fullListing = allListings.find(l => l.listingId === listingInfo.listingId);
+                        seller = fullListing?.owner;
+                      }
+
                       return (
                         <NFTCard
                           key={nftId}
@@ -870,6 +884,8 @@ const Profile = () => {
                           source="local"
                           isRentable={isRentable}
                           isRented={isRented}
+                          seller={seller}
+                          creator_address={nft.creator_address}
                           onClick={() => {
                             window.location.href = `/nft/${nftId}`;
                           }}
@@ -898,19 +914,6 @@ const Profile = () => {
               justifyContent: 'space-between',
 
             }}>
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-semibold">My Favorite NFTs</h3>
-                {Array.from(likedNFTIds).length > 0 && (
-                  <Button
-                    variant="outline"
-                    onClick={() => window.location.href = '/favorites'}
-
-                    className="flex items-center gap-2"
-                  >
-                    View All Favorites ({Array.from(likedNFTIds).length})
-                  </Button>
-                )}
-              </div>
               {isLoadingNFTs ? (
                 <div className="flex justify-center items-center py-20">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -1193,6 +1196,7 @@ const Profile = () => {
                             canLike={false}
                             source="rented"
                             isWrapped={true}
+                            nftType="wNFT"
                             onClick={() => {
                               if (!nft.wId) return;
                               navigate(`/wnft/${nft.wId}`);

@@ -776,17 +776,19 @@ const Marketplace = () => {
                     // - For rentable items, clicking the card opens the rent/manage sidebar
                     // - For non-rentable items, NFTCard handles navigation to /nft/:id or /wnft/:wId
                     onClick={
-                      isRentable && !nft.isWrapped
-                        ? () => {
-                          if (!isRented) {
-                            setSelectedLoanNft({
-                              contract: contractAddr,
-                              tokenId: String(nft.token_id)
-                            });
-                            setShowCollateralSidebar(true);
+                      nft.isWrapped
+                        ? () => window.location.href = `/wnft/${nft.token_id}`
+                        : isRentable && !nft.isWrapped
+                          ? () => {
+                            if (!isRented) {
+                              setSelectedLoanNft({
+                                contract: contractAddr,
+                                tokenId: String(nft.token_id)
+                              });
+                              setShowCollateralSidebar(true);
+                            }
                           }
-                        }
-                        : undefined
+                          : undefined
                     }
                   />
                 );

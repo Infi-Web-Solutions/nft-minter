@@ -1,5 +1,6 @@
 import Loan from '../models/loan.js';
 import NFT from '../models/nft.js';
+import web3Utils from '../utils/web3Utils.js';
 
 // Create a new loan record (called after blockchain transaction)
 export const createLoan = async (req, res) => {
@@ -19,6 +20,95 @@ export const createLoan = async (req, res) => {
     const existingLoan = await Loan.findOne({ loanId });
     if (existingLoan) {
       return res.status(400).json({ success: false, error: 'Loan ID already exists' });
+    }
+
+    // Ensure NFT exists in database (since we stopped auto-saving on search)
+    let nft = await NFT.findOne({
+      token_id: tokenId,
+      contract_address: nftContract.toLowerCase()
+    });
+
+    if (!nft) {
+      console.log(`[createLoan] NFT not found in DB, fetching and saving: ${nftContract} #${tokenId}`);
+      try {
+        // Fetch metadata using web3Utils
+        // We use the same logic as getExternalNft but simplified for saving
+        let nftData;
+
+        // Check if it's our marketplace contract
+        if (web3Utils.contractAddress && nftContract.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+          try {
+            nftData = await web3Utils.getExternalNftMetadata(nftContract, tokenId);
+          } catch (e) {
+            nftData = await web3Utils.getExternalNftMetadata(nftContract, tokenId);
+          }
+        } else {
+          nftData = await web3Utils.getExternalNftMetadata(nftContract, tokenId);
+        }
+
+        if (nftData && nftData.success) {
+          // Fetch listing info if available (to get price/status correctly)
+          let listing = nftData.listing || null;
+          if (!listing && web3Utils.contractAddress && nftContract.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+            try {
+              const raw = await web3Utils.getOnChainListing(tokenId);
+              const rawPrice = raw.price || raw[1];
+              const isActive = typeof raw.isActive !== 'undefined' ? raw.isActive : raw[2];
+              const isAuction = typeof raw.isAuction !== 'undefined' ? raw.isAuction : raw[3];
+              const priceEth = rawPrice && rawPrice !== '0'
+                ? web3Utils.web3.utils.fromWei(rawPrice.toString(), 'ether')
+                : null;
+              listing = {
+                seller: raw.seller || raw[0],
+                priceEth,
+                isActive,
+                isAuction
+              };
+            } catch (e) {
+              console.warn('[createLoan] Failed to fetch on-chain listing:', e.message);
+            }
+          }
+
+          const priceEth = listing && listing.isActive && listing.priceEth ? parseFloat(listing.priceEth) : null;
+          const isListed = !!(listing && listing.isActive && listing.priceEth);
+
+          const newNftData = {
+            token_id: parseInt(tokenId),
+            contract_address: nftContract.toLowerCase(),
+            name: nftData.name || `External NFT #${tokenId}`,
+            description: nftData.description || '',
+            image_url: nftData.image || '',
+            token_uri: nftData.token_uri || '',
+            owner_address: nftData.owner_address, // This might be the borrower if they own it
+            creator_address: nftData.owner_address,
+            nft_collection: nftData.collection_name || 'NFT Collection',
+            category: 'External NFT',
+            price: priceEth,
+            is_listed: isListed,
+            is_auction: listing ? !!listing.isAuction : false
+          };
+
+          nft = new NFT(newNftData);
+          await nft.save();
+          console.log(`[createLoan] NFT saved to DB: ${nft._id}`);
+        } else {
+          console.warn(`[createLoan] Failed to fetch NFT metadata from blockchain, creating minimal record`);
+          // Create minimal record if fetch fails, so loan can still link to something? 
+          // Or maybe we should fail? Let's create minimal to be safe.
+          const minimalNftData = {
+            token_id: parseInt(tokenId),
+            contract_address: nftContract.toLowerCase(),
+            name: `NFT #${tokenId}`,
+            owner_address: borrower, // Assume borrower owns it since they are creating loan
+            category: 'External NFT'
+          };
+          nft = new NFT(minimalNftData);
+          await nft.save();
+        }
+      } catch (err) {
+        console.error('[createLoan] Error saving NFT to DB:', err);
+        // Proceed with loan creation even if NFT save fails, though it might cause display issues
+      }
     }
 
     const newLoan = new Loan({

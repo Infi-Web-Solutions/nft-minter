@@ -1502,7 +1502,7 @@ export const getExternalNft = async (req, res) => {
         // different NFT contracts (e.g. original collection vs WrappedLeasing wNFTs)
         const internalNft = await NFT.findOne({
             token_id: parseInt(token_id),
-            contract_address: contract_address.toLowerCase()
+            contract_address: { $regex: new RegExp(`^${contract_address}$`, 'i') }
         });
 
         if (internalNft) {
@@ -1640,40 +1640,9 @@ export const getExternalNft = async (req, res) => {
             : null;
         const isListed = !!(listing && listing.isActive && listing.priceEth);
 
-        // Save to database so it appears in the marketplace
-        // Use upsert to prevent duplicates
-        try {
-            const newNftData = {
-                token_id: parseInt(token_id),
-                contract_address: contract_address.toLowerCase(),
-                name: nftData.name || `External NFT #${token_id}`,
-                description: nftData.description || '',
-                image_url: nftData.image || '',
-                token_uri: nftData.token_uri || '',
-                owner_address: nftData.owner_address,
-                creator_address: nftData.owner_address, // Assume owner is creator for external
-                nft_collection: nftData.collection_name || 'NFT Collection',
-                category: 'External NFT',
-                price: priceEth,
-                is_listed: isListed,
-                is_auction: listing ? !!listing.isAuction : false,
-                // Don't overwrite existing creation date if it exists
-            };
-
-            const savedNft = await NFT.findOneAndUpdate(
-                {
-                    token_id: parseInt(token_id),
-                    contract_address: contract_address.toLowerCase()
-                },
-                { $set: newNftData },
-                { new: true, upsert: true, setDefaultsOnInsert: true }
-            );
-
-            console.log(`[DEBUG] External NFT saved/updated in database: ${savedNft._id}`);
-        } catch (dbError) {
-            console.error('[ERROR] Failed to save external NFT to database:', dbError);
-            // Continue execution, don't fail the request just because save failed
-        }
+        // REMOVED: Auto-save to database. 
+        // We now only save when a user explicitly interacts (e.g. creates a loan).
+        // This prevents the marketplace from being flooded with searched NFTs.
 
         const formattedData = {
             id: `external_${contract_address}_${token_id}`,

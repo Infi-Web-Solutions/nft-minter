@@ -45,6 +45,8 @@ interface NFTCardProps {
   onReturn?: () => void;
   onSubLease?: () => void;
   nftType?: 'NFT' | 'Rent' | 'wNFT' | 'wwNFT' | 'For Sale' | 'Auction' | 'Rented' | 'For Rent';
+  seller?: string;
+  creator_address?: string;
 }
 
 const getImageUrl = (url: string) => {
@@ -101,6 +103,8 @@ const NFTCard = ({
   onReturn,
   onSubLease,
   nftType = 'NFT',
+  seller,
+  creator_address,
 }: NFTCardProps) => {
   const { buyNFT, listNFT } = useWeb3();
   const { address, provider } = useWallet();
@@ -110,6 +114,8 @@ const NFTCard = ({
   const navigate = useNavigate();
 
   const isOwner = address && owner_address?.toLowerCase() === address.toLowerCase();
+  const isSeller = address && seller?.toLowerCase() === address.toLowerCase();
+  const isCreator = address && creator_address?.toLowerCase() === address.toLowerCase();
   const isLoanBorrower = address && loanBorrower && address.toLowerCase() === loanBorrower.toLowerCase();
   const isLoanLender = address && loanLender && address.toLowerCase() === loanLender.toLowerCase();
 
@@ -386,6 +392,13 @@ const NFTCard = ({
   };
 
 
+  const handlePlaceBid = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (id) {
+      navigate(`/nft/${id}`);
+    }
+  };
+
   // Handler for card click
   const handleCardClick = async (e: React.MouseEvent) => {
     // Prevent navigation if clicking on a button or interactive element
@@ -591,9 +604,25 @@ const NFTCard = ({
             <div className="flex-shrink-0">
               {/* Button rendering logic */}
               {isAuction ? (
-                <Button variant="outline" size="sm" className="whitespace-nowrap text-xs px-2">
-                  Place Bid
-                </Button>
+                !isSeller ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="whitespace-nowrap text-xs px-2"
+                    onClick={handlePlaceBid}
+                  >
+                    Place Bid
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="whitespace-nowrap text-xs px-2 cursor-not-allowed opacity-70"
+                    disabled
+                  >
+                    Your Auction
+                  </Button>
+                )
               ) : (
                 <>
                   {isWrapped && (
@@ -708,12 +737,12 @@ const NFTCard = ({
                       size="sm"
                       className="bg-gradient-to-r from-gray-400 to-gray-600 whitespace-nowrap text-xs px-2"
                       disabled
-                      title="This NFT is not for sale"
+                      title={isCreator ? "You have sold this NFT" : "This NFT is not for sale"}
                     >
-                      Not for Sale
+                      {isCreator ? "Sold" : "Not for Sale"}
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !isRentable && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !isRentable && !isSeller && is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2 mr-1"
@@ -722,6 +751,16 @@ const NFTCard = ({
                       title="Buy Now"
                     >
                       {isBuying ? 'Buying...' : 'Buy Now'}
+                    </Button>
+                  )}
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !isRentable && isSeller && (
+                    <Button
+                      size="sm"
+                      className="bg-secondary text-secondary-foreground whitespace-nowrap text-xs px-2 mr-1 cursor-not-allowed opacity-70"
+                      disabled
+                      title="You are the seller"
+                    >
+                      Your Listing
                     </Button>
                   )}
 
