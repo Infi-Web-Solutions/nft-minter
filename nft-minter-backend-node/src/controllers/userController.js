@@ -144,8 +144,8 @@ export const getUserProfile = async (req, res) => {
                         }
 
                         // Get user's NFTs
-                        const userNfts = await NFT.find({ owner_address: walletAddress });
-                        const createdNfts = await NFT.find({ creator_address: walletAddress });
+                        const userNfts = await NFT.find({ owner_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } });
+                        const createdNfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } });
 
                         const profileData = {
                             id: profile._id,
@@ -262,8 +262,8 @@ export const getUserProfile = async (req, res) => {
         }
 
         // Get user's NFTs
-        const userNfts = await NFT.find({ owner_address: walletAddress });
-        const createdNfts = await NFT.find({ creator_address: walletAddress });
+        const userNfts = await NFT.find({ owner_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } });
+        const createdNfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } });
         // console.log(`[DEBUG] NFTs found: ${userNfts.length} owned, ${createdNfts.length} created`);
 
         const profile = await UserProfile.findOne({ wallet_address: walletAddress });
@@ -382,7 +382,7 @@ export const followUser = async (req, res) => {
 export const getUserCreatedNFTs = async (req, res) => {
     try {
         const { walletAddress } = req.params;
-        const nfts = await NFT.find({ creator_address: walletAddress }).lean();
+        const nfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } }).lean();
         console.log(`[DEBUG] getUserCreatedNFTs found ${nfts.length} NFTs for user ${walletAddress}`);
         const nfts_data = nfts.map(nft => ({
             id: `local_${nft._id}`,
@@ -410,7 +410,7 @@ export const getUserNfts = async (req, res) => {
     try {
         const { walletAddress } = req.params;
         // Only fetch NFTs owned by the user
-        const owned_nfts = await NFT.find({ owner_address: walletAddress }).lean();
+        const owned_nfts = await NFT.find({ owner_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } }).lean();
 
         const nfts_data = owned_nfts.map(nft => ({
             id: `local_${nft._id}`,
@@ -589,7 +589,7 @@ export const getUserLikedNfts = async (req, res) => {
 
         // Get local NFT favorites with selective population
         // Using .lean() to avoid circular references and selecting only needed fields
-        const favorites = await Favorite.find({ user_address: walletAddress })
+        const favorites = await Favorite.find({ user_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } })
             .populate({
                 path: 'nft',
                 select: 'token_id name description image_url price is_listed is_auction owner_address creator_address collection category created_at', // Only select needed fields
@@ -712,7 +712,7 @@ export const getUserLikedNftsAggregation = async (req, res) => {
 
         // Use aggregation to avoid circular reference issues
         const likedNfts = await Favorite.aggregate([
-            { $match: { user_address: walletAddress } },
+            { $match: { user_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } } },
             {
                 $lookup: {
                     from: 'nfts', // Collection name (make sure this matches your NFT collection name)

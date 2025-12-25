@@ -56,6 +56,9 @@ const Create = () => {
     price: '',
     file: null as File | null,
     fileType: 'image' as 'image' | 'video' | 'audio',
+    auctionDays: '7',
+    auctionHours: '0',
+    auctionMinutes: '0',
   });
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -321,11 +324,18 @@ const Create = () => {
         const tokenIdForTx = normalizeTokenId(tokenId);
         if (!tokenIdForTx) throw new Error('Invalid tokenId extracted; cannot list NFT');
 
+        // Calculate auction duration in seconds from user input
+        const auctionDurationSeconds = isAuction
+          ? (parseInt(formData.auctionDays || '0') * 24 * 60 * 60) +
+          (parseInt(formData.auctionHours || '0') * 60 * 60) +
+          (parseInt(formData.auctionMinutes || '0') * 60)
+          : 0;
+
         const listingTx = await contract.listNFT(
           tokenIdForTx,
           price,
           isAuction,
-          isAuction ? 7 * 24 * 60 * 60 : 0 // 7 days for auction
+          auctionDurationSeconds
         );
 
         // Wait for listing TX and log receipt + on-chain listing state
@@ -404,7 +414,10 @@ const Create = () => {
         saleType: 'fixed',
         price: '',
         file: null,
-        fileType: 'image'
+        fileType: 'image',
+        auctionDays: '7',
+        auctionHours: '0',
+        auctionMinutes: '0',
       });
       setPreviewUrl(null);
 
@@ -632,36 +645,85 @@ const Create = () => {
                         />
                       </div>
                       {formData.putOnSale && (
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="price">Price (ETH)</Label>
-                            <Input
-                              id="price"
-                              type="number"
-                              value={formData.price}
-                              onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))}
-                              min="0"
-                              step="0.001"
-                              placeholder="0.5"
-                              required={formData.putOnSale}
-                            />
+                        <>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="price">Price (ETH)</Label>
+                              <Input
+                                id="price"
+                                type="number"
+                                value={formData.price}
+                                onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))}
+                                min="0"
+                                step="0.001"
+                                placeholder="0.5"
+                                required={formData.putOnSale}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="sale-type">Sale Type</Label>
+                              <Select
+                                value={formData.saleType}
+                                onValueChange={value => setFormData(prev => ({ ...prev, saleType: value }))}
+                              >
+                                <SelectTrigger id="sale-type">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="fixed">Fixed Price</SelectItem>
+                                  <SelectItem value="auction">Auction</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="sale-type">Sale Type</Label>
-                            <Select
-                              value={formData.saleType}
-                              onValueChange={value => setFormData(prev => ({ ...prev, saleType: value }))}
-                            >
-                              <SelectTrigger id="sale-type">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="fixed">Fixed Price</SelectItem>
-                                <SelectItem value="auction">Auction</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
+
+                          {formData.saleType === 'auction' && (
+                            <div className="space-y-2">
+                              <Label>Auction Duration</Label>
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className="space-y-2">
+                                  <Label htmlFor="auction-days" className="text-xs text-muted-foreground">Days</Label>
+                                  <Input
+                                    id="auction-days"
+                                    type="number"
+                                    value={formData.auctionDays}
+                                    onChange={e => setFormData(prev => ({ ...prev, auctionDays: e.target.value }))}
+                                    min="0"
+                                    max="365"
+                                    placeholder="7"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="auction-hours" className="text-xs text-muted-foreground">Hours</Label>
+                                  <Input
+                                    id="auction-hours"
+                                    type="number"
+                                    value={formData.auctionHours}
+                                    onChange={e => setFormData(prev => ({ ...prev, auctionHours: e.target.value }))}
+                                    min="0"
+                                    max="23"
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="auction-minutes" className="text-xs text-muted-foreground">Minutes</Label>
+                                  <Input
+                                    id="auction-minutes"
+                                    type="number"
+                                    value={formData.auctionMinutes}
+                                    onChange={e => setFormData(prev => ({ ...prev, auctionMinutes: e.target.value }))}
+                                    min="0"
+                                    max="59"
+                                    placeholder="0"
+                                  />
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                Total: {parseInt(formData.auctionDays || '0')} days, {parseInt(formData.auctionHours || '0')} hours, {parseInt(formData.auctionMinutes || '0')} minutes
+                              </p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

@@ -714,7 +714,7 @@ export const getTrendingCollections = async (req, res) => {
 export const getUserCreatedNfts = async (req, res) => {
     try {
         const { wallet_address } = req.params;
-        const nfts = await NFT.find({ creator_address: wallet_address });
+        const nfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${wallet_address}$`, 'i') } });
         const nfts_data = nfts.map(nft => ({
             id: nft._id,
             token_id: nft.token_id,
@@ -739,8 +739,8 @@ export const getUserCreatedNfts = async (req, res) => {
 export const getUserNfts = async (req, res) => {
     try {
         const { wallet_address } = req.params;
-        const owned_nfts = await NFT.find({ owner_address: wallet_address });
-        const created_nfts = await NFT.find({ creator_address: wallet_address });
+        const owned_nfts = await NFT.find({ owner_address: { $regex: new RegExp(`^${wallet_address}$`, 'i') } });
+        const created_nfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${wallet_address}$`, 'i') } });
         const nftMap = new Map();
         for (const nft of owned_nfts) {
             nftMap.set(nft.token_id, nft);
@@ -1729,6 +1729,138 @@ export const createOffer = async (req, res) => {
         return res.status(500).json({ success: false, error: error.message });
     }
 };
+
+/**
+ * End an auction and transfer NFT to winner
+ */
+export const endAuction = async (req, res) => {
+    try {
+        const { token_id } = req.params;
+        const { transaction_hash, winner, final_price } = req.body;
+
+        console.log(`[endAuction] Finalizing auction for token: ${token_id}`);
+        console.log(`[endAuction] Params:`, { transaction_hash, winner, final_price });
+
+        // Find the NFT - try both string and number for token_id
+        let nft = await NFT.findOne({ token_id: token_id });
+        if (!nft && !isNaN(token_id)) {
+            nft = await NFT.findOne({ token_id: Number(token_id) });
+        }
+
+        if (!nft) {
+            console.error(`[endAuction] NFT not found for token_id: ${token_id}`);
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
+
+        console.log(`[endAuction] Found NFT: ${nft.name} (ID: ${nft._id})`);
+
+        // Verify the transaction if hash is provided
+        if (transaction_hash) {
+            try {
+                console.log(`[endAuction] Verifying transaction: ${transaction_hash}`);
+                const receipt = await web3Utils.web3.eth.getTransactionReceipt(transaction_hash);
+                if (!receipt) {
+                    console.warn(`[endAuction] Transaction receipt not found yet for: ${transaction_hash}`);
+                } else if (!receipt.status) {
+                    console.error(`[endAuction] Transaction failed on-chain: ${transaction_hash}`);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Transaction failed on-chain'
+                    });
+                } else {
+                    console.log(`[endAuction] Transaction confirmed!`);
+                }
+            } catch (error) {
+                console.error('[endAuction] Transaction verification error:', error);
+            }
+        }
+
+        const oldOwner = nft.owner_address;
+        let newOwner = winner;
+
+        // Wait a moment for blockchain state to propagate before fetching metadata
+        console.log(`[endAuction] Waiting 2 seconds for state propagation...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Robust check: Fetch current owner from blockchain
+        try {
+            console.log(`[endAuction] Fetching current owner from blockchain for token ${token_id}...`);
+            const blockchainMetadata = await web3Utils.getNftMetadata(nft.token_id);
+            if (blockchainMetadata && blockchainMetadata.owner) {
+                console.log(`[endAuction] Blockchain owner: ${blockchainMetadata.owner}`);
+                newOwner = blockchainMetadata.owner;
+            }
+        } catch (error) {
+            console.warn(`[endAuction] Could not fetch owner from blockchain: ${error.message}. Using provided winner.`);
+        }
+
+        // Update NFT ownership if we have a valid owner
+        if (newOwner && newOwner !== '0x0000000000000000000000000000000000000000') {
+            console.log(`[endAuction] Updating owner from ${oldOwner} to ${newOwner}`);
+            nft.owner_address = newOwner;
+
+            // Update user profile stats
+            try {
+                await UserProfile.findOneAndUpdate(
+                    { wallet_address: newOwner.toLowerCase() },
+                    { $inc: { total_collected: 1 } },
+                    { upsert: true }
+                );
+
+                if (oldOwner) {
+                    await UserProfile.findOneAndUpdate(
+                        { wallet_address: oldOwner.toLowerCase() },
+                        { $inc: { total_volume: Number(final_price) || 0 } },
+                        { upsert: true }
+                    );
+                }
+            } catch (err) {
+                console.error(`[endAuction] Error updating user profiles:`, err);
+            }
+        } else {
+            console.log(`[endAuction] No winner or zero address winner. NFT remains with ${oldOwner} or marketplace.`);
+        }
+
+        // Mark auction as ended in DB
+        nft.is_listed = false;
+        nft.is_auction = false;
+        nft.updated_at = Date.now();
+
+        await nft.save();
+        console.log(`[endAuction] NFT updated successfully in database`);
+
+        // Create transaction record
+        if (transaction_hash && winner) {
+            const transactionData = {
+                transaction_hash,
+                nft: nft._id,
+                from_address: oldOwner,
+                to_address: winner,
+                transaction_type: 'auction_end',
+                price: final_price || 0,
+                timestamp: new Date(),
+            };
+
+            await Transaction.create(transactionData);
+        }
+
+        console.log('[endAuction] Auction ended successfully');
+        return res.json({
+            success: true,
+            message: 'Auction ended successfully',
+            new_owner: nft.owner_address
+        });
+
+    } catch (error) {
+        console.error('[endAuction] Error:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+};
+
+
 
 /**
  * Proxy image requests to bypass browser restrictions/CORS

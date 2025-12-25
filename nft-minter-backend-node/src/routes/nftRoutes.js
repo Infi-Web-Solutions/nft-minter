@@ -23,6 +23,7 @@ import {
     getExternalNft,
     setNftRentable,
     createOffer,
+    endAuction,
     proxyImage
 } from '../controllers/nftController.js';
 
@@ -64,5 +65,6 @@ router.post('/:nft_id/toggle-like/', toggleNftLike);
 router.post('/:token_id/set_listed/', setNftListed);
 router.post('/:token_id/set_rentable/', setNftRentable);
 router.post('/:token_id/offers/create/', createOffer);
+router.post('/:token_id/end-auction/', endAuction);
 
 export default router;

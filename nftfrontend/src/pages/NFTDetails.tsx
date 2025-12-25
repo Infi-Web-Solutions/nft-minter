@@ -33,7 +33,7 @@ import { ethers } from 'ethers';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { apiService } from '@/services/api';
 import { getNFTMarketplaceAddress } from '@/services/configService';
-
+import { AuctionInfo } from '@/components/AuctionInfo';
 const NFTDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -564,12 +564,12 @@ const NFTDetails = () => {
                 // Force re-render by updating the image URL
                 const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
                 const gateways = [
-        `https://ipfs.io/ipfs/${ipfsHash}`,
-        `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-        `https://nftstorage.link/ipfs/${ipfsHash}`,
-        `https://dweb.link/ipfs/${ipfsHash}`,
-        `https://gateway.ipfs.io/ipfs/${ipfsHash}`
-      ];
+                  `https://ipfs.io/ipfs/${ipfsHash}`,
+                  `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+                  `https://nftstorage.link/ipfs/${ipfsHash}`,
+                  `https://dweb.link/ipfs/${ipfsHash}`,
+                  `https://gateway.ipfs.io/ipfs/${ipfsHash}`
+                ];
 
                 if (gateways[nextGatewayIndex]) {
                   img.src = gateways[nextGatewayIndex];
@@ -610,8 +610,8 @@ const NFTDetails = () => {
 
                     // Check if this is an IPFS URL and we can try another gateway
                     if (currentSrc.includes('ipfs.io') || currentSrc.includes('gateway.pinata.cloud') ||
-              currentSrc.includes('nftstorage.link') || currentSrc.includes('dweb.link') ||
-              currentSrc.includes('gateway.ipfs.io')) {
+                      currentSrc.includes('nftstorage.link') || currentSrc.includes('dweb.link') ||
+                      currentSrc.includes('gateway.ipfs.io')) {
 
                       // Try next gateway
                       const nextGatewayIndex = currentGatewayIndex + 1;
@@ -622,12 +622,12 @@ const NFTDetails = () => {
                         // Force re-render by updating the image URL
                         const ipfsHash = nft?.image_url?.replace('ipfs://', '') || '';
                         const gateways = [
-        `https://ipfs.io/ipfs/${ipfsHash}`,
-        `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-        `https://nftstorage.link/ipfs/${ipfsHash}`,
-        `https://dweb.link/ipfs/${ipfsHash}`,
-        `https://gateway.ipfs.io/ipfs/${ipfsHash}`
-      ];
+                          `https://ipfs.io/ipfs/${ipfsHash}`,
+                          `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
+                          `https://nftstorage.link/ipfs/${ipfsHash}`,
+                          `https://dweb.link/ipfs/${ipfsHash}`,
+                          `https://gateway.ipfs.io/ipfs/${ipfsHash}`
+                        ];
 
                         if (gateways[nextGatewayIndex]) {
                           img.src = gateways[nextGatewayIndex];
@@ -886,7 +886,8 @@ const NFTDetails = () => {
                 </div>
               </div>
             </Card>
-
+            {/* Auction Info */}
+            <AuctionInfo nft={nft} onAuctionEnded={() => window.location.reload()} />
             {/* Creator Info */}
             <Card className="glass-card p-6">
               <h3 className="text-lg font-semibold mb-4">Creator</h3>
