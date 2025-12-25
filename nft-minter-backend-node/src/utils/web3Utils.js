@@ -748,6 +748,10 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    getNftMarketplaceContract() {
+        return this.contract;
+    }
+
     async getNftMetadata(tokenId) {
         try {
             console.log(`[Web3] Getting metadata for token ID: ${tokenId}`);

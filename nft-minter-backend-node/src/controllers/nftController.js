@@ -9,7 +9,19 @@ import Collection from '../models/collection.js';
 import NFTView from '../models/nftView.js';
 import { uploadToIPFS } from '../utils/ipfsUtils.js';
 import { createRequire } from 'module';
-import hammingDistance from 'hamming-distance';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logFile = path.join(__dirname, '../../sync_debug.log');
+
+const log = (msg) => {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
+    console.log(msg);
+};
 
 // Import CommonJS module in ES module
 const require = createRequire(import.meta.url);
@@ -42,6 +54,101 @@ const calculatePerceptualHash = async (fileBuffer) => {
     } catch (error) {
         console.error('[ERROR] Failed to calculate perceptual hash:', error);
         throw new Error('Failed to calculate image hash: ' + error.message);
+    }
+};
+
+// Calculate Hamming distance between two hex strings
+const hammingDistance = (hash1, hash2) => {
+    if (!hash1 || !hash2 || hash1.length !== hash2.length) {
+        return 100; // Return high distance if invalid
+    }
+    let distance = 0;
+    for (let i = 0; i < hash1.length; i++) {
+        const val1 = parseInt(hash1[i], 16);
+        const val2 = parseInt(hash2[i], 16);
+        let xor = val1 ^ val2;
+        while (xor) {
+            distance += xor & 1;
+            xor >>= 1;
+        }
+    }
+    return distance;
+};
+
+const syncNftWithBlockchain = async (nft) => {
+    try {
+        if (!nft || !nft.token_id) {
+            log(`[Sync] Skipping sync: nft or token_id missing. nft: ${!!nft}`);
+            return nft;
+        }
+
+        log(`[Sync] Syncing NFT ${nft.token_id} with blockchain...`);
+        const listing = await web3Utils.getOnChainListing(nft.token_id);
+        log(`[Sync] On-chain listing for ${nft.token_id}: ${JSON.stringify(listing)}`);
+
+        // listing structure: [seller, price, isActive, isAuction, auctionEndTime, startingPrice, highestBid, highestBidder]
+        const isActive = listing.isActive !== undefined ? listing.isActive : listing[2];
+        const onChainPrice = listing.price !== undefined ? listing.price : listing[1];
+        const isAuction = listing.isAuction !== undefined ? listing.isAuction : listing[3];
+        const auctionEndTime = listing.auctionEndTime !== undefined ? listing.auctionEndTime : listing[4];
+
+        log(`[Sync] isActive: ${isActive}, onChainPrice: ${onChainPrice}, isAuction: ${isAuction}`);
+
+        let changed = false;
+
+        if (nft.is_listed !== isActive) {
+            log(`[Sync] Updating is_listed: ${nft.is_listed} -> ${isActive}`);
+            nft.is_listed = isActive;
+            changed = true;
+        }
+
+        if (isActive) {
+            const priceEth = web3Utils.web3.utils.fromWei(onChainPrice, 'ether');
+            if (nft.price !== parseFloat(priceEth)) {
+                log(`[Sync] Updating price: ${nft.price} -> ${priceEth}`);
+                nft.price = parseFloat(priceEth);
+                changed = true;
+            }
+
+            if (nft.is_auction !== isAuction) {
+                log(`[Sync] Updating is_auction: ${nft.is_auction} -> ${isAuction}`);
+                nft.is_auction = isAuction;
+                changed = true;
+            }
+
+            if (isAuction) {
+                const endTimeDate = new Date(Number(auctionEndTime) * 1000);
+                if (!nft.auction_end_time || nft.auction_end_time.getTime() !== endTimeDate.getTime()) {
+                    log(`[Sync] Updating auction_end_time`);
+                    nft.auction_end_time = endTimeDate;
+                    changed = true;
+                }
+            }
+        }
+
+        // Also sync owner if possible
+        try {
+            const metadata = await web3Utils.getNftMetadata(nft.token_id);
+            if (metadata && metadata.owner && nft.owner_address.toLowerCase() !== metadata.owner.toLowerCase()) {
+                log(`[Sync] Updating owner: ${nft.owner_address} -> ${metadata.owner}`);
+                nft.owner_address = metadata.owner;
+                changed = true;
+            }
+        } catch (e) {
+            log(`[Sync] Failed to sync owner: ${e.message}`);
+        }
+
+        if (changed) {
+            await nft.save();
+            log(`[Sync] NFT ${nft.token_id} updated in database`);
+        } else {
+            log(`[Sync] No changes for NFT ${nft.token_id}`);
+        }
+
+        return nft;
+    } catch (error) {
+        log(`[Sync] Error syncing NFT ${nft.token_id}: ${error.message}`);
+        return nft;
     }
 };
 
@@ -549,7 +656,7 @@ export const getCombinedNfts = async (req, res) => {
             const favorites = await Favorite.find({ user_address });
             liked_nft_ids = new Set(favorites.map(fav => fav.nft.toString()));
         }
-        const local_nfts = await NFT.find().sort({ created_at: -1 }).limit(100);
+        const local_nfts = await NFT.find({ is_listed: true }).sort({ created_at: -1 }).limit(100);
         const local_nfts_data = await Promise.all(local_nfts.map(async (nft) => {
             const like_count = await Favorite.countDocuments({ nft: nft._id });
             return {
@@ -599,10 +706,13 @@ export const getCombinedNfts = async (req, res) => {
 export const getNftDetail = async (req, res) => {
     try {
         const { token_id } = req.params;
-        const nft = await NFT.findOne({ token_id });
+        let nft = await NFT.findOne({ token_id });
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
+
+        // Sync with blockchain before returning
+        nft = await syncNftWithBlockchain(nft);
         let blockchain_data = null;
         try {
             blockchain_data = await web3Utils.getNftMetadata(token_id);
@@ -643,7 +753,7 @@ export const getNfts = async (req, res) => {
         let { page = 1, limit = 12, category, collection, price_min, price_max, sort_by = 'created_at', sort_order = 'desc' } = req.query;
         page = parseInt(page);
         limit = parseInt(limit);
-        const query = {};
+        const query = { is_listed: true };
         if (category) query.category = category;
         if (collection) query.nft_collection = collection;
         if (price_min) query.price = { ...query.price, $gte: parseFloat(price_min) };
@@ -781,7 +891,8 @@ export const searchNfts = async (req, res) => {
                 { name: { $regex: query, $options: 'i' } },
                 { description: { $regex: query, $options: 'i' } },
                 { nft_collection: { $regex: query, $options: 'i' } }
-            ]
+            ],
+            is_listed: true
         });
         const nfts_data = nfts.map(nft => ({
             id: nft._id,
@@ -831,17 +942,54 @@ export const setNftListed = async (req, res) => {
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
-        // Check on-chain listing status
-        const contract = await web3Utils.getNftMarketplaceContract();
-        const is_listed = await contract.methods.isListed(token_id).call();
-        if (is_listed) {
+
+        // Check on-chain listing status and details
+        const contract = web3Utils.contract;
+        console.log(`[setNftListed] Fetching on-chain listing for token_id: ${token_id}`);
+
+        // Add a small delay to ensure the blockchain state is updated
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const listing = await contract.methods.getListing(token_id).call();
+        console.log(`[setNftListed] On-chain listing for ${token_id}:`, listing);
+
+        // listing structure: [seller, price, isActive, isAuction, auctionEndTime, startingPrice, highestBid, highestBidder]
+        // Web3.js returns an object with both numeric and named keys
+        const isActive = listing.isActive !== undefined ? listing.isActive : listing[2];
+
+        if (isActive) {
             nft.is_listed = true;
+            nft.is_auction = listing.isAuction !== undefined ? listing.isAuction : listing[3];
+            const priceWei = listing.price !== undefined ? listing.price : listing[1];
+            nft.price = web3Utils.web3.utils.fromWei(priceWei, 'ether');
+
+            if (nft.is_auction) {
+                const endTime = listing.auctionEndTime !== undefined ? listing.auctionEndTime : listing[4];
+                nft.auction_end_time = new Date(Number(endTime) * 1000);
+            }
+
             await nft.save();
-            return res.json({ success: true, is_listed: true });
+            console.log(`[setNftListed] Successfully updated NFT ${token_id} in DB`);
+
+            return res.json({
+                success: true,
+                is_listed: true,
+                is_auction: nft.is_auction,
+                price: nft.price
+            });
         } else {
-            return res.status(400).json({ success: false, error: 'NFT is not listed on-chain' });
+            console.log(`[setNftListed] NFT ${token_id} is NOT listed on-chain. Updating DB...`);
+            // If not active on-chain, ensure it's marked as not listed in DB
+            nft.is_listed = false;
+            await nft.save();
+            return res.json({
+                success: true,
+                is_listed: false,
+                message: 'NFT is not listed on-chain. Database updated.'
+            });
         }
     } catch (error) {
+        console.error('[ERROR] setNftListed:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -974,93 +1122,6 @@ export const uploadIpfs = async (req, res) => {
     }
 };
 
-// Get NFT by combined ID (handles local_ prefix)
-// export const getNftByCombinedId = async (req, res) => {
-//     try {
-//         const { combined_id } = req.params;
-//         console.log(`[DEBUG] getNftByCombinedId called with id: ${combined_id}`);
-
-//         // Check if this is a local NFT (has "local_" prefix)
-//         if (combined_id.startsWith('local_')) {
-//             // Extract the actual ID from the local ID
-//             const actualId = combined_id.replace('local_', '');
-//             console.log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
-
-//             try {
-//                 // Try to find by database ID first, then by token_id
-//                 let nft;
-//                 try {
-//                     nft = await NFT.findById(actualId);
-//                 } catch {
-//                     nft = await NFT.findOne({ token_id: actualId });
-//                 }
-
-//                 if (!nft) {
-//                     return res.status(404).json({
-//                         success: false,
-//                         error: 'Local NFT not found'
-//                     });
-//                 }
-
-//                 // Get blockchain data
-//                 let blockchainData = null;
-//                 try {
-//                     blockchainData = await web3Utils.getNftMetadata(nft.token_id);
-//                 } catch (e) {
-//                     console.warn(`Could not fetch blockchain data: ${e.message}`);
-//                     blockchainData = null;
-//                 }
-
-//                 const nftData = {
-//                     id: `local_${nft._id}`,
-//                     token_id: nft.token_id,
-//                     name: nft.name,
-//                     description: nft.description,
-//                     image_url: nft.image_url,
-//                     token_uri: nft.token_uri,
-//                     price: nft.price != null ? parseFloat(nft.price) : null,
-//                     is_listed: nft.is_listed,
-//                     is_auction: nft.is_auction,
-//                     auction_end_time: nft.auction_end_time || null,
-//                     current_bid: nft.current_bid != null ? parseFloat(nft.current_bid) : null,
-//                     highest_bidder: nft.highest_bidder,
-//                     owner_address: nft.owner_address,
-//                     creator_address: nft.creator_address,
-//                     royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-//                     collection: nft.nft_collection,
-//                     category: nft.category,
-//                     created_at: nft.created_at,
-//                     blockchain_data: blockchainData,
-//                     source: 'local'
-//                 };
-
-//                 return res.json({
-//                     success: true,
-//                     data: nftData
-//                 });
-//             } catch (error) {
-//                 console.error(`[ERROR] Error finding local NFT: ${error}`);
-//                 return res.status(404).json({
-//                     success: false,
-//                     error: 'Local NFT not found'
-//                 });
-//             }
-//         } else {
-//             // Only local NFTs are supported now
-//             return res.status(404).json({
-//                 success: false,
-//                 error: 'Only local NFTs are supported'
-//             });
-//         }
-//     } catch (error) {
-//         console.error(`[ERROR] getNftByCombinedId: ${error}`);
-//         return res.status(500).json({
-//             success: false,
-//             error: error.message
-//         });
-//     }
-// };
-
 export const getNftByCombinedId = async (req, res) => {
     try {
         const { combined_id } = req.params;
@@ -1089,6 +1150,9 @@ export const getNftByCombinedId = async (req, res) => {
                         error: 'Local NFT not found'
                     });
                 }
+
+                // Sync with blockchain before returning
+                nft = await syncNftWithBlockchain(nft);
 
                 // Get blockchain data (with error handling)
                 let blockchainData = null;
