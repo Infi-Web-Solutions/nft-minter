@@ -8,10 +8,11 @@ const listingSchema = new mongoose.Schema({
   pricePerSecond: { type: String, required: true },
   minDuration: { type: Number, required: true },
   maxDuration: { type: Number, required: true },
-  status: { type: String, enum: ['Active', 'Cancelled', 'Rented'], default: 'Active' },
+  status: { type: String, enum: ['Active', 'Cancelled', 'Rented', 'Finished'], default: 'Active' },
   createdAt: { type: Date, default: Date.now },
   rentedBy: { type: String },
-  rentalExpiresAt: { type: Date }
+  rentalExpiresAt: { type: Date },
+  remainingDuration: { type: Number, default: 0 }
 });
 
 listingSchema.index({ nftAddress: 1, tokenId: 1 });

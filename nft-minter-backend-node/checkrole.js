@@ -3,12 +3,13 @@ import fs from "fs";
 import path from "path";
 
 const RPC = "https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE";
-const CONTRACT = "0x1a7FFcE06738CF55d7C5251765C1536121F0385C"; // FeeManager proxy
+const CONTRACT = "0x6Ca7A9d428B0a9dCd53bc6128eD282C8dd97B3c5"; // FeeManager proxy
 
 // Addresses to test
 const ADDRESSES = [
-  "0xdA46A64ab8c6BEda14677c49D2Bdd0fC4Bf7b72D", // old admin
+  // old admin
   "0xb6795a27f271da619c457fec2dec1c9afbb2f561", // new admin
+  "0xdA46A64ab8c6BEda14677c49D2Bdd0fC4Bf7b72D",
 ];
 
 // CORRECT ABI PATH
@@ -33,5 +34,5 @@ async function main() {
     console.log(addr, " → ", has ? "✔ HAS ADMIN" : "❌ NO ADMIN");
   }
 }
- 
+
 main();

@@ -79,6 +79,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   // Wrapped Leasing State
   const [renterAddress, setRenterAddress] = useState('');
   const [durationDays, setDurationDays] = useState('30');
+  const [durationUnit, setDurationUnit] = useState<'days' | 'hours' | 'minutes'>('days'); // New state
   const [wrappedNFTs, setWrappedNFTs] = useState<WrappedNFT[]>([]);
   const [searchWId, setSearchWId] = useState('');
   const [wrappedLoading, setWrappedLoading] = useState(false);
@@ -95,12 +96,15 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const [listingPrice, setListingPrice] = useState('0.1');
   const [minDuration, setMinDuration] = useState('1');
   const [maxDuration, setMaxDuration] = useState('30');
+  const [listingDurationUnit, setListingDurationUnit] = useState<'days' | 'hours' | 'minutes'>('days');
   const [rentDuration, setRentDuration] = useState('7');
+  const [rentDurationUnit, setRentDurationUnit] = useState<'days' | 'hours' | 'minutes'>('days');
   const [listingId, setListingId] = useState<number | null>(null);
   const [marketplaceBalance, setMarketplaceBalance] = useState('0');
   const [isMarketplaceOwner, setIsMarketplaceOwner] = useState(false);
   const [myRentals, setMyRentals] = useState<any[]>([]);
   const [rentalsLoading, setRentalsLoading] = useState(false);
+  const [finishedListing, setFinishedListing] = useState<any>(null);
 
   // Rental cost breakdown state
   const [listingDetails, setListingDetails] = useState<{
@@ -117,7 +121,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     totalRequired: string;
   } | null>(null);
   const [calculatingCost, setCalculatingCost] = useState(false);
-  const [currentWNFTMaxDays, setCurrentWNFTMaxDays] = useState<number | null>(null);
+  const [currentWNFTRemainingSeconds, setCurrentWNFTRemainingSeconds] = useState<number | null>(null);
 
   // Helper to format time remaining
   const formatTimeRemaining = (seconds: number) => {
@@ -265,21 +269,26 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
           setIsWNFT(true);
 
-          // Compute maximum days this wNFT can be sub-leased: limited by remaining lease time
+          // Compute maximum seconds this wNFT can be sub-leased: limited by remaining lease time
           const remainingSeconds = status?.timeRemaining ?? 0;
           if (remainingSeconds > 0) {
-            const maxDaysByLease = Math.max(1, Math.floor(remainingSeconds / 86400));
-            setCurrentWNFTMaxDays(maxDaysByLease);
+            setCurrentWNFTRemainingSeconds(remainingSeconds);
+            // Suggest a duration that is shorter than parent by a dynamic buffer:
+            // Lesser of 1 hour OR 10% of remaining time.
+            const buffer = Math.min(3600, Math.floor(remainingSeconds * 0.1));
+            const maxSubLeaseSeconds = Math.max(0, remainingSeconds - buffer);
+            const maxDaysByLease = Math.max(0, Math.floor(maxSubLeaseSeconds / 86400));
+
             // Clamp UI maxDuration to this limit
-            setMaxDuration(
-              String(Math.min(parseInt(maxDuration || '30', 10) || 30, maxDaysByLease)),
-            );
-            // Ensure minDuration is not above max
-            if ((parseInt(minDuration || '1', 10) || 1) > maxDaysByLease) {
-              setMinDuration('1');
+            if (listingDurationUnit === 'days') {
+              setMaxDuration(String(Math.min(parseInt(maxDuration || '30', 10) || 30, maxDaysByLease)));
+            } else if (listingDurationUnit === 'hours') {
+              setMaxDuration(String(Math.min(parseInt(maxDuration || '24', 10) || 24, Math.floor(maxSubLeaseSeconds / 3600))));
+            } else if (listingDurationUnit === 'minutes') {
+              setMaxDuration(String(Math.min(parseInt(maxDuration || '60', 10) || 60, Math.floor(maxSubLeaseSeconds / 60))));
             }
           } else {
-            setCurrentWNFTMaxDays(null);
+            setCurrentWNFTRemainingSeconds(0);
           }
 
           // Prefer DB renter as the current logical wNFT owner (renter who can sub-lease)
@@ -475,11 +484,18 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     console.error(defaultMessage, error);
     toast.dismiss();
 
+    // Log revert data if present
+    if (error?.data) console.log('[Transaction] Error data:', error.data);
+    if (error?.revert) console.log('[Transaction] Revert info:', error.revert);
+
     // Check for user rejection
     if (error?.code === 4001 ||
       error?.code === 'ACTION_REJECTED' ||
-      error?.message?.includes('User denied') ||
-      error?.message?.includes('user rejected')) {
+      error?.reason === 'rejected' ||
+      error?.info?.error?.code === 4001 ||
+      error?.message?.toLowerCase().includes('user denied') ||
+      error?.message?.toLowerCase().includes('user rejected') ||
+      error?.message?.toLowerCase().includes('transaction cancelled')) {
       toast.error('Transaction cancelled by user');
       return;
     }
@@ -490,7 +506,22 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       return;
     }
 
-    toast.error(error.message || defaultMessage);
+    // Attempt to extract reason
+    let errorReason = '';
+    if (error?.reason) errorReason = error.reason;
+    else if (error?.error?.message) errorReason = error.error.message;
+    else if (error?.message) {
+      if (error.message.includes('revert')) {
+        const match = error.message.match(/revert (.*)/);
+        if (match) errorReason = match[1];
+      }
+    }
+
+    if (errorReason) {
+      toast.error(`${defaultMessage}: ${errorReason}`);
+    } else {
+      toast.error(defaultMessage);
+    }
   };
 
   const handleCreateLoan = async () => {
@@ -870,17 +901,9 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
             }
           } catch (approvalError: any) {
             toast.dismiss('wrap');
-
-            // Check for user rejection
-            if (approvalError?.message?.includes('User denied') ||
-              approvalError?.message?.includes('user rejected') ||
-              approvalError?.code === 4001) {
-              toast.error('Approval cancelled by user');
-              setProcessing(false);
-              return;
-            }
-
-            throw new Error(`Failed to approve NFT: ${approvalError.message}`);
+            handleTransactionError(approvalError, 'Failed to approve NFT');
+            setProcessing(false);
+            return;
           }
         }
       } catch (validationError: any) {
@@ -900,7 +923,13 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         contractAddress,
         tokenId,
         renterAddress,
-        parseFloat(durationDays)
+        // Use block to calculate logic before passing
+        (() => {
+          let days = parseFloat(durationDays);
+          if (durationUnit === 'hours') days = days / 24;
+          if (durationUnit === 'minutes') days = days / 1440;
+          return days;
+        })()
       );
       console.log('wrapNFT result', result);
       toast.dismiss('wrap');
@@ -912,6 +941,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       setTokenId('');
       setRenterAddress('');
       setDurationDays('30');
+      setDurationUnit('days');
       setNftData(null);
 
       // Refresh list and switch to manage tab
@@ -975,8 +1005,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       setFeeManagerConfigured(true);
     } catch (error: any) {
       toast.dismiss('feemanager');
-      console.error('Error configuring FeeManager:', error);
-      toast.error(error.message || 'Failed to configure FeeManager');
+      handleTransactionError(error, 'Failed to configure FeeManager');
     } finally {
       setConfiguringFeeManager(false);
     }
@@ -1008,6 +1037,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   // ===== MARKETPLACE FUNCTIONS =====
 
 
+  const [marketplaceListingStatus, setMarketplaceListingStatus] = useState<number | null>(null);
   const [isLister, setIsLister] = useState(false);
 
   const checkMarketplaceStatus = async () => {
@@ -1022,6 +1052,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         setIsMarketplaceOwner(true);
         // Fetch details to check if I am the lister
         const listing = await leasingMarketplaceService.getListingDetails(id);
+        setMarketplaceListingStatus(Number(listing.status));
         console.log('[CollateralLeasingSidebar] Listing details:', listing);
 
         if (address && listing.owner.toLowerCase() === address.toLowerCase()) {
@@ -1043,8 +1074,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           maxDays
         });
 
-        // Set default rent duration to min days
-        setRentDuration(Math.max(1, Math.ceil(minDays)).toString());
+        // Set default rent duration to min days, but clamp it to max days
+        const defaultDuration = Math.min(maxDays, Math.max(minDays, 1));
+        setRentDuration(defaultDuration.toString());
+        if (maxDays < 1) {
+          setRentDurationUnit('minutes');
+          setRentDuration((maxDays * 1440).toString());
+        } else {
+          setRentDurationUnit('days');
+          setRentDuration(Math.ceil(minDays).toString());
+        }
 
         console.log('[CollateralLeasingSidebar] Listing price info:', {
           pricePerSecond: pricePerSecond.toString(),
@@ -1056,6 +1095,19 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         setIsMarketplaceOwner(false);
         setIsLister(false);
         setListingDetails(null);
+
+        // Fetch finished listing for partial relist info
+        try {
+          const res = await fetch(apiUrl(`/listings/finished/nft/${contractAddress}/${tokenId}`));
+          const data = await res.json();
+          if (data.success && data.data) {
+            setFinishedListing(data.data);
+          } else {
+            setFinishedListing(null);
+          }
+        } catch (err) {
+          console.error("Error fetching finished listing", err);
+        }
       }
     } catch (e) {
       console.error("Error checking marketplace status", e);
@@ -1071,7 +1123,28 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
     setCalculatingCost(true);
     try {
-      const cost = await leasingMarketplaceService.calculateCost(listingId, parseInt(rentDuration));
+      let durationInDays = parseFloat(rentDuration);
+      if (rentDurationUnit === 'hours') durationInDays = durationInDays / 24;
+      if (rentDurationUnit === 'minutes') durationInDays = durationInDays / 1440;
+
+      // Validate against listing limits to avoid "duration out of range" revert
+      if (listingDetails) {
+        if (durationInDays < listingDetails.minDays || durationInDays > listingDetails.maxDays) {
+          setRentalCost(null);
+          return;
+        }
+      }
+
+      // If it's a wNFT sub-lease, validate against parent lease remaining time
+      if (isWNFT && currentWNFTRemainingSeconds !== null) {
+        const durationSeconds = durationInDays * 86400;
+        if (durationSeconds >= currentWNFTRemainingSeconds) {
+          setRentalCost(null);
+          return;
+        }
+      }
+
+      const cost = await leasingMarketplaceService.calculateCost(listingId, durationInDays);
       setRentalCost({
         rentAmount: ethers.formatEther(cost.rentAmount),
         deposit: ethers.formatEther(cost.deposit),
@@ -1101,7 +1174,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       }, 500); // Debounce
       return () => clearTimeout(timer);
     }
-  }, [listingId, rentDuration, isMarketplaceOwner, isLister]);
+  }, [listingId, rentDuration, rentDurationUnit, isMarketplaceOwner, isLister]);
 
   useEffect(() => {
     if (leasingType === 'marketplace' && nftData) {
@@ -1116,16 +1189,29 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
 
     // If this is a wNFT sub-lease, enforce that requested maxDuration does not exceed
-    // the remaining lease duration on the underlying wrapped NFT.
-    if (isWNFT && currentWNFTMaxDays !== null) {
-      const maxDaysRequested = parseInt(maxDuration, 10);
-      if (maxDaysRequested > currentWNFTMaxDays) {
-        toast.error(`Max duration cannot exceed remaining lease of ${currentWNFTMaxDays} day(s).`);
+    // the remaining lease duration on the underlying wrapped NFT (with a 1-hour safety buffer).
+    if (isWNFT && currentWNFTRemainingSeconds !== null) {
+      let maxSecondsRequested = parseFloat(maxDuration);
+      if (listingDurationUnit === 'days') maxSecondsRequested *= 86400;
+      else if (listingDurationUnit === 'hours') maxSecondsRequested *= 3600;
+      else if (listingDurationUnit === 'minutes') maxSecondsRequested *= 60;
+
+      const buffer = Math.min(3600, Math.floor(currentWNFTRemainingSeconds * 0.1));
+      if (maxSecondsRequested + buffer > currentWNFTRemainingSeconds) {
+        const remainingTimeStr = currentWNFTRemainingSeconds > 3600
+          ? `${Math.floor(currentWNFTRemainingSeconds / 3600)} hours`
+          : `${Math.floor(currentWNFTRemainingSeconds / 60)} minutes`;
+        toast.error(`Max duration + safety buffer exceeds parent lease (${remainingTimeStr} left).`);
         return;
       }
-      const minDaysRequested = parseInt(minDuration, 10);
-      if (minDaysRequested > currentWNFTMaxDays) {
-        toast.error(`Min duration cannot exceed remaining lease of ${currentWNFTMaxDays} day(s).`);
+
+      let minSecondsRequested = parseFloat(minDuration);
+      if (listingDurationUnit === 'days') minSecondsRequested *= 86400;
+      else if (listingDurationUnit === 'hours') minSecondsRequested *= 3600;
+      else if (listingDurationUnit === 'minutes') minSecondsRequested *= 60;
+
+      if (minSecondsRequested + buffer > currentWNFTRemainingSeconds) {
+        toast.error(`Min duration + 1hr buffer exceeds parent lease.`);
         return;
       }
     }
@@ -1137,8 +1223,19 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         contractAddress,
         tokenId,
         listingPrice,
-        parseInt(minDuration),
-        parseInt(maxDuration)
+        // Calculate duration in days (fractional allowed)
+        (() => {
+          let days = parseFloat(minDuration);
+          if (listingDurationUnit === 'hours') days = days / 24;
+          if (listingDurationUnit === 'minutes') days = days / 1440;
+          return days;
+        })(),
+        (() => {
+          let days = parseFloat(maxDuration);
+          if (listingDurationUnit === 'hours') days = days / 24;
+          if (listingDurationUnit === 'minutes') days = days / 1440;
+          return days;
+        })()
       );
       toast.dismiss();
       toast.success('NFT Listed for Rent!');
@@ -1196,14 +1293,24 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       return;
     }
 
+    // Final safeguard against stale parent leases
+    if (isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0)) {
+      toast.error('Cannot rent: The parent lease for this NFT has expired or is inactive.');
+      return;
+    }
+
     setProcessing(true);
     try {
       toast.loading(`Renting NFT for Ξ ${rentalCost.totalRequired}...`, { id: 'rent' });
 
       // Need to convert back to BigInt for the transaction
-      const cost = await leasingMarketplaceService.calculateCost(listingId, parseInt(rentDuration));
+      let durationInDays = parseFloat(rentDuration);
+      if (rentDurationUnit === 'hours') durationInDays = durationInDays / 24;
+      if (rentDurationUnit === 'minutes') durationInDays = durationInDays / 1440;
 
-      const result = await leasingMarketplaceService.rent(listingId, Number(rentDuration), ethers.parseEther(rentalCost.totalRequired));
+      const cost = await leasingMarketplaceService.calculateCost(listingId, durationInDays);
+
+      const result = await leasingMarketplaceService.rent(listingId, durationInDays, ethers.parseEther(rentalCost.totalRequired));
       toast.dismiss('rent');
       toast.success('NFT Rented Successfully! You now have a Wrapped NFT.');
 
@@ -1400,9 +1507,15 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     // Reset wrapped leasing state
     setRenterAddress('');
     setDurationDays('30');
+    setDurationUnit('days');
     setWrappedNFTs([]);
     setSearchWId('');
     setSelectedWrappedNFT(null);
+    setListingDurationUnit('days');
+    setRentDurationUnit('days');
+    setListingDetails(null);
+    setRentalCost(null);
+    setFinishedListing(null);
     onOpenChange(false);
   };
 
@@ -1633,18 +1746,32 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
                     {/* Duration */}
                     <div className="space-y-2">
-                      <Label htmlFor="wrap-duration" className="text-xs">Lease Duration (Days) *</Label>
-                      <Input
-                        id="wrap-duration"
-                        type="number"
-                        min="0.0001"
-                        step="any"
-                        placeholder="30 (or 0.0014 for 2 min test)"
-                        value={durationDays}
-                        onChange={(e) => setDurationDays(e.target.value)}
-                      />
+                      <Label htmlFor="wrap-duration" className="text-xs">Lease Duration *</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="wrap-duration"
+                          type="number"
+                          min="0.0001"
+                          step="any"
+                          placeholder="30"
+                          value={durationDays}
+                          onChange={(e) => setDurationDays(e.target.value)}
+                          className="flex-1"
+                        />
+                        <select
+                          className="w-32 p-2 rounded-md border bg-background text-sm"
+                          value={durationUnit}
+                          onChange={(e) => setDurationUnit(e.target.value as any)}
+                        >
+                          <option value="days">Days</option>
+                          <option value="hours">Hours</option>
+                          <option value="minutes">Minutes</option>
+                        </select>
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        Use 0.0014 for a 2-minute test
+                        {durationUnit === 'days' ? 'Standard daily duration' :
+                          durationUnit === 'hours' ? 'Useful for shorter term rentals' :
+                            'Best for quick testing cycles'}
                       </p>
                     </div>
 
@@ -1656,7 +1783,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                       <ul className="text-xs space-y-1 text-muted-foreground">
                         <li>• Your NFT will be locked in the contract</li>
                         <li>• Renter receives a time-limited wrapped NFT</li>
-                        <li>• Lease expires in {durationDays || '0'} days</li>
+                        <li>• Lease expires in {durationDays || '0'} {durationUnit}</li>
                         <li>• You can unwrap after expiry to get your NFT back</li>
                       </ul>
                     </div>
@@ -1718,7 +1845,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                       <div className="flex gap-4">
                         <div className="w-24 h-24 rounded-lg overflow-hidden shrink-0">
                           <img src={getNFTImageUrl(nftData)} alt={nftData.name} className="w-full h-full object-cover"
-                            onError={(e) => { e.currentTarget.src = 'https://via.placeholder.com/150?text=NFT'; }} />
+                            onError={(e) => { e.currentTarget.src = 'https://placehold.co/400x400/1a1a1a/ffffff?text=NFT'; }} />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
@@ -1857,12 +1984,22 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                         <div className="mt-4 border-t border-border pt-4 space-y-4">
                           {isMarketplaceOwner ? (
                             <div className="space-y-4">
-                              <div className="bg-green-500/10 p-3 rounded-lg border border-green-500/20">
-                                <h4 className="font-semibold text-green-500 flex items-center gap-2">
-                                  <CheckCircle2 className="h-4 w-4" /> Available for Rent
+                              <div className={`${marketplaceListingStatus === 2 ? 'bg-orange-500/10 border-orange-500/20' : marketplaceListingStatus === 4 ? 'bg-blue-500/10 border-blue-500/20' : 'bg-green-500/10 border-green-500/20'} p-3 rounded-lg border`}>
+                                <h4 className={`font-semibold flex items-center gap-2 ${marketplaceListingStatus === 2 ? 'text-orange-500' : marketplaceListingStatus === 4 ? 'text-blue-500' : 'text-green-500'}`}>
+                                  {marketplaceListingStatus === 2 ? (
+                                    <><Clock className="h-4 w-4" /> Rented Out</>
+                                  ) : marketplaceListingStatus === 4 ? (
+                                    <><CheckCircle2 className="h-4 w-4" /> Rental Period Completed</>
+                                  ) : (
+                                    <><CheckCircle2 className="h-4 w-4" /> Available for Rent</>
+                                  )}
                                 </h4>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  This NFT is listed on the marketplace.
+                                  {marketplaceListingStatus === 2
+                                    ? "This NFT is currently being rented."
+                                    : marketplaceListingStatus === 4
+                                      ? "The rental has ended. You can now reclaim your asset."
+                                      : "This NFT is listed on the marketplace."}
                                 </p>
                               </div>
 
@@ -1877,9 +2014,18 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                       <span className="text-muted-foreground">Price/Day</span>
                                       <div className="font-bold text-green-500">Ξ {parseFloat(listingDetails.pricePerDay).toFixed(4)}</div>
                                     </div>
-                                    <div className="bg-muted/30 p-2 rounded">
-                                      <span className="text-muted-foreground">Duration</span>
-                                      <div className="font-bold">{listingDetails.minDays}-{listingDetails.maxDays} days</div>
+                                    <span className="text-muted-foreground">Duration</span>
+                                    <div className="font-bold">
+                                      {(() => {
+                                        const min = listingDetails.minDays;
+                                        const max = listingDetails.maxDays;
+                                        const formatDuration = (d: number) => {
+                                          if (d < 1 / 24) return `${Math.round(d * 1440)} mins`;
+                                          if (d < 1) return `${Math.round(d * 24)} hours`;
+                                          return `${Math.round(d)} days`;
+                                        };
+                                        return `${formatDuration(min)} - ${formatDuration(max)}`;
+                                      })()}
                                     </div>
                                   </div>
                                 </div>
@@ -1889,17 +2035,36 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                               {!isLister && (
                                 <>
                                   <div className="space-y-2">
-                                    <Label>Rent Duration (Days)</Label>
-                                    <Input
-                                      type="number"
-                                      min={listingDetails?.minDays || 1}
-                                      max={listingDetails?.maxDays || 30}
-                                      value={rentDuration}
-                                      onChange={(e) => setRentDuration(e.target.value)}
-                                    />
+                                    <Label>Rent Duration</Label>
+                                    <div className="flex gap-2">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        step="any"
+                                        value={rentDuration}
+                                        onChange={(e) => setRentDuration(e.target.value)}
+                                        className="flex-1"
+                                      />
+                                      <select
+                                        className="w-28 p-2 rounded-md border bg-background text-sm"
+                                        value={rentDurationUnit}
+                                        onChange={(e) => setRentDurationUnit(e.target.value as any)}
+                                      >
+                                        <option value="days">Days</option>
+                                        <option value="hours">Hours</option>
+                                        <option value="minutes">Minutes</option>
+                                      </select>
+                                    </div>
                                     {listingDetails && (
                                       <p className="text-xs text-muted-foreground">
-                                        Min: {listingDetails.minDays} days, Max: {listingDetails.maxDays} days
+                                        Limit: {(() => {
+                                          const formatD = (d: number) => {
+                                            if (d < 1 / 24) return `${Math.round(d * 1440)} mins`;
+                                            if (d < 1) return `${Math.round(d * 24)} hours`;
+                                            return `${Math.round(d)} days`;
+                                          };
+                                          return `${formatD(listingDetails.minDays)} to ${formatD(listingDetails.maxDays)}`;
+                                        })()}
                                       </p>
                                     )}
                                   </div>
@@ -1942,13 +2107,15 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
                               <Button
                                 onClick={handleRentNFT}
-                                disabled={processing || isLister || !rentalCost}
+                                disabled={processing || isLister || !rentalCost || (isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0))}
                                 className="w-full bg-green-600 hover:bg-green-700"
                               >
                                 {processing ? (
                                   <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Renting...</>
                                 ) : isLister ? (
                                   'You own this listing'
+                                ) : isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0) ? (
+                                  'Parent Lease Expired'
                                 ) : !rentalCost ? (
                                   'Enter duration to see cost'
                                 ) : (
@@ -1956,16 +2123,38 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                 )}
                               </Button>
 
+                              {isWNFT && currentWNFTRemainingSeconds !== null && currentWNFTRemainingSeconds > 0 && rentalCost === null && rentDuration && (
+                                <p className="text-xs text-amber-500 mt-2 text-center bg-amber-500/10 p-2 rounded border border-amber-500/20">
+                                  Rental duration must be strictly less than parent lease remaining time ({formatTimeRemaining(currentWNFTRemainingSeconds)}).
+                                </p>
+                              )}
+
+                              {isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0) && (
+                                <p className="text-xs text-red-500 mt-2 text-center bg-red-500/10 p-2 rounded border border-red-500/20">
+                                  This listing is for a sub-lease, but the parent lease has expired or is no longer active.
+                                </p>
+                              )}
+
                               {isLister && (
                                 <div className="pt-2 border-t border-border/50">
-                                  <p className="text-xs text-muted-foreground mb-2 text-center">You listed this NFT.</p>
+                                  <p className="text-xs text-muted-foreground mb-2 text-center">
+                                    {marketplaceListingStatus === 4 ? "Rental period has finished." : "You listed this NFT."}
+                                  </p>
                                   <Button
                                     onClick={handleCancelListing}
-                                    disabled={processing}
-                                    variant="destructive"
-                                    className="w-full"
+                                    disabled={processing || marketplaceListingStatus === 2}
+                                    variant={marketplaceListingStatus === 4 ? "default" : "destructive"}
+                                    className={`w-full ${marketplaceListingStatus === 4 ? "bg-blue-600 hover:bg-blue-700" : ""}`}
                                   >
-                                    {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cancel Listing & Retrieve NFT'}
+                                    {processing ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : marketplaceListingStatus === 4 ? (
+                                      <><RefreshCw className="h-4 w-4 mr-2" /> Reclaim NFT</>
+                                    ) : marketplaceListingStatus === 2 ? (
+                                      'Cannot Cancel While Rented'
+                                    ) : (
+                                      'Cancel Listing & Retrieve NFT'
+                                    )}
                                   </Button>
                                 </div>
                               )}
@@ -1981,19 +2170,72 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-2">
+                                  <div className="space-y-2 col-span-2">
                                     <Label className="text-xs">Price/Day (ETH)</Label>
                                     <Input value={listingPrice} onChange={(e) => setListingPrice(e.target.value)} />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label className="text-xs">Min Days</Label>
-                                    <Input value={minDuration} onChange={(e) => setMinDuration(e.target.value)} />
+                                    <Label className="text-xs">Min Duration</Label>
+                                    <Input
+                                      type="number"
+                                      value={minDuration}
+                                      onChange={(e) => setMinDuration(e.target.value)}
+                                      placeholder="1"
+                                    />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label className="text-xs">Max Days</Label>
-                                    <Input value={maxDuration} onChange={(e) => setMaxDuration(e.target.value)} />
+                                    <Label className="text-xs">Max Duration</Label>
+                                    <Input
+                                      type="number"
+                                      value={maxDuration}
+                                      onChange={(e) => setMaxDuration(e.target.value)}
+                                      placeholder="30"
+                                    />
+                                  </div>
+                                  <div className="space-y-2 col-span-2">
+                                    <Label className="text-xs">Duration Unit</Label>
+                                    <select
+                                      className="w-full p-2 rounded-md border bg-background text-sm"
+                                      value={listingDurationUnit}
+                                      onChange={(e) => setListingDurationUnit(e.target.value as any)}
+                                    >
+                                      <option value="days">Days</option>
+                                      <option value="hours">Hours</option>
+                                      <option value="minutes">Minutes</option>
+                                    </select>
                                   </div>
                                 </div>
+
+                                {finishedListing && finishedListing.remainingDuration > 0 && (
+                                  <div className="bg-amber-500/10 p-3 rounded-lg border border-amber-500/20 text-xs">
+                                    <div className="flex items-center gap-2 text-amber-600 font-semibold mb-1">
+                                      <Info className="h-3 w-3" /> Remaining Time Available
+                                    </div>
+                                    <p className="text-muted-foreground mb-2">
+                                      Your last listing had {formatTimeRemaining(finishedListing.remainingDuration)} unused time.
+                                    </p>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-[10px] w-full border-amber-500/30 hover:bg-amber-500/20"
+                                      onClick={() => {
+                                        setListingPrice(ethers.formatEther(BigInt(finishedListing.pricePerSecond) * 86400n));
+                                        setMinDuration('1'); // standard 1 min test or something small
+                                        const remMins = Math.floor(finishedListing.remainingDuration / 60);
+                                        if (remMins > 0) {
+                                          setMaxDuration(remMins.toString());
+                                          setListingDurationUnit('minutes');
+                                        } else {
+                                          setMaxDuration((finishedListing.remainingDuration / 86400).toFixed(4));
+                                          setListingDurationUnit('days');
+                                        }
+                                        toast.success('Fields pre-filled with remaining time!');
+                                      }}
+                                    >
+                                      Pre-fill with Remaining Time
+                                    </Button>
+                                  </div>
+                                )}
 
                                 <Button onClick={handleListForRent} disabled={processing} className="w-full">
                                   {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'List for Rent'}

@@ -18,6 +18,7 @@ export const AuctionInfo: React.FC<AuctionInfoProps> = ({ nft, onAuctionEnded })
     const [isExpired, setIsExpired] = useState<boolean>(false);
     const [isEnding, setIsEnding] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
+    const [currentAddress, setCurrentAddress] = useState<string | null>(null);
 
     // Fetch auction listing from blockchain
     useEffect(() => {
@@ -37,6 +38,17 @@ export const AuctionInfo: React.FC<AuctionInfoProps> = ({ nft, onAuctionEnded })
                         const listing = await web3Service.getListing(Number(nft.token_id));
                         console.log('[AuctionInfo] Fetched listing:', listing);
                         setAuctionListing(listing);
+
+                        try {
+                            const signer = web3Service.getSigner();
+                            if (signer) {
+                                const address = await signer.getAddress();
+                                setCurrentAddress(address);
+                            }
+                        } catch (addressError) {
+                            console.error('[AuctionInfo] Failed to get current address:', addressError);
+                        }
+
                         break;
                     } catch (e: any) {
                         if (e.message?.includes('initialized')) {
@@ -215,13 +227,20 @@ export const AuctionInfo: React.FC<AuctionInfoProps> = ({ nft, onAuctionEnded })
 
                 {/* End Auction Button */}
                 {isExpired && auctionListing.isActive && (
-                    <Button
-                        onClick={handleEndAuction}
-                        disabled={isEnding}
-                        className="w-full bg-gradient-to-r from-purple-500 to-blue-600"
-                    >
-                        {isEnding ? 'Ending Auction...' : 'End Auction'}
-                    </Button>
+                    (currentAddress?.toLowerCase() === auctionListing.seller.toLowerCase() ||
+                        currentAddress?.toLowerCase() === auctionListing.highestBidder.toLowerCase()) ? (
+                        <Button
+                            onClick={handleEndAuction}
+                            disabled={isEnding}
+                            className="w-full bg-gradient-to-r from-purple-500 to-blue-600"
+                        >
+                            {isEnding ? 'Ending Auction...' : 'End Auction'}
+                        </Button>
+                    ) : (
+                        <p className="text-xs text-amber-500 text-center bg-amber-500/10 py-2 rounded">
+                            Waiting for the owner or highest bidder to end the auction.
+                        </p>
+                    )
                 )}
 
                 {/* Info Message */}

@@ -4,7 +4,8 @@ import {
     getListingByNFT,
     syncListingsFromBlockchain,
     saveListing,
-    updateListingStatus
+    updateListingStatus,
+    getFinishedListing
 } from '../controllers/listingController.js';
 
 const router = express.Router();
@@ -14,6 +15,9 @@ router.get('/active', getActiveListings);
 
 // Get listing by NFT address and token ID
 router.get('/nft/:nftAddress/:tokenId', getListingByNFT);
+
+// Get most recent finished listing for partial relist
+router.get('/finished/nft/:nftAddress/:tokenId', getFinishedListing);
 
 // Sync listings from blockchain (admin)
 router.post('/sync', syncListingsFromBlockchain);

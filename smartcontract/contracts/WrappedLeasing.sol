@@ -57,10 +57,18 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
         require(originalOwner != address(0), "invalid originalOwner");
         require(durationSeconds > 0, "duration>0");
 
-        // fee handling: the UI should pass rent/deposit; we optionally collect a small lease fee
-        uint256 fee = feeManager.calcBps(durationSeconds, feeManager.leasingFeeBps()); // fee based on duration
+        // If wrapping a wNFT (nested wrap), ensure duration does not exceed parent lease
+        if (nft == address(this)) {
+            (bool isActive, uint256 timeRemaining) = getLeaseStatus(tokenId);
+            require(isActive, "lease not active");
+            // Enforce that sub-lease is strictly shorter than parent lease
+            require(durationSeconds < timeRemaining, "duration must be less than parent lease");
+        }
+
+        // fee handling: the caller passes msg.value which should include the service fee.
+        // If durationSeconds was incorrectly used as base for bps, we should at least route all msg.value
+        uint256 fee = msg.value; 
         if (fee > 0) {
-            require(msg.value >= fee, "insufficient fee");
             address treasury = feeManager.treasury();
             (bool sent, ) = payable(treasury).call{value: fee}("");
             if (!sent) {
@@ -164,7 +172,7 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
     }
 
     // Helper to check lease status
-    function getLeaseStatus(uint256 wId) external view returns (bool isActive, uint256 timeRemaining) {
+    function getLeaseStatus(uint256 wId) public view returns (bool isActive, uint256 timeRemaining) {
         WrappedInfo memory info = wrapped[wId];
         if (!info.active) return (false, 0);
         if (block.timestamp > info.validUntil) return (true, 0); // Active but expired

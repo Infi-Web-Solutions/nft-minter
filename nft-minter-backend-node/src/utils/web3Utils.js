@@ -21,12 +21,8 @@ class NFTMarketplaceWeb3 {
         this.lendingContractAddress = process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS || process.env.NFT_COLLATERAL_ADDRESS || null;
 
         // Wrapped Leasing contract address
-        // Prefer env, but fall back to known Sepolia deployment if not set
         this.wrappedLeasingAddress =
-            process.env.WrappedLeasing_Address ||
-            process.env.WRAPPED_LEASING_ADDRESS ||
-            // Fallback: Wrapped Lease NFT (wNFTM) proxy on Sepolia
-            '0x293a1ac2e749e33effd25c7e292f78ebd8ff7489';
+            process.env.WrappedLeasing_Address || process.env.WrappedLeasing_Address;
 
         // Leasing Marketplace contract address
         this.leasingMarketplaceAddress = process.env.LeasingMarketplace_Address || process.env.LEASING_MARKETPLACE_ADDRESS || null;
@@ -1606,9 +1602,34 @@ class NFTMarketplaceWeb3 {
             return false;
         }
     }
-    async getExternalNftMetadata(contractAddress, tokenId) {
+    async getExternalNftMetadata(contractAddress, tokenId, depth = 0) {
         try {
-            console.log(`[Web3] Fetching external NFT metadata for ${contractAddress} #${tokenId}`);
+            console.log(`[Web3] Fetching external NFT metadata for ${contractAddress} #${tokenId} (depth: ${depth})`);
+
+            // SPECIAL CASE: If this is a Wrapped Leasing NFT, resolve the original NFT's metadata
+            if (depth < 3 && this.wrappedLeasingAddress && contractAddress.toLowerCase() === this.wrappedLeasingAddress.toLowerCase()) {
+                console.log(`[Web3] Detected WrappedLeasing NFT #${tokenId}, resolving original metadata...`);
+                try {
+                    const wrappedInfo = await this.wrappedLeasingContract.methods.getWrapped(tokenId).call();
+                    if (wrappedInfo && wrappedInfo.originalNft && wrappedInfo.originalNft !== '0x0000000000000000000000000000000000000000') {
+                        console.log(`[Web3] [Depth ${depth}] Resolving metadata from original NFT: ${wrappedInfo.originalNft} #${wrappedInfo.originalTokenId}`);
+                        // Recursively fetch metadata for the original NFT
+                        const originalMeta = await this.getExternalNftMetadata(wrappedInfo.originalNft, wrappedInfo.originalTokenId, depth + 1);
+                        if (originalMeta.success) {
+                            // Supplement with wNFT specific info if needed, but return the original metadata as base
+                            return {
+                                ...originalMeta,
+                                isWrapped: true,
+                                originalNft: wrappedInfo.originalNft,
+                                originalTokenId: wrappedInfo.originalTokenId
+                            };
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Web3] Failed to resolve original metadata for wNFT: ${e.message}`);
+                }
+            }
+
 
             // Generic ERC721 ABI + marketplace functions
             const erc721Abi = [
@@ -1798,6 +1819,10 @@ class NFTMarketplaceWeb3 {
                 console.log('[Web3] getListing not supported or failed for external NFT:', e.message);
             }
 
+            // Detect if owned by our LeasingMarketplace
+            const isOwnedByLeasingMarketplace = this.leasingMarketplaceAddress &&
+                owner.toLowerCase() === this.leasingMarketplaceAddress.toLowerCase();
+
             return {
                 success: true,
                 name: metadata.name || `${name} #${tokenId}`,
@@ -1809,7 +1834,8 @@ class NFTMarketplaceWeb3 {
                 symbol: symbol,
                 metadata: metadata,
                 attributes: metadata.attributes || [],
-                listing: listingInfo
+                listing: listingInfo,
+                is_rentable_on_chain: isOwnedByLeasingMarketplace
             };
 
         } catch (error) {

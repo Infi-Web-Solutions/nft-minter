@@ -36,6 +36,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint256 wId;
         uint256 deposit;      // held for renter
         uint256 rentAmount;   // owed to owner
+        uint256 duration;     // duration of this specific lease
         uint256 expiresAt;    // block timestamp when lease ends
     }
 
@@ -56,7 +57,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     event LeaseListed(
         uint256 indexed listingId,
         address indexed owner,
-        address nft,
+        address indexed nft,
         uint256 tokenId,
         uint256 pricePerSecond,
         uint256 minDuration,
@@ -111,8 +112,9 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         // If listing a wNFT, validate it's active and not expired
         if (nft == address(wrappedContract)) {
             (bool isActive, uint256 timeRemaining) = wrappedContract.getLeaseStatus(tokenId);
-            require(isActive, "wNFT not active");
-            require(timeRemaining > 0, "wNFT expired");
+            require(isActive, "lease not active");
+            // Enforce that sub-lease listing max duration is strictly shorter than parent lease
+            require(maxDuration < timeRemaining, "maxDuration must be less than parent lease");
             // Borrower (current holder) can list their wNFT
             // msg.sender already verified as owner via token.ownerOf check above
         }
@@ -134,18 +136,16 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         emit LeaseListed(listingCounter, msg.sender, nft, tokenId, pricePerSecond, minDuration, maxDuration);
     }
 
-    /// Cancel listing before it is rented
+    /// Cancel listing before it is rented or after it expires
     /// Returns NFT/wNFT back to the lister (borrower for wNFTs)
     function cancelListing(uint256 listingId) external nonReentrant whenNotPaused {
         LeaseListing storage ls = listings[listingId];
-        require(ls.status == ListingStatus.Active, "not active");
-        require(ls.status != ListingStatus.Rented, "already rented");
+        require(ls.status == ListingStatus.Active || ls.status == ListingStatus.Completed, "not cancellable");
         require(ls.owner == msg.sender || hasRole(ADMIN_ROLE, msg.sender), "not allowed");
 
         ls.status = ListingStatus.Cancelled;
         
         // Return NFT/wNFT to the lister
-        // For wNFTs, this returns it to the borrower who listed it
         IERC721(ls.nft).transferFrom(address(this), ls.owner, ls.tokenId);
         
         emit LeaseCancelled(listingId);
@@ -164,7 +164,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint16 wrapBps = wrapFeeBps == 0 ? feeManager.leasingFeeBps() : wrapFeeBps;
         uint256 deposit = feeManager.calcBps(rentAmount, depositBps);
         uint256 platformFee = feeManager.calcBps(rentAmount, platformBps);
-        uint256 wrapFee = feeManager.calcBps(durationSeconds, wrapBps);
+        uint256 wrapFee = feeManager.calcBps(rentAmount, wrapBps);
 
         uint256 totalRequired = rentAmount + deposit + platformFee + wrapFee;
         require(msg.value >= totalRequired, "insufficient payment");
@@ -175,9 +175,9 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         // Approve wrapped contract to move the NFT
         IERC721(ls.nft).approve(address(wrappedContract), ls.tokenId);
 
-        // Mint wrapped lease to renter
-        // For both wNFT and regular NFT listings, original owner is ls.owner (borrower for wNFTs, NFT owner for regular NFTs)
-        uint256 wId = wrappedContract.wrap{value: wrapFee}(ls.nft, ls.tokenId, msg.sender, durationSeconds, "", ls.owner);
+        // For both wNFT and regular NFT listings, original owner is address(this)
+        // This ensures the NFT returns to the marketplace on unwrap, allowing sequential rentals.
+        uint256 wId = wrappedContract.wrap{value: wrapFee}(ls.nft, ls.tokenId, msg.sender, durationSeconds, "", address(this));
 
         uint256 expiresAt = block.timestamp + durationSeconds;
         rentals[listingId] = RentalInfo({
@@ -185,6 +185,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
             wId: wId,
             deposit: deposit,
             rentAmount: rentAmount,
+            duration: durationSeconds,
             expiresAt: expiresAt
         });
 
@@ -220,6 +221,41 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         // mark lifecycle completion
         LeaseListing storage ls = listings[listingId];
         if (ls.status == ListingStatus.Rented) {
+            ls.status = ListingStatus.Completed;
+            emit LeaseCompleted(listingId, r.wId);
+        }
+    }
+
+    /// End a rental and return the listing to Active status if there is remaining duration.
+    /// Requires the lease to be inactive (unwrapped).
+    function relistRemaining(uint256 listingId) external nonReentrant {
+        LeaseListing storage ls = listings[listingId];
+        RentalInfo storage r = rentals[listingId];
+        require(ls.status == ListingStatus.Rented || ls.status == ListingStatus.Completed, "invalid status");
+        require(r.wId != 0, "no rental");
+
+        // Check if lease is active on-chain
+        (bool isActive, ) = wrappedContract.getLeaseStatus(r.wId);
+        require(!isActive, "lease still active on-chain");
+
+        // Calculate remaining duration
+        // Current commitment was ls.maxDuration. This renter used r.duration.
+        uint256 remaining = 0;
+        if (ls.maxDuration > r.duration) {
+            remaining = ls.maxDuration - r.duration;
+        }
+
+        if (remaining >= ls.minDuration) {
+            // Update listing to be active again with the remaining time
+            ls.maxDuration = remaining;
+            ls.status = ListingStatus.Active;
+            
+            // Clear current rental info for the next renter
+            delete rentals[listingId];
+            
+            emit LeaseListed(listingId, ls.owner, ls.nft, ls.tokenId, ls.pricePerSecond, ls.minDuration, ls.maxDuration);
+        } else {
+            // Not enough time left for another rental
             ls.status = ListingStatus.Completed;
             emit LeaseCompleted(listingId, r.wId);
         }
@@ -284,7 +320,7 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint16 wrapBps = wrapFeeBps == 0 ? feeManager.leasingFeeBps() : wrapFeeBps;
         deposit = feeManager.calcBps(rentAmount, depositBps);
         platformFee = feeManager.calcBps(rentAmount, platformBps);
-        wrapFee = feeManager.calcBps(durationSeconds, wrapBps);
+        wrapFee = feeManager.calcBps(rentAmount, wrapBps);
         totalRequired = rentAmount + deposit + platformFee + wrapFee;
     }
 

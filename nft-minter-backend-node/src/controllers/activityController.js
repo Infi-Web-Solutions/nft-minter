@@ -15,9 +15,6 @@ export const getActivities = async (req, res) => {
             if (nft.match(/^[0-9a-fA-F]{24}$/)) {
                 filter.nft = nft;
             } else {
-                // If not a valid ObjectId (e.g. wnft_11), we can't filter by NFT reference directly
-                // We could try to filter by nft_data.token_id if we had it, but for now just ignore or return empty
-                // Returning empty might be better than crashing
                 console.warn(`[getActivities] Invalid NFT ID format: ${nft}, ignoring filter`);
             }
         }
@@ -93,7 +90,7 @@ export const getActivities = async (req, res) => {
                 id: activity.nft?.token_id || 0,
                 name: activity.nft?.name || `NFT #${activity.nft?.token_id || 'Unknown'}`,
                 image_url: activity.nft?.image_url || '',
-                collection: activity.nft?.nft_collection || 'Unknown Collection',
+                collection: activity.nft?.nft_collection || activity.nft?.collection || 'NFT Marketplace',
                 token_id: activity.nft?.token_id || 0
             },
             from: {

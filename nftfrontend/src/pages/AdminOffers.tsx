@@ -311,7 +311,7 @@ const AdminOffers = () => {
                     alt={offer.nft_name}
                     className="w-full h-full object-cover transition-transform hover:scale-110"
                     onError={(e) => {
-                      e.currentTarget.src = 'https://via.placeholder.com/80?text=No+Image';
+                      e.currentTarget.src = 'https://placehold.co/400x400/1a1a1a/ffffff?text=No+Image';
                     }}
                   />
                 ) : (

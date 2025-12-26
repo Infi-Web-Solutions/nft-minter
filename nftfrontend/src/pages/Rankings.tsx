@@ -636,7 +636,7 @@ const Rankings = () => {
                                   onError={(e) => {
                                     const target = e.target as HTMLImageElement;
                                     target.onerror = null; // Prevent infinite loop
-                                    target.src = 'https://via.placeholder.com/80x80?text=Not+Found';
+                                    target.src = 'https://placehold.co/400x400/1a1a1a/ffffff?text=Not+Found';
                                   }}
                                 />
                               ) : (

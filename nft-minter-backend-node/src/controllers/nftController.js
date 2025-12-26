@@ -23,6 +23,80 @@ const log = (msg) => {
     console.log(msg);
 };
 
+/**
+ * Robustly find an NFT by either MongoDB _id (optionally prefixed with local_) 
+ * or its numeric token_id.
+ */
+const findNftByIdOrTokenId = async (idOrTokenId) => {
+    if (!idOrTokenId) return null;
+
+    let id = idOrTokenId;
+    if (typeof id === 'string') {
+        if (id.startsWith('local_')) {
+            id = id.replace('local_', '');
+        } else if (id.startsWith('wrapped_')) {
+            // For wrapped NFTs, we try to find the original NFT record if it exists
+            // ID format: wrapped_{wId}
+            const wId = id.replace('wrapped_', '');
+            try {
+                const WrappedNft = mongoose.model('WrappedNft');
+                const wrapped = await WrappedNft.findOne({ wId: Number(wId) });
+                if (wrapped) {
+                    // Try to find the original NFT record by contract and tokenId
+                    const originalNft = await NFT.findOne({
+                        contract_address: { $regex: new RegExp(`^${wrapped.originalNftContract}$`, 'i') },
+                        token_id: Number(wrapped.originalTokenId)
+                    });
+                    if (originalNft) return originalNft;
+                }
+            } catch (e) {
+                console.warn(`[findNft] Wrapped resolution failed for ${id}: ${e.message}`);
+            }
+            // If we can't find original, just proceed with wId as id (might fall back to token_id search)
+            id = wId;
+        } else if (id.startsWith('external_')) {
+            // ID format: external_{contract}_{tokenId}
+            const parts = id.split('_');
+            if (parts.length >= 3) {
+                const contract = parts[1];
+                const tokenId = parts[2];
+                try {
+                    const nft = await NFT.findOne({
+                        contract_address: { $regex: new RegExp(`^${contract}$`, 'i') },
+                        token_id: Number(tokenId)
+                    });
+                    if (nft) return nft;
+                } catch (e) {
+                    console.warn(`[findNft] External resolution failed for ${id}: ${e.message}`);
+                }
+                // Fallback to searching by token_id if contract lookup fails
+                id = tokenId;
+            }
+        }
+    }
+
+    let nft = null;
+    // 1. Try to find by MongoDB ObjectId if it looks like one
+    if (mongoose.Types.ObjectId.isValid(id)) {
+        try {
+            nft = await NFT.findById(id);
+        } catch (e) {
+            console.warn(`[findNft] findById failed for ${id}: ${e.message}`);
+        }
+    }
+
+    // 2. If not found, and it's a number, try to find by token_id
+    if (!nft && !isNaN(id) && id.toString().trim() !== '') {
+        try {
+            nft = await NFT.findOne({ token_id: Number(id) });
+        } catch (e) {
+            console.warn(`[findNft] findOne by token_id failed for ${id}: ${e.message}`);
+        }
+    }
+
+    return nft;
+};
+
 // Import CommonJS module in ES module
 const require = createRequire(import.meta.url);
 const { imageHash } = require('image-hash');
@@ -263,9 +337,9 @@ export const registerNft = async (req, res) => {
                 price: data.price,
                 is_listed: data.is_listed || false,
                 is_auction: data.is_auction || false,
-                nft_collection: data.collection,
+                nft_collection: data.collection || 'NFT Marketplace',
                 category: data.category,
-                perceptual_hash: data.perceptual_hash || null, // Store perceptual hash for similarity detection
+                perceptual_hash: data.perceptual_hash || null,
             },
             { new: true, upsert: true }
         );
@@ -297,7 +371,7 @@ export const buyNft = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Buyer address required' });
         }
 
-        const nft = await NFT.findOne({ token_id });
+        const nft = await findNftByIdOrTokenId(token_id);
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
@@ -318,8 +392,8 @@ export const buyNft = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Insufficient balance' });
         }
 
-        // Execute the buy transaction
-        const tx = await web3Utils.buyNFT(token_id, buyer_address);
+        // Execute the buy transaction using the real token_id from DB
+        const tx = await web3Utils.buyNFT(nft.token_id, buyer_address);
         const receipt = await web3Utils.waitForTransaction(tx);
 
         // Update NFT owner in database
@@ -397,13 +471,16 @@ export const updateNftOwner = async (req, res) => {
             return res.status(400).json({ success: false, error: 'Transaction not sent to NFT contract' });
         }
 
-        // Get the new owner from blockchain
-        const newOwner = await web3Utils.getNftOwner(token_id);
+        // Get the new owner from blockchain using real token_id
+        const newOwner = await web3Utils.getNftOwner(nft?.token_id || token_id);
         if (!newOwner) {
             return res.status(400).json({ success: false, error: 'Could not fetch new owner from blockchain' });
         }
 
-        const nft = await NFT.findOne({ token_id });
+        const nft = await findNftByIdOrTokenId(token_id);
+        if (!nft) {
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
         const oldOwner = nft.owner_address;
 
         if (oldOwner.toLowerCase() === newOwner.toLowerCase()) {
@@ -706,7 +783,8 @@ export const getCombinedNfts = async (req, res) => {
 export const getNftDetail = async (req, res) => {
     try {
         const { token_id } = req.params;
-        let nft = await NFT.findOne({ token_id });
+        const nft = await findNftByIdOrTokenId(token_id);
+
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
@@ -715,7 +793,7 @@ export const getNftDetail = async (req, res) => {
         nft = await syncNftWithBlockchain(nft);
         let blockchain_data = null;
         try {
-            blockchain_data = await web3Utils.getNftMetadata(token_id);
+            blockchain_data = await web3Utils.getNftMetadata(nft.token_id);
         } catch (e) {
             blockchain_data = null;
         }
@@ -736,7 +814,7 @@ export const getNftDetail = async (req, res) => {
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
             royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-            collection: nft.nft_collection || 'NFT Collection',
+            collection: nft.nft_collection || 'NFT Marketplace',
             category: nft.category,
             created_at: nft.created_at,
             blockchain_data
@@ -779,7 +857,7 @@ export const getNfts = async (req, res) => {
             highest_bidder: nft.highest_bidder,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
-            collection: nft.nft_collection || 'NFT Collection',
+            collection: nft.nft_collection || 'NFT Marketplace',
             category: nft.category,
             created_at: nft.created_at,
         }));
@@ -938,20 +1016,21 @@ export const getCollections = async (req, res) => {
 export const setNftListed = async (req, res) => {
     try {
         const { token_id } = req.params;
-        const nft = await NFT.findOne({ token_id });
+        const nft = await findNftByIdOrTokenId(token_id);
+
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
 
-        // Check on-chain listing status and details
+        // Check on-chain listing status using the real token_id
         const contract = web3Utils.contract;
-        console.log(`[setNftListed] Fetching on-chain listing for token_id: ${token_id}`);
+        console.log(`[setNftListed] Fetching on-chain listing for token_id: ${nft.token_id}`);
 
         // Add a small delay to ensure the blockchain state is updated
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const listing = await contract.methods.getListing(token_id).call();
-        console.log(`[setNftListed] On-chain listing for ${token_id}:`, listing);
+        const listing = await contract.methods.getListing(nft.token_id).call();
+        console.log(`[setNftListed] On-chain listing for ${nft.token_id}:`, listing);
 
         // listing structure: [seller, price, isActive, isAuction, auctionEndTime, startingPrice, highestBid, highestBidder]
         // Web3.js returns an object with both numeric and named keys
@@ -999,19 +1078,66 @@ export const setNftRentable = async (req, res) => {
         const { token_id } = req.params;
         const { is_rentable } = req.body;
 
-        const nft = await NFT.findOne({ token_id });
+        let nft = await findNftByIdOrTokenId(token_id);
         if (!nft) {
-            return res.status(404).json({ success: false, error: 'NFT not found' });
+            // Support for external/wrapped ID auto-discovery
+            if (token_id.startsWith('external_') || token_id.startsWith('wrapped_')) {
+                console.log(`[setNftRentable] Auto-discovering NFT for ID ${token_id}`);
+                try {
+                    let contract_address, actual_token_id;
+                    if (token_id.startsWith('external_')) {
+                        const parts = token_id.split('_');
+                        contract_address = parts[1];
+                        actual_token_id = parts[2];
+                    } else {
+                        const wId = token_id.replace('wrapped_', '');
+                        const WrappedNftModel = mongoose.model('WrappedNft');
+                        const wrapped = await WrappedNftModel.findOne({ wId: Number(wId) });
+                        if (wrapped) {
+                            contract_address = wrapped.originalNftContract;
+                            actual_token_id = wrapped.originalTokenId;
+                        }
+                    }
+
+                    if (contract_address && actual_token_id) {
+                        const nftData = await web3Utils.getExternalNftMetadata(contract_address, actual_token_id);
+                        if (nftData.success) {
+                            nft = new NFT({
+                                contract_address: contract_address.toLowerCase(),
+                                token_id: Number(actual_token_id),
+                                name: nftData.name,
+                                description: nftData.description,
+                                image_url: nftData.image,
+                                token_uri: nftData.token_uri,
+                                owner_address: nftData.owner_address,
+                                creator_address: nftData.owner_address,
+                                nft_collection: nftData.collection_name || 'External Collection',
+                                category: 'Art',
+                                is_listed: false,
+                                is_rentable: is_rentable
+                            });
+                            await nft.save();
+                            console.log(`[setNftRentable] Created new record for discovered NFT ${actual_token_id}`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[setNftRentable] Auto-discovery failed: ${e.message}`);
+                }
+            }
+
+            if (!nft) {
+                return res.status(404).json({ success: false, error: 'NFT not found' });
+            }
+        } else {
+            nft.is_rentable = is_rentable;
+            // If rentable, it's technically not "listed for sale" in the traditional sense, 
+            // but we might want to keep is_listed false to avoid confusion in the marketplace
+            if (is_rentable) {
+                nft.is_listed = false;
+            }
+            await nft.save();
         }
 
-        nft.is_rentable = is_rentable;
-        // If rentable, it's technically not "listed for sale" in the traditional sense, 
-        // but we might want to keep is_listed false to avoid confusion in the marketplace
-        if (is_rentable) {
-            nft.is_listed = false;
-        }
-
-        await nft.save();
         return res.json({ success: true, is_rentable: nft.is_rentable });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -1025,14 +1151,7 @@ export const toggleNftLike = async (req, res) => {
         if (!user_address) {
             return res.status(400).json({ success: false, error: 'User address required' });
         }
-        let actual_id = nft_id;
-        if (typeof nft_id === 'string' && nft_id.startsWith('local_')) {
-            actual_id = nft_id.replace('local_', '');
-        }
-        let nft = await NFT.findById(actual_id);
-        if (!nft) {
-            nft = await NFT.findOne({ token_id: actual_id });
-        }
+        const nft = await findNftByIdOrTokenId(nft_id);
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
@@ -1136,18 +1255,11 @@ export const getNftByCombinedId = async (req, res) => {
             console.log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
 
             try {
-                // Try to find by database ID first, then by token_id
-                let nft;
-                try {
-                    nft = await NFT.findById(actualId);
-                } catch {
-                    nft = await NFT.findOne({ token_id: actualId });
-                }
-
+                const nft = await findNftByIdOrTokenId(combined_id);
                 if (!nft) {
                     return res.status(404).json({
                         success: false,
-                        error: 'Local NFT not found'
+                        error: 'NFT not found'
                     });
                 }
 
@@ -1238,27 +1350,7 @@ export const getNftStats = async (req, res) => {
     try {
         const { nft_id } = req.params;
 
-        // Extract the actual NFT ID from combined ID
-        let actualNftId = nft_id;
-        if (nft_id.startsWith('local_')) {
-            actualNftId = nft_id.replace('local_', '');
-        }
-
-        let nft;
-        try {
-            // Try to find by database ID first, then by token_id
-            try {
-                nft = await NFT.findById(actualNftId);
-            } catch {
-                nft = await NFT.findOne({ token_id: actualNftId });
-            }
-        } catch {
-            return res.status(404).json({
-                success: false,
-                error: 'NFT not found'
-            });
-        }
-
+        const nft = await findNftByIdOrTokenId(nft_id);
         if (!nft) {
             return res.status(404).json({
                 success: false,
@@ -1344,19 +1436,7 @@ export const trackNftView = async (req, res) => {
     try {
         const { nft_id } = req.params;
 
-        // Get or create the NFT
-        let nft;
-        if (nft_id.startsWith('local_')) {
-            const actualId = nft_id.replace('local_', '');
-            try {
-                nft = await NFT.findById(actualId);
-            } catch {
-                nft = await NFT.findOne({ token_id: actualId });
-            }
-        } else {
-            nft = await NFT.findOne({ token_id: nft_id });
-        }
-
+        const nft = await findNftByIdOrTokenId(nft_id);
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
@@ -1498,46 +1578,61 @@ export const getExternalNft = async (req, res) => {
         // Always check internal database first for ANY contract
         // This handles NFTs that were minted through this platform
         console.log(`[DEBUG] Checking internal database for contract: ${contract_address}, token_id: ${token_id}`);
-        // Match by BOTH token_id and contract_address to avoid collisions between
-        // different NFT contracts (e.g. original collection vs WrappedLeasing wNFTs)
-        const internalNft = await NFT.findOne({
-            token_id: parseInt(token_id),
+
+        // Match by BOTH token_id and contract_address to avoid collisions
+        // Use a more robust check that handles potential local_ prefixes if sent accidentally
+        let internalNft = await NFT.findOne({
+            token_id: isNaN(token_id) ? -1 : Number(token_id),
             contract_address: { $regex: new RegExp(`^${contract_address}$`, 'i') }
         });
+
+        // Fallback: If not found by numeric token_id but looks like a local ID
+        if (!internalNft) {
+            internalNft = await findNftByIdOrTokenId(token_id);
+            // Verify contract address matches if we found it via findNftByIdOrTokenId
+            if (internalNft && internalNft.contract_address.toLowerCase() !== contract_address.toLowerCase()) {
+                internalNft = null;
+            }
+        }
 
         if (internalNft) {
             console.log(`[DEBUG] Found NFT in internal database - Name: ${internalNft.name}`);
 
-            // For marketplace contract NFTs, fetch fresh on-chain metadata
-            console.log('[DEBUG] Checking if marketplace contract:', {
-                web3UtilsAddress: web3Utils.contractAddress,
-                requestAddress: contract_address.toLowerCase(),
-                match: web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()
-            });
+            // Fetch fresh on-chain data to ensure owner and listing status are correct
+            try {
+                const onChainData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+                if (onChainData.success) {
+                    console.log(`[DEBUG] Syncing internal NFT with on-chain owner: ${onChainData.owner_address}`);
+                    internalNft.owner_address = onChainData.owner_address || internalNft.owner_address;
 
-            if (web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
-                console.log('[DEBUG] Marketplace NFT - fetching fresh on-chain metadata');
-                try {
-                    const onChainMeta = await web3Utils.contract.methods.getNFTMetadata(token_id).call();
-                    console.log('[DEBUG] Fresh on-chain metadata:', onChainMeta);
+                    // Sync listing status if available
+                    if (onChainData.listing) {
+                        internalNft.is_listed = onChainData.listing.isActive;
+                        if (onChainData.listing.priceEth) {
+                            internalNft.price = onChainData.listing.priceEth;
+                        }
+                    }
 
-                    internalNft.name = onChainMeta.name || onChainMeta[0];
-                    internalNft.description = onChainMeta.description || onChainMeta[1];
+                    // Sync rentable status from on-chain ownership
+                    if (onChainData.is_rentable_on_chain) {
+                        internalNft.is_rentable = true;
+                    } else if (onChainData.owner_address && web3Utils.leasingMarketplaceAddress &&
+                        onChainData.owner_address.toLowerCase() !== web3Utils.leasingMarketplaceAddress.toLowerCase()) {
+                        internalNft.is_rentable = false;
+                    }
 
-                    const imageURI = onChainMeta.imageURI || onChainMeta[2];
-                    if (imageURI) {
-                        // Use robust IPFS resolution from web3Utils
-                        const resolvedImage = web3Utils._resolveIPFS(imageURI);
-                        console.log(`[DEBUG] Resolved image URL: ${resolvedImage} (from: ${imageURI})`);
-                        internalNft.image_url = resolvedImage;
-                        internalNft.token_uri = imageURI;
+                    // For our own marketplace contract, we can also sync metadata fields
+                    if (web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+                        if (onChainData.name) internalNft.name = onChainData.name;
+                        if (onChainData.description) internalNft.description = onChainData.description;
+                        if (onChainData.image) internalNft.image_url = onChainData.image;
                     }
 
                     await internalNft.save();
-                    console.log('[DEBUG] Database updated with fresh metadata');
-                } catch (e) {
-                    console.warn('[DEBUG] Failed to fetch fresh metadata:', e.message);
+                    console.log('[DEBUG] Internal NFT synced with blockchain');
                 }
+            } catch (syncErr) {
+                console.warn(`[DEBUG] Failed to sync internal NFT with blockchain: ${syncErr.message}`);
             }
 
             // Calculate loan details based on NFT price
@@ -1554,11 +1649,12 @@ export const getExternalNft = async (req, res) => {
                 token_uri: internalNft.token_uri,
                 owner_address: internalNft.owner_address,
                 creator_address: internalNft.creator_address,
-                collection: internalNft.nft_collection || 'NFT Collection',
+                collection: internalNft.nft_collection || 'NFT Marketplace',
                 category: internalNft.category || 'Art',
                 contract_address: contract_address,
                 is_listed: internalNft.is_listed,
                 is_auction: internalNft.is_auction,
+                is_rentable: internalNft.is_rentable || false,
                 price: internalNft.price ? parseFloat(internalNft.price) : null,
                 source: 'internal',
                 blockchain_data: {
@@ -1659,6 +1755,7 @@ export const getExternalNft = async (req, res) => {
             contract_address: contract_address,
             is_listed: isListed,
             is_auction: listing ? !!listing.isAuction : false,
+            is_rentable: nftData.is_rentable_on_chain || false,
             price: priceEth,
             source: 'external',
             blockchain_data: {
@@ -1706,17 +1803,7 @@ export const createOffer = async (req, res) => {
         }
 
         // Find the NFT
-        let nft = null;
-
-        // Check if token_id is a valid number (for token_id lookup)
-        if (!isNaN(token_id)) {
-            nft = await NFT.findOne({ token_id: token_id });
-        }
-
-        // If not found by token_id, try by _id if it's a valid ObjectId
-        if (!nft && mongoose.Types.ObjectId.isValid(token_id)) {
-            nft = await NFT.findById(token_id);
-        }
+        const nft = await findNftByIdOrTokenId(token_id);
 
         if (!nft) {
             console.log(`[DEBUG] NFT not found for token_id: ${token_id}`);
@@ -1774,11 +1861,8 @@ export const endAuction = async (req, res) => {
         console.log(`[endAuction] Finalizing auction for token: ${token_id}`);
         console.log(`[endAuction] Params:`, { transaction_hash, winner, final_price });
 
-        // Find the NFT - try both string and number for token_id
-        let nft = await NFT.findOne({ token_id: token_id });
-        if (!nft && !isNaN(token_id)) {
-            nft = await NFT.findOne({ token_id: Number(token_id) });
-        }
+        // Find the NFT
+        const nft = await findNftByIdOrTokenId(token_id);
 
         if (!nft) {
             console.error(`[endAuction] NFT not found for token_id: ${token_id}`);

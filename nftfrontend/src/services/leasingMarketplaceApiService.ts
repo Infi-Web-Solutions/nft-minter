@@ -67,7 +67,7 @@ class LeasingMarketplaceService {
         }
     }
 
-    async listForRent(nftAddress: string, tokenId: string, pricePerDay: string, minDays: number, maxDays: number) {
+    async listForRent(nftAddress: string, tokenId: string, pricePerDay: string, minDurationDays: number, maxDurationDays: number) {
         if (!this.contract || !this.signer) throw new Error("Not initialized");
 
         // 1. Verify ownership and Approve Marketplace
@@ -139,8 +139,17 @@ class LeasingMarketplaceService {
         // 2. List
         // Calculate price per second: (pricePerDay * 1e18) / 86400
         const pricePerSecond = ethers.parseEther(pricePerDay) / 86400n;
-        const minSeconds = minDays * 86400;
-        const maxSeconds = maxDays * 86400;
+        const minSeconds = BigInt(Math.round(minDurationDays * 86400));
+        const maxSeconds = BigInt(Math.round(maxDurationDays * 86400));
+
+        console.log(`[LeasingService] Calculated durations for listForRent (nft=${nftAddress}, id=${tokenId}):`, {
+            minDurationDays,
+            maxDurationDays,
+            minSeconds: minSeconds.toString(),
+            maxSeconds: maxSeconds.toString(),
+            pricePerDay,
+            pricePerSecond: pricePerSecond.toString()
+        });
 
         const tx = await this.contract.listForRent(nftAddress, tokenId, pricePerSecond, minSeconds, maxSeconds);
         const receipt = await tx.wait();
@@ -169,7 +178,7 @@ class LeasingMarketplaceService {
 
     async calculateCost(listingId: number, durationDays: number) {
         if (!this.contract) throw new Error("Not initialized");
-        const durationSeconds = durationDays * 86400;
+        const durationSeconds = BigInt(Math.round(durationDays * 86400));
         // Call through directly so we surface the real revert reason from the contract
         const result = await this.contract.getTotalCost(listingId, durationSeconds);
         return {
@@ -183,7 +192,7 @@ class LeasingMarketplaceService {
 
     async rent(listingId: number, durationDays: number, totalEthCost: bigint) {
         if (!this.contract) throw new Error("Not initialized");
-        const durationSeconds = durationDays * 86400;
+        const durationSeconds = BigInt(Math.round(durationDays * 86400));
 
         const tx = await this.contract.rent(listingId, durationSeconds, { value: totalEthCost });
         const receipt = await tx.wait();
@@ -249,31 +258,56 @@ class LeasingMarketplaceService {
     async getListingIdForNFT(nftAddress: string, tokenId: string): Promise<number | null> {
         if (!this.contract) throw new Error("Not initialized");
 
-        // Filter LeaseListed events - nft and tokenId are NOT indexed, so we must fetch all and filter in JS
-        // We can filter by owner if we knew it, but here we just want to find by NFT
-        const filter = this.contract.filters.LeaseListed();
-        const events = await this.contract.queryFilter(filter);
+        try {
+            // 1. Try events first (Efficient)
+            const filter = this.contract.filters.LeaseListed();
+            const events = await this.contract.queryFilter(filter);
 
-        // Filter in JS
-        const matchingEvents = events.filter((e: any) =>
-            e.args &&
-            e.args.nft.toLowerCase() === nftAddress.toLowerCase() &&
-            e.args.tokenId.toString() === tokenId.toString()
-        );
+            const matchingEvents = events.filter((e: any) =>
+                e.args &&
+                e.args.nft.toLowerCase() === nftAddress.toLowerCase() &&
+                e.args.tokenId.toString() === tokenId.toString()
+            );
 
-        if (matchingEvents.length === 0) return null;
+            if (matchingEvents.length > 0) {
+                // Get the latest event
+                const latestEvent = matchingEvents[matchingEvents.length - 1];
+                // @ts-ignore
+                const listingId = Number(latestEvent.args[0]);
 
-        // Get the latest event
-        const latestEvent = matchingEvents[matchingEvents.length - 1];
-        // @ts-ignore
-        const listingId = Number(latestEvent.args[0]);
-
-        // Verify it's still active
-        const listing = await this.contract.listings(listingId);
-        // Status 1 is Active
-        if (listing.status === 1n) {
-            return listingId;
+                // Verify it's still active
+                const listing = await this.contract.listings(listingId);
+                // Status 1=Active, 2=Rented
+                if (listing.status === 1n || listing.status === 2n || listing.status === 4n) {
+                    return listingId;
+                }
+            }
+        } catch (e) {
+            console.warn("[LeasingService] Event filter failed, falling back to manual scan", e);
         }
+
+        // 2. Fallback: Scan recent listings (Robust)
+        try {
+            const counter = Number(await this.contract.listingCounter());
+            // Scan last 100 listings
+            const scanDepth = 100;
+            const start = Math.max(1, counter - scanDepth + 1);
+
+            for (let i = counter; i >= start; i--) {
+                const listing = await this.contract.listings(i);
+                if (
+                    listing.nft.toLowerCase() === nftAddress.toLowerCase() &&
+                    listing.tokenId.toString() === tokenId.toString() &&
+                    (listing.status === 1n || listing.status === 2n || listing.status === 4n)
+                ) {
+                    console.log(`[LeasingService] Found listing ID ${i} via manual scan`);
+                    return i;
+                }
+            }
+        } catch (scanErr) {
+            console.error("[LeasingService] Manual scan failed too", scanErr);
+        }
+
         return null;
     }
     // Helper to get rentals for a user

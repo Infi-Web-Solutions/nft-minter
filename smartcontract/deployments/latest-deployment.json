@@ -1,0 +1,18 @@
+{
+  "network": "testnet",
+  "timestamp": "2025-12-26T12:01:39.339Z",
+  "proxy": {
+    "FeeManager": "0x33685A1b7e4D6c2cBe99b0376FEf6687F9e25FaB",
+    "WrappedLeasing": "0xfd98F3a5401b2c162bE1AceDe71c997968fF9A9B",
+    "LeasingMarketplace": "0x9D49a596DF6B7ba8e6C0D2c1d6B7B956B678f95A"
+  },
+  "implementation": {
+    "FeeManager": "0x6Ca7A9d428B0a9dCd53bc6128eD282C8dd97B3c5",
+    "WrappedLeasing": "0x00991F08c7242a29834B2DEe33eD1EeCAD0b4B6F",
+    "LeasingMarketplace": "0x82953482ee4806E7e982adA8942fca767F783e4a"
+  },
+  "standard": {
+    "NFTMarketplace": "0x9a93bD18dF04eB9197aec556a4FcA81883645ECB",
+    "NFTCollateralLendingIntegrated": "0xFC7Ee9f985B4Dec9d6c50d6045980C8f9303cB8e"
+  }
+}

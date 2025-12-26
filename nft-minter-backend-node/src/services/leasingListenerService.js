@@ -1,4 +1,9 @@
-import { leasingMarketplace } from '../lib/contracts.js';
+import {
+    provider,
+    wrappedLeasing,
+    leasingMarketplace,
+    adminWallet
+} from "../lib/contracts.js";
 import Listing from '../models/listing.js';
 import RentalTransaction from '../models/rentalTransaction.js';
 import WrappedNft from '../models/wrappedNft.js';
@@ -197,10 +202,86 @@ class LeasingListenerService {
                 }
             });
 
+            // Listen for Unwrapped (from WrappedLeasing contract)
+            wrappedLeasing.on('Unwrapped', async (wId, event) => {
+                console.log(`[LeasingListener] Unwrapped: wId ${wId}`);
+                try {
+                    const numericWId = Number(wId);
+
+                    // 1. Update WrappedNft status
+                    const wrapped = await WrappedNft.findOneAndUpdate(
+                        { wId: numericWId },
+                        { status: 'Unwrapped', updatedAt: new Date() },
+                        { new: true }
+                    );
+
+                    // 2. Delist from marketplace
+                    if (wrapped) {
+                        const listing = await Listing.findOne({
+                            nftAddress: { $regex: new RegExp(`^${wrapped.originalNftContract}$`, 'i') },
+                            tokenId: wrapped.originalTokenId,
+                            status: 'Rented'
+                        }).sort({ updatedAt: -1 });
+
+                        if (listing) {
+                            const maxSecs = Number(listing.maxDuration);
+                            const usedSecs = Number(wrapped.durationSeconds);
+                            const remaining = maxSecs > usedSecs ? maxSecs - usedSecs : 0;
+
+                            // Try to relist on-chain
+                            let finalizedStatus = 'Finished';
+                            let newMaxDuration = remaining;
+
+                            if (remaining > 0) {
+                                try {
+                                    const relistTx = await leasingMarketplace.connect(adminWallet).relistRemaining(listing.listingId);
+                                    await relistTx.wait();
+
+                                    // Check finalized status on-chain
+                                    const onChainListing = await leasingMarketplace.listings(listing.listingId);
+                                    const statusNum = Number(onChainListing.status);
+
+                                    if (statusNum === 1) finalizedStatus = 'Active';
+                                    else if (statusNum === 4) finalizedStatus = 'Finished';
+
+                                    newMaxDuration = Number(onChainListing.maxDuration);
+                                    console.log(`[LeasingListener] Relisted listing ${listing.listingId}. On-chain status: ${finalizedStatus}`);
+                                } catch (relistErr) {
+                                    console.error(`[LeasingListener] Failed to relist listing ${listing.listingId}:`, relistErr.message);
+                                    finalizedStatus = 'Finished';
+                                }
+                            }
+
+                            await Listing.findByIdAndUpdate(listing._id, {
+                                status: finalizedStatus,
+                                remainingDuration: remaining,
+                                maxDuration: finalizedStatus === 'Active' ? newMaxDuration : listing.maxDuration,
+                                rentedBy: null,
+                                rentalExpiresAt: null,
+                                updatedAt: new Date()
+                            });
+                            console.log(`[LeasingListener] Listing status set to ${newStatus} for wId ${wId}. Remaining: ${remaining}s`);
+                        }
+                    }
+                } catch (err) {
+                    console.error(`[LeasingListener] Error processing Unwrapped event for wId ${wId}:`, err);
+                }
+            });
+
             this.isListening = true;
             console.log('[LeasingListener] Listening for events...');
+
+            // Add global error handler for the provider to catch asynchronous filter errors
+            leasingMarketplace.runner.provider.on('error', (error) => {
+                console.warn('[LeasingListener] Provider error detected (possible filter loss):', error.message);
+                // We don't crash, just log. Ethers usually attempts to recover or we can manually restart if needed.
+            });
+
         } catch (err) {
             console.error('[LeasingListener] Failed to start listener:', err);
+            this.isListening = false;
+            // Attempt to restart after 10 seconds if it failed to start
+            setTimeout(() => this.start(), 10000);
         }
     }
 }

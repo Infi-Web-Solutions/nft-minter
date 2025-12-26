@@ -18,12 +18,12 @@ dotenv.config({ path: path.join(__dirname, ".env") });
 // Config
 // -------------------------
 const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Bxo3zUQluKPV1Z9k0ajGE";
-const FEE_MANAGER_ADDRESS = "0x1a7FFcE06738CF55d7C5251765C1536121F0385C";
+const FEE_MANAGER_ADDRESS = process.env.FEE_MANAGER_ADDRESS || process.env.FeeManager_Address;
 
-const OLD_ADMIN = "0xdA46A64ab8c6BEda14677c49D2Bdd0fC4Bf7b72D";
-const NEW_ADMIN = "0xb6795a27f271da619c457fec2dec1c9afbb2f561";
+const NEW_ADMIN = "0xdA46A64ab8c6BEda14677c49D2Bdd0fC4Bf7b72D";
+const OLD_ADMIN = "0xb6795a27f271da619c457fec2dec1c9afbb2f561";
 
-const PRIVATE_KEY = "d62b0e983bb1b4a4e6fef27ce6fc63dc04b4a2d093cfe8935f6474dd38722970";
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 if (!PRIVATE_KEY) {
     console.error("❌ ERROR: OLD_ADMIN_PRIVATE_KEY missing in .env");

@@ -5,6 +5,7 @@ import WrappedABI from "../abi/Wrapped.abi.js";
 import LeasingABI from "../abi/Leasing.abi.js";
 
 export const provider = new ethers.JsonRpcProvider(process.env.sepoliaUrl);
+provider.pollingInterval = 12000; // Increase polling interval to reduce RPC load and filter issues
 
 export const adminWallet = new ethers.Wallet(
   process.env.ADMIN_PRIVATE_KEY,
@@ -30,5 +31,5 @@ export const leasingMarketplace = new ethers.Contract(
   process.env.LeasingMarketplace_Address,
   LeasingABI,
   adminWallet
-  
+
 );

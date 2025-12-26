@@ -321,18 +321,29 @@ class WrappedLeasingApiService {
   /**
    * Unwrap NFT using user's wallet
    */
-  async unwrapNFT(wId: string) {
+  async unwrapNFT(wId: string, userAddress?: string) {
+    // Auto-initialize if not already done
     if (!this.wrappedLeasingContract) {
-      throw new Error('Contract not initialized. Call initialize() first.');
+      if (!window.ethereum) {
+        throw new Error('No Ethereum wallet found. Please install MetaMask or a compatible wallet.');
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      await this.initialize(provider, signer);
     }
 
     try {
 
       const runner = this.wrappedLeasingContract.runner as ethers.Signer;
-      const currentAddress = await runner.getAddress();
+      const currentAddress = userAddress || await runner.getAddress();
+
+      console.log(`[unwrapNFT] Attempting unwrap for wId: ${wId}, user: ${currentAddress}`);
 
       // Check if user can unwrap
       const canUnwrap = await this.canUnwrapNFT(wId, currentAddress);
+
+      console.log(`[unwrapNFT] canUnwrap response:`, canUnwrap);
 
       if (!canUnwrap.canUnwrap) {
         throw new Error(`Cannot unwrap: ${canUnwrap.error || 'Not authorized or lease still active'}`);
@@ -436,10 +447,6 @@ class WrappedLeasingApiService {
       } catch (dbError) {
         console.warn('Failed to get NFTs from DB, falling back to blockchain:', dbError);
       }
-
-      // Fallback to blockchain loop if DB fails or empty (and we suspect there might be some)
-      // For now, we'll assume if DB is empty, user has no NFTs, unless we want to force check
-      // But since we just deployed new contract, DB should be the source of truth.
 
       const counter = await this.getWCounter();
       const nfts: any[] = [];

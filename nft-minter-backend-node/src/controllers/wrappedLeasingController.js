@@ -66,9 +66,13 @@ export const validateWrappingParams = async (req, res) => {
  * Check if user can unwrap NFT
  */
 export const canUnwrapNFT = async (req, res) => {
-  const { wId, userAddress } = req.query;
+  const { wId } = req.params;
+  const { userAddress } = req.query;
 
-  if (!wId || !userAddress) {
+  console.log(`[canUnwrapNFT] Querying for wId: ${wId}, userAddress: ${userAddress}`);
+
+  if (!wId || !userAddress || userAddress === 'undefined') {
+    console.warn(`[canUnwrapNFT] Missing params. wId: ${wId}, userAddress: ${userAddress}`);
     return res.status(400).json({ error: 'Missing required parameters: wId, userAddress' });
   }
 
@@ -298,12 +302,13 @@ export const getUserWrappedNFTs = async (req, res) => {
     // Update expired statuses first
     await WrappedNft.updateExpiredStatuses();
 
-    // Find NFTs where user is owner or renter
+    // Find NFTs where user is owner or renter, EXCLUDING unwrapped
     const wrappedNfts = await WrappedNft.find({
       $or: [
         { owner: { $regex: new RegExp(`^${userAddress}$`, 'i') } },
         { renter: { $regex: new RegExp(`^${userAddress}$`, 'i') } }
-      ]
+      ],
+      status: { $ne: 'Unwrapped' }
     }).sort({ createdAt: -1 });
 
     return res.json({ success: true, data: wrappedNfts });
@@ -332,14 +337,32 @@ export const getWrappedDetails = async (req, res) => {
       return res.status(404).json({ error: 'Wrapped NFT not found in database' });
     }
 
-    // Try to fetch latest rental transaction linked to this wNFT
+    // Try to fetch rental transactions linked to this wNFT
     let rental = null;
+    let subLease = null;
     try {
       const rentalTxModule = await import('../models/rentalTransaction.js');
       const RentalTransaction = rentalTxModule.default;
-      rental = await RentalTransaction.findOne({ wrappedTokenId: numericWId })
+
+      // Get wrapped leasing address to check for sub-leases
+      const { wrappedLeasingAddress } = wrappedLeasingService.getContractInfo();
+
+      // 1. Find the PRIMARY rental (the one that created this numericWId)
+      rental = await RentalTransaction.findOne({
+        wrappedTokenId: numericWId,
+        type: 'Rented'
+      }).lean();
+
+      // 2. Find if this specific wId is CURRENTLY sub-leased to someone else
+      // This is a rental WHERE nftAddress = wrappedLeasingAddress AND tokenId = wId
+      subLease = await RentalTransaction.findOne({
+        nftAddress: { $regex: new RegExp(`^${wrappedLeasingAddress}$`, 'i') },
+        tokenId: numericWId.toString(),
+        type: 'Rented'
+      })
         .sort({ createdAt: -1 })
         .lean();
+
     } catch (txError) {
       console.warn('[WrappedNFT] Failed to load rental transaction for wId', wId, txError);
     }
@@ -349,7 +372,8 @@ export const getWrappedDetails = async (req, res) => {
       data: {
         wrapped,
         rental,
-      },
+        subLease
+      }
     });
   } catch (error) {
     console.error('Get wrapped details error:', error.message || error);

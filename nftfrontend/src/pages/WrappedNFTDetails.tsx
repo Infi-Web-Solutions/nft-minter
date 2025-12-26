@@ -75,6 +75,7 @@ const WrappedNFTDetails: React.FC = () => {
   const [dbWrapped, setDbWrapped] = useState<any | null>(null);
   const [dbStatus, setDbStatus] = useState<string | null>(null);
   const [rentalDetails, setRentalDetails] = useState<RentalDetails | null>(null);
+  const [subLeaseDetails, setSubLeaseDetails] = useState<RentalDetails | null>(null);
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
   const [isUnwrapping, setIsUnwrapping] = useState(false);
   const [showSubLeaseSidebar, setShowSubLeaseSidebar] = useState(false);
@@ -127,6 +128,19 @@ const WrappedNFTDetails: React.FC = () => {
               expiresAt: rentalDb.expiresAt,
               renter: rentalDb.renter,
             });
+          }
+          if (dbDetails.data.subLease) {
+            const slDb = dbDetails.data.subLease;
+            setSubLeaseDetails({
+              rentAmount: slDb.rentAmount,
+              depositAmount: slDb.depositAmount,
+              pricePerSecond: slDb.pricePerSecond,
+              rentDuration: slDb.rentDuration,
+              expiresAt: slDb.expiresAt,
+              renter: slDb.renter,
+            });
+          } else {
+            setSubLeaseDetails(null);
           }
         }
 
@@ -188,16 +202,57 @@ const WrappedNFTDetails: React.FC = () => {
     toast.success('Address copied to clipboard');
   };
 
+  const handleTransactionError = (error: any, defaultMessage: string) => {
+    console.error(defaultMessage, error);
+    toast.dismiss();
+
+    // Check for user rejection patterns (Ethers v6)
+    if (
+      error?.code === 4001 ||
+      error?.code === 'ACTION_REJECTED' ||
+      error?.reason === 'rejected' ||
+      error?.info?.error?.code === 4001 ||
+      error?.message?.toLowerCase().includes('user denied') ||
+      error?.message?.toLowerCase().includes('user rejected') ||
+      error?.message?.toLowerCase().includes('transaction cancelled')
+    ) {
+      toast.error('Transaction cancelled by user');
+      return;
+    }
+
+    // Check for other common errors
+    if (error?.message?.toLowerCase().includes('insufficient funds') || error?.code === 'INSUFFICIENT_FUNDS') {
+      toast.error('Insufficient funds in your wallet');
+      return;
+    }
+
+    // Attempt to extract reason
+    let errorReason = '';
+    if (error?.reason) errorReason = error.reason;
+    else if (error?.error?.message) errorReason = error.error.message;
+    else if (error?.message) {
+      if (error.message.includes('revert')) {
+        const match = error.message.match(/revert (.*)/);
+        if (match) errorReason = match[1];
+      }
+    }
+
+    if (errorReason) {
+      toast.error(`${defaultMessage}: ${errorReason}`);
+    } else {
+      toast.error(defaultMessage);
+    }
+  };
+
   const handleUnwrap = async () => {
     if (!wId) return;
     setIsUnwrapping(true);
     try {
-      await wrappedLeasingApiService.unwrapNFT(wId);
+      await wrappedLeasingApiService.unwrapNFT(wId, address || undefined);
       toast.success('NFT successfully unwrapped!');
       navigate('/profile');
     } catch (e: any) {
-      console.error('Unwrap failed', e);
-      toast.error(e.message || 'Failed to unwrap NFT');
+      handleTransactionError(e, 'Failed to unwrap NFT');
     } finally {
       setIsUnwrapping(false);
     }
@@ -331,7 +386,7 @@ const WrappedNFTDetails: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {isCurrentHolder && leaseStatus?.timeRemaining === 0 && (
+            {(isCurrentHolder || isOriginalOwnerUser) && leaseStatus?.timeRemaining === 0 && (
               <Button
                 onClick={handleUnwrap}
                 disabled={isUnwrapping}
@@ -345,7 +400,7 @@ const WrappedNFTDetails: React.FC = () => {
                 ) : (
                   <>
                     <Zap className="mr-2 h-4 w-4 fill-current" />
-                    Unwrap NFT
+                    {isOriginalOwnerUser ? 'Reclaim NFT' : 'Unwrap NFT'}
                   </>
                 )}
               </Button>
@@ -611,32 +666,39 @@ const WrappedNFTDetails: React.FC = () => {
                       Ownership
                     </h3>
 
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mb-2">Original Owner</p>
-                        <div className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/20">
-                          <span className="font-mono text-xs truncate mr-2">
-                            {originalOwner ? `${originalOwner.slice(0, 12)}...${originalOwner.slice(-8)}` : 'Unknown'}
-                          </span>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => originalOwner && handleCopy(originalOwner)}>
-                            {copiedAddress === originalOwner ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                          </Button>
-                        </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mb-2">Primary Lease Holder</p>
+                      <div className="flex items-center justify-between p-3 rounded-2xl bg-primary/5 border border-primary/20">
+                        <span className="font-mono text-xs truncate mr-2 font-bold text-primary/90">
+                          {rentalDetails?.renter ? `${rentalDetails.renter.slice(0, 12)}...${rentalDetails.renter.slice(-8)}` : 'Unknown'}
+                        </span>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => rentalDetails?.renter && handleCopy(rentalDetails.renter)}>
+                          {copiedAddress === rentalDetails?.renter ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
                       </div>
-
-                      <div>
-                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mb-2">Current Holder</p>
-                        <div className="flex items-center justify-between p-3 rounded-2xl bg-primary/5 border border-primary/20">
-                          <span className="font-mono text-xs truncate mr-2 font-bold text-primary/90">
-                            {currentHolder ? `${currentHolder.slice(0, 12)}...${currentHolder.slice(-8)}` : 'Unknown'}
-                          </span>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => currentHolder && handleCopy(currentHolder)}>
-                            {copiedAddress === currentHolder ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-                          </Button>
-                        </div>
-                        {isCurrentHolder && <p className="text-[10px] text-primary font-bold mt-1.5 ml-1">You currently hold this asset</p>}
-                      </div>
+                      {address && rentalDetails?.renter && address.toLowerCase() === rentalDetails.renter.toLowerCase() && (
+                        <p className="text-[10px] text-primary font-bold mt-1.5 ml-1">
+                          {subLeaseDetails ? 'You have sub-leased this asset' : 'You currently hold this asset'}
+                        </p>
+                      )}
                     </div>
+
+                    {subLeaseDetails && (
+                      <div>
+                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest mb-2">Sub-renter</p>
+                        <div className="flex items-center justify-between p-3 rounded-2xl bg-purple-500/5 border border-purple-500/20">
+                          <span className="font-mono text-xs truncate mr-2 font-bold text-purple-700">
+                            {`${subLeaseDetails.renter?.slice(0, 12)}...${subLeaseDetails.renter?.slice(-8)}`}
+                          </span>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={() => subLeaseDetails.renter && handleCopy(subLeaseDetails.renter)}>
+                            {copiedAddress === subLeaseDetails.renter ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                        {address && subLeaseDetails.renter && address.toLowerCase() === subLeaseDetails.renter.toLowerCase() && (
+                          <p className="text-[10px] text-purple-600 font-bold mt-1.5 ml-1">You are the current sub-renter</p>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -692,7 +754,7 @@ const WrappedNFTDetails: React.FC = () => {
                   <CardContent className="p-8">
                     <h3 className="text-xl font-bold mb-8 flex items-center gap-2">
                       <DollarSign className="h-5 w-5 text-primary" />
-                      Financial Terms
+                      Financial Terms (Primary Lease)
                     </h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -733,7 +795,15 @@ const WrappedNFTDetails: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Duration</p>
-                          <p className="font-bold">{rentalDetails.rentDuration ? Math.round(rentalDetails.rentDuration / 86400) : 0} Days</p>
+                          <p className="font-bold">
+                            {rentalDetails.rentDuration ? (
+                              rentalDetails.rentDuration >= 86400
+                                ? `${Math.round(rentalDetails.rentDuration / 86400)} Days`
+                                : rentalDetails.rentDuration >= 3600
+                                  ? `${Math.round(rentalDetails.rentDuration / 3600)} Hours`
+                                  : `${Math.round(rentalDetails.rentDuration / 60)} Minutes`
+                            ) : '0 Days'}
+                          </p>
                         </div>
                       </div>
 
@@ -750,11 +820,54 @@ const WrappedNFTDetails: React.FC = () => {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Sub-lease Terms Card */}
+              {subLeaseDetails && (
+                <Card className="glass-card border-purple-500/20 rounded-3xl overflow-hidden mt-6">
+                  <CardContent className="p-8">
+                    <div className="flex items-center justify-between mb-8">
+                      <h3 className="text-xl font-bold flex items-center gap-2">
+                        <Zap className="h-5 w-5 text-purple-500" />
+                        Sub-lease Information
+                      </h3>
+                      <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20">Currently Sub-leased</Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Sub-rent Price</p>
+                        <p className="text-xl font-black text-purple-600 break-all">
+                          {formatWeiToEth(subLeaseDetails.rentAmount)}
+                          <span className="text-sm font-bold text-muted-foreground ml-1">ETH</span>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Sub-renter</p>
+                        <p className="text-lg font-bold font-mono truncate">
+                          {subLeaseDetails.renter ? `${subLeaseDetails.renter.slice(0, 6)}...${subLeaseDetails.renter.slice(-4)}` : 'Unknown'}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Sub-lease Expiry</p>
+                        <p className="text-lg font-bold">
+                          {subLeaseDetails.expiresAt ? new Date(subLeaseDetails.expiresAt).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         )}
-      </main>
-
+      </main >
       <CollateralLeasingSidebar
         open={showSubLeaseSidebar}
         onOpenChange={setShowSubLeaseSidebar}
@@ -762,12 +875,9 @@ const WrappedNFTDetails: React.FC = () => {
         initialTokenId={wId}
         initialLeasingType="marketplace"
       />
-
       <Footer />
-    </div>
+    </div >
   );
 };
 
 export default WrappedNFTDetails;
-
-

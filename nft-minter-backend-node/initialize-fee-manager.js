@@ -29,12 +29,12 @@ if (!envLoaded) {
     console.warn('[Init] Warning: No .env file found. Using environment variables from system.');
 }
 
-// Configuration
+// Configuration - pulling from .env to match deploy.js defaults
 const CONFIG = {
-    marketplaceFeeBps: 250,      // 2.5%
-    lendingAprBps: 1000,          // 10%
-    leasingFeeBps: 300,           // 3%
-    treasury: '0xb6795a27f271da619c457fec2dec1c9afbb2f561'
+    marketplaceFeeBps: Number(process.env.MARKETPLACE_FEE_BPS || 250),
+    lendingAprBps: Number(process.env.LENDING_APR_BPS || 1000),
+    leasingFeeBps: Number(process.env.LEASING_FEE_BPS || 300),
+    treasury: process.env.TREASURY_ADDRESS || '0xda46a64ab8c6beda14677c49d2bdd0fc4bf7b72d'
 };
 
 async function initializeFeeManager() {
@@ -44,14 +44,14 @@ async function initializeFeeManager() {
     try {
         // Get admin address from command line or environment
         const adminAddress = process.argv[2] || process.env.ADMIN_ADDRESS;
-        
+
         if (!adminAddress) {
             throw new Error('Admin address required. Provide as argument or set ADMIN_ADDRESS env variable.');
         }
 
         // Get private key for signing transactions
         const privateKey = process.env.ADMIN_PRIVATE_KEY || process.env.PRIVATE_KEY;
-        
+
         if (!privateKey) {
             throw new Error('Admin private key required. Set ADMIN_PRIVATE_KEY or PRIVATE_KEY env variable.');
         }
@@ -86,22 +86,35 @@ async function initializeFeeManager() {
             const currentLendingApr = await web3Instance.getLendingAprBps();
             const currentLeasingFee = await web3Instance.getLeasingFeeBps();
             const currentTreasury = await web3Instance.getTreasury();
-            
+
             console.log(`   Marketplace Fee: ${currentMarketplaceFee} bps`);
             console.log(`   Lending APR: ${currentLendingApr} bps`);
             console.log(`   Leasing Fee: ${currentLeasingFee} bps`);
             console.log(`   Treasury: ${currentTreasury}\n`);
 
-            // Check if already initialized
-            const isZero = currentMarketplaceFee === '0' && 
-                          currentLendingApr === '0' && 
-                          currentLeasingFee === '0' &&
-                          currentTreasury === '0x0000000000000000000000000000000000000000';
+            // Check if matches config
+            const matchesConfig =
+                parseInt(currentMarketplaceFee) === CONFIG.marketplaceFeeBps &&
+                parseInt(currentLendingApr) === CONFIG.lendingAprBps &&
+                parseInt(currentLeasingFee) === CONFIG.leasingFeeBps &&
+                currentTreasury.toLowerCase() === CONFIG.treasury.toLowerCase();
+
+            if (matchesConfig) {
+                console.log('✅ Configuration is already up to date. No changes needed.');
+                process.exit(0);
+            }
+
+            // Check if already initialized but with different values
+            const isZero = currentMarketplaceFee === '0' &&
+                currentLendingApr === '0' &&
+                currentLeasingFee === '0' &&
+                currentTreasury === '0x0000000000000000000000000000000000000000';
 
             if (!isZero) {
-                console.log('⚠️  Warning: FeeManager appears to be already initialized.');
-                console.log('   This script will update the values. Continue? (Ctrl+C to cancel)\n');
-                await sleep(3000); // Give user time to cancel
+                console.log('⚠️  Warning: FeeManager values differ from the current CONFIG.');
+                console.log('   This script will update the values to match your .env settings.');
+                console.log('   Continue? (Ctrl+C to cancel)\n');
+                await sleep(2000); // Give user time to cancel
             }
         } catch (error) {
             console.log(`   Could not read current state: ${error.message}\n`);
@@ -124,7 +137,7 @@ async function initializeFeeManager() {
             web3.eth.accounts.wallet.add(account);
         }
         web3.eth.defaultAccount = fromAddress;
-        
+
         // Verify wallet setup
         const walletAccount = web3.eth.accounts.wallet[fromAddress];
         if (!walletAccount) {
@@ -139,11 +152,11 @@ async function initializeFeeManager() {
             if (!hasRole) {
                 console.log('⚠️  Warning: Account does not have FEE_ADMIN role.');
                 console.log('   The contract may need to be initialized first.\n');
-                
+
                 // Check if contract is initialized (treasury should be set)
                 const currentTreasury = await web3Instance.getTreasury();
                 const isInitialized = currentTreasury && currentTreasury !== '0x0000000000000000000000000000000000000000';
-                
+
                 if (!isInitialized) {
                     console.log('📝 Contract appears uninitialized. Attempting to initialize...\n');
                     try {
@@ -195,10 +208,10 @@ async function initializeFeeManager() {
             console.log(`   Treasury TX: ${results.treasury.transactionHash}\n`);
         } catch (error) {
             console.error(`   ❌ Failed to initialize: ${error.message}\n`);
-            
+
             // Fallback: Try individual calls
             console.log('   ⚠️  Trying individual calls as fallback...\n');
-            
+
             // 1. Set Marketplace Fee
             console.log(`1️⃣  Setting Marketplace Fee to ${CONFIG.marketplaceFeeBps} bps...`);
             try {
@@ -254,7 +267,7 @@ async function initializeFeeManager() {
         console.log(`   Treasury: ${finalTreasury}\n`);
 
         // Verify values match
-        const allCorrect = 
+        const allCorrect =
             parseInt(finalMarketplaceFee) === CONFIG.marketplaceFeeBps &&
             parseInt(finalLendingApr) === CONFIG.lendingAprBps &&
             parseInt(finalLeasingFee) === CONFIG.leasingFeeBps &&
@@ -271,7 +284,7 @@ async function initializeFeeManager() {
     } catch (error) {
         console.error('\n❌ Initialization failed:');
         console.error(`   ${error.message}\n`);
-        
+
         // Provide helpful error messages based on error type
         if (error.message.includes('FEE_ADMIN role') || error.message.includes('onlyRole')) {
             console.error('   ⚠️  Permission Error: Account does not have FEE_ADMIN role.\n');
@@ -298,7 +311,7 @@ async function initializeFeeManager() {
             console.error('   ⚠️  Contract Not Found: FeeManager contract address is invalid or not deployed.\n');
             console.error('   💡 Check that FeeManager_Address in .env is correct.\n');
         }
-        
+
         process.exit(1);
     }
 }

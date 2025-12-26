@@ -7,6 +7,7 @@ const result = dotenv.config();
 import mongoose from 'mongoose';
 import app from './app.js';
 import loanAutoLiquidationService from './services/loanAutoLiquidationService.js';
+import expirationService from './services/expirationService.js';
 import { leasingListenerService } from './services/leasingListenerService.js';
 import wrappedLeasingRoutes from './routes/wrappedLeasingRoutes.js';
 
@@ -22,28 +23,32 @@ mongoose.connect(MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 })
-.then(async () => {
-    console.log('MongoDB connected');
-    
-    // Initialize and start the loan auto-liquidation service
-    try {
-        await loanAutoLiquidationService.initialize();
-        loanAutoLiquidationService.start();
-        console.log('Loan auto-liquidation service started');
+    .then(async () => {
+        console.log('MongoDB connected');
 
-        // Start Leasing Listener
-        leasingListenerService.start();
-        console.log('Leasing listener service started');
-    } catch (error) {
-        console.error('Failed to start auto-liquidation service:', error.message);
-        // Don't fail the server startup if this service fails
-    }
-    
-    app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
-        console.log(`Wrapped Leasing API available at: http://localhost:${PORT}/api/wrapped-leasing`);
+        // Initialize and start the loan auto-liquidation service
+        try {
+            await loanAutoLiquidationService.initialize();
+            loanAutoLiquidationService.start();
+            console.log('Loan auto-liquidation service started');
+
+            // Start Expiration Service (Auto-Unwrap)
+            expirationService.start();
+            console.log('Expiration service started');
+
+            // Start Leasing Listener
+            leasingListenerService.start();
+            console.log('Leasing listener service started');
+        } catch (error) {
+            console.error('Failed to start auto-liquidation service:', error.message);
+            // Don't fail the server startup if this service fails
+        }
+
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+            console.log(`Wrapped Leasing API available at: http://localhost:${PORT}/api/wrapped-leasing`);
+        });
+    })
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
     });
-})
-.catch(err => {
-    console.error('MongoDB connection error:', err);
-});

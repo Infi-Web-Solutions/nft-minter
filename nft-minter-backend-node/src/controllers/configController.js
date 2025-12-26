@@ -18,9 +18,7 @@ export const getPublicConfig = async (req, res) => {
                 nftMarketplace: process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS,
                 collateralLending: process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS,
                 // Prefer env for flexibility, but fall back to known Sepolia WrappedLeasing proxy
-                wrappedLeasing: process.env.WrappedLeasing_Address
-                    || process.env.WRAPPED_LEASING_ADDRESS
-                    || '0x293a1ac2e749e33effd25c7e292f78ebd8ff7489',
+                wrappedLeasing: process.env.WrappedLeasing_Address,
                 feeManager: process.env.FeeManager_Address || process.env.FEE_MANAGER_ADDRESS,
                 leasingMarketplace: process.env.LeasingMarketplace_Address,
             },
@@ -39,15 +37,15 @@ export const getPublicConfig = async (req, res) => {
             }
         };
 
-        res.json({ 
-            success: true, 
-            data: config 
+        res.json({
+            success: true,
+            data: config
         });
     } catch (error) {
         console.error('Error getting config:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: 'Failed to get configuration' 
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get configuration'
         });
     }
 };

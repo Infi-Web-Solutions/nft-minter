@@ -224,7 +224,7 @@ const Activity = () => {
                 className="h-full w-full object-cover"
                 onError={(e) => {
                   (e.target as HTMLImageElement).src =
-                    "https://via.placeholder.com/60?text=NFT";
+                    "https://placehold.co/400x400/1a1a1a/ffffff?text=NFT";
                 }}
               />
 
