@@ -1,4 +1,3 @@
-
 import RentalTransaction from '../models/rentalTransaction.js';
 import { ethers } from 'ethers';
 
@@ -196,10 +195,14 @@ function formatTransaction(tx) {
     
     if (tx.pricePerSecond && tx.pricePerSecond !== '0') {
         try {
-            const pricePerSecondBN = BigInt(tx.pricePerSecond);
-            formatted.pricePerDayETH = ethers.formatEther(pricePerSecondBN * 86400n);
-        } catch {
-            formatted.pricePerDayETH = tx.pricePerSecond;
+            // `pricePerSecond` is stored as ETH-per-second (decimal string like "0.000694...").
+            // Convert ETH string to wei using parseEther, then multiply by seconds/day.
+            const pricePerSecondWei = ethers.parseEther(tx.pricePerSecond.toString());
+            const pricePerDayWei = pricePerSecondWei * 86400n;
+            formatted.pricePerDayETH = ethers.formatEther(pricePerDayWei);
+        } catch (e) {
+            console.error(`[formatTransaction] Error formatting rental price for ${tx._id}:`, e);
+            formatted.pricePerDayETH = '0'; // Default to 0 on error
         }
     }
     

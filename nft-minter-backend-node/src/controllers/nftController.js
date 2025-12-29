@@ -1513,6 +1513,9 @@ export const getNftStats = async (req, res) => {
         let lastSaleInfo = 'No sales yet';
         if (lastSale && lastSale.price) {
             lastSaleInfo = `Ξ${parseFloat(lastSale.price)}`;
+        } else if (nft.price && nft.price > 0 && nft.is_listed) {
+            // Show current listing price if no sales yet
+            lastSaleInfo = `Ξ${parseFloat(nft.price)}`;
         }
 
         // Calculate total volume

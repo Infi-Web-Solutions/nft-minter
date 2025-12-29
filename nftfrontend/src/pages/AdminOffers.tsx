@@ -51,24 +51,35 @@ const AdminOffers = () => {
       const response = await fetch(apiUrl(`/activities/?type=bid&limit=1000&user=${address}`));
       const data = await response.json();
 
-      if (data.success) {
-        const offersList: Offer[] = data.data.map((activity: any) => ({
-          id: activity.id,
-          nft_id: activity.nft?.id,
-          nft_name: activity.nft?.name,
-          nft_image: activity.nft?.image_url,
-          offerer_username: activity.from?.username || activity.from?.name || `User${activity.from?.address?.slice(-4)}`,
-          offerer_avatar: activity.from?.avatar_url || activity.from?.avatar,
-          recipient_username: activity.to?.username || activity.to?.name || `User${activity.to?.address?.slice(-4)}`,
-          recipient_avatar: activity.to?.avatar_url || activity.to?.avatar,
-          from_address: activity.from?.address,
-          to_address: activity.to?.address,
-          price: activity.price || 0,
-          timestamp: activity.timestamp,
-          transaction_hash: activity.transaction_hash,
-        }));
+        if (data.success) {
+        // Server may include rental activities when `user` is provided — keep only bid-type activities for offers
+        const bidActivities = data.data.filter((a: any) => a.type === 'bid' || a.type === 'offer' || a.type === 'bid_placed');
 
-        setOffers(offersList);
+        const offersList: Offer[] = bidActivities.map((activity: any) => {
+          const rawPrice = activity.price;
+          const parsed = Number(rawPrice);
+          const price = Number.isFinite(parsed) ? parsed : 0;
+
+          return {
+            id: activity.id,
+            nft_id: activity.nft?.id,
+            nft_name: activity.nft?.name,
+            nft_image: activity.nft?.image_url,
+            offerer_username: activity.from?.username || activity.from?.name || `User${activity.from?.address?.slice(-4)}`,
+            offerer_avatar: activity.from?.avatar_url || activity.from?.avatar,
+            recipient_username: activity.to?.username || activity.to?.name || `User${activity.to?.address?.slice(-4)}`,
+            recipient_avatar: activity.to?.avatar_url || activity.to?.avatar,
+            from_address: activity.from?.address,
+            to_address: activity.to?.address,
+            price,
+            timestamp: activity.timestamp,
+            transaction_hash: activity.transaction_hash,
+          } as Offer;
+        });
+
+        // Enrich offers with profile data (usernames + avatars)
+        const enriched = await enrichOffersWithProfiles(offersList);
+        setOffers(enriched);
       }
     } catch (error) {
       console.error('Failed to fetch offers:', error);
@@ -77,6 +88,45 @@ const AdminOffers = () => {
       setLoading(false);
     }
   };
+
+  // Fetch profiles for unique addresses and attach username/avatar to offers
+  async function enrichOffersWithProfiles(offers: Offer[]) {
+    const addresses = new Set<string>();
+    offers.forEach(o => {
+      if (o.from_address) addresses.add(o.from_address.toLowerCase());
+      if (o.to_address) addresses.add(o.to_address.toLowerCase());
+    });
+
+    const addrArray = Array.from(addresses);
+    const profileMap: Record<string, { username?: string; avatar_url?: string | null }> = {};
+
+    await Promise.all(addrArray.map(async (addr) => {
+      try {
+        const res = await fetch(apiUrl(`/profiles/${addr}/`));
+        const json = await res.json();
+        if (json?.success && json.data) {
+          profileMap[addr] = {
+            username: json.data.username || `User${addr.slice(-4)}`,
+            avatar_url: json.data.avatar_url || null
+          };
+        }
+      } catch (e) {
+        // ignore profile fetch errors
+      }
+    }));
+
+    return offers.map(o => {
+      const fromProfile = profileMap[o.from_address?.toLowerCase() || ''];
+      const toProfile = profileMap[o.to_address?.toLowerCase() || ''];
+      return {
+        ...o,
+        offerer_username: fromProfile?.username || o.offerer_username,
+        offerer_avatar: fromProfile?.avatar_url || o.offerer_avatar,
+        recipient_username: toProfile?.username || o.recipient_username,
+        recipient_avatar: toProfile?.avatar_url || o.recipient_avatar,
+      } as Offer;
+    });
+  }
 
   const handleSort = (offers: Offer[]) => {
     const sorted = [...offers];
@@ -120,14 +170,13 @@ const AdminOffers = () => {
 
   const displayedOffers = handleSort(handleFilter(offers));
 
-  const currentStats = {
-    totalOffers: displayedOffers.length,
-    totalValue: displayedOffers.reduce((sum, offer) => sum + offer.price, 0),
-    avgPrice: displayedOffers.length > 0
-      ? displayedOffers.reduce((sum, offer) => sum + offer.price, 0) / displayedOffers.length
-      : 0,
-    pendingOffers: displayedOffers.length,
-  };
+    const totalValue = displayedOffers.reduce((sum, offer) => sum + (offer.price || 0), 0);
+    const currentStats = {
+      totalOffers: displayedOffers.length,
+      totalValue,
+      avgPrice: displayedOffers.length > 0 ? totalValue / displayedOffers.length : 0,
+      pendingOffers: displayedOffers.length,
+    };
 
   if (loading) {
     return (
@@ -362,7 +411,10 @@ const AdminOffers = () => {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => navigate(`/nft/${offer.nft_id}`)}
+                  onClick={() => {
+                    const nftId = offer.nft_id ? `local_${offer.nft_id}` : offer.nft_id;
+                    navigate(`/nft/${nftId}`);
+                  }}
                   className="rounded-full px-4 hover:bg-primary hover:text-primary-foreground transition-colors"
                 >
                   View NFT

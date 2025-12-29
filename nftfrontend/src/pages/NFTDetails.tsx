@@ -142,7 +142,6 @@ const NFTDetails = () => {
         }
 
         setNFT(nftData);
-        setImageLoading(true);
 
         // Fetch owner and creator profiles
         if (nftData.owner_address) {
@@ -489,7 +488,7 @@ const NFTDetails = () => {
   };
 
   const getNFTImageUrl = () => {
-    if (!nft) return '';
+    if (!nft) return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVCBJbWFnZTwvdGV4dD48L3N2Zz4=';
     let imageUrl = nft.image_url || '';
     if (!imageUrl && nft.blockchain_data && nft.blockchain_data.image) imageUrl = nft.blockchain_data.image;
     if (imageUrl && imageUrl.startsWith('ipfs://')) {
@@ -497,14 +496,12 @@ const NFTDetails = () => {
       const gateways = [
         `https://ipfs.io/ipfs/${ipfsHash}`,
         `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
-        `https://nftstorage.link/ipfs/${ipfsHash}`,
-        `https://dweb.link/ipfs/${ipfsHash}`,
-        `https://gateway.ipfs.io/ipfs/${ipfsHash}`
       ];
       imageUrl = gateways[currentGatewayIndex] || gateways[0];
     }
     if (imageUrl && imageUrl.includes('ipfs/') && !imageUrl.startsWith('http')) imageUrl = `https://ipfs.io/${imageUrl}`;
-    return imageUrl || '';
+    // Return placeholder if no valid URL
+    return imageUrl || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzc0MTUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVCBJbWFnZTwvdGV4dD48L3N2Zz4=';
   };
 
   const getProfileImageUrl = (profile: any) => profile?.avatar_url || profile?.profile_image || '';
