@@ -5,7 +5,7 @@ import Footer from '@/components/Footer';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, Clock, ArrowLeft, ExternalLink, DollarSign, Copy, Check, Shield, Info, Zap, RefreshCw } from 'lucide-react';
+import { Loader2, Clock, ArrowLeft, ExternalLink, DollarSign, Copy, Check, Shield, Info, Zap, RefreshCw, TrendingUp, Users, ShieldCheck, Ban, RotateCcw, ArrowRight } from 'lucide-react';
 import { wrappedLeasingApiService } from '@/services/wrappedLeasingApiService';
 import { apiUrl } from '@/config';
 import { useWallet } from '@/contexts/WalletContext';
@@ -37,6 +37,7 @@ interface RentalDetails {
   rentDuration?: number;
   expiresAt?: string;
   renter?: string;
+  rentedAt?: string;
 }
 
 const getImageUrl = (url: string) => {
@@ -80,6 +81,8 @@ const WrappedNFTDetails: React.FC = () => {
   const [isUnwrapping, setIsUnwrapping] = useState(false);
   const [showSubLeaseSidebar, setShowSubLeaseSidebar] = useState(false);
   const [wrappedLeasingAddress, setWrappedLeasingAddress] = useState<string>('');
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
 
   useEffect(() => {
     if (!wId) return;
@@ -115,8 +118,6 @@ const WrappedNFTDetails: React.FC = () => {
           const rentalDb = dbDetails.data.rental;
           if (wrappedDb) {
             setDbWrapped(wrappedDb);
-          }
-          if (wrappedDb?.status) {
             setDbStatus(wrappedDb.status);
           }
           if (rentalDb) {
@@ -127,8 +128,10 @@ const WrappedNFTDetails: React.FC = () => {
               rentDuration: rentalDb.rentDuration,
               expiresAt: rentalDb.expiresAt,
               renter: rentalDb.renter,
+              rentedAt: rentalDb.createdAt
             });
           }
+
           if (dbDetails.data.subLease) {
             const slDb = dbDetails.data.subLease;
             setSubLeaseDetails({
@@ -138,6 +141,7 @@ const WrappedNFTDetails: React.FC = () => {
               rentDuration: slDb.rentDuration,
               expiresAt: slDb.expiresAt,
               renter: slDb.renter,
+              rentedAt: slDb.createdAt
             });
           } else {
             setSubLeaseDetails(null);
@@ -145,8 +149,6 @@ const WrappedNFTDetails: React.FC = () => {
         }
 
         // 2) Try to load metadata for the original NFT via existing backend endpoint.
-        // Prefer DB values for original contract/token (they are always set),
-        // and fall back to on-chain values only if DB is missing.
         const originalContract =
           (dbDetails?.success && dbDetails.data?.wrapped?.originalNftContract) ||
           info.originalNft;
@@ -161,14 +163,10 @@ const WrappedNFTDetails: React.FC = () => {
         ) {
           try {
             const externalUrl = apiUrl(`/nfts/external/${originalContract}/${originalTokenId}`);
-            console.log('[WrappedNFTDetails] Fetching external metadata from:', externalUrl);
             const res = await fetch(externalUrl);
             const data = await res.json();
-            console.log('[WrappedNFTDetails] External metadata response:', data);
             if (data.success && data.data) {
               setMetadata(data.data);
-            } else {
-              console.warn('[WrappedNFTDetails] External metadata fetch unsuccessful:', data.error);
             }
           } catch (e) {
             console.error('[WrappedNFTDetails] Failed to fetch external metadata:', e);
@@ -179,6 +177,29 @@ const WrappedNFTDetails: React.FC = () => {
         setError(e?.message || 'Failed to load wrapped NFT details');
       } finally {
         setLoading(false);
+      }
+    };
+
+    const fetchActivities = async () => {
+      if (!dbWrapped?.originalNftContract || !dbWrapped?.originalTokenId) return;
+
+      setLoadingActivities(true);
+      try {
+        // Need to find the NFT ID first to fetch activities
+        const nftRes = await fetch(apiUrl(`/nfts/external/${dbWrapped.originalNftContract}/${dbWrapped.originalTokenId}`));
+        const nftData = await nftRes.json();
+
+        if (nftData.success && nftData.data) {
+          const actRes = await fetch(apiUrl(`/activities?nft=${nftData.data._id || nftData.data.id.replace('local_', '')}&limit=10`));
+          const actData = await actRes.json();
+          if (actData.success) {
+            setActivities(actData.data);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch activities:', e);
+      } finally {
+        setLoadingActivities(false);
       }
     };
 
@@ -194,6 +215,37 @@ const WrappedNFTDetails: React.FC = () => {
     loadData();
     fetchContractInfo();
   }, [wId]);
+
+  useEffect(() => {
+    if (dbWrapped?.originalNftContract && dbWrapped?.originalTokenId) {
+      // Small delay to ensure state is settled
+      const timer = setTimeout(() => {
+        const fetchActivities = async () => {
+          setLoadingActivities(true);
+          try {
+            // Get original NFT record
+            const nftRes = await fetch(apiUrl(`/nfts/external/${dbWrapped.originalNftContract}/${dbWrapped.originalTokenId}`));
+            const nftData = await nftRes.json();
+
+            if (nftData.success && nftData.data) {
+              const actualId = nftData.data._id || nftData.data.id.replace('local_', '');
+              const actRes = await fetch(apiUrl(`/activities?nft=${actualId}&limit=10`));
+              const actData = await actRes.json();
+              if (actData.success) {
+                setActivities(actData.data);
+              }
+            }
+          } catch (e) {
+            console.error('Failed to fetch activities:', e);
+          } finally {
+            setLoadingActivities(false);
+          }
+        };
+        fetchActivities();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [dbWrapped]);
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -817,6 +869,37 @@ const WrappedNFTDetails: React.FC = () => {
                         </div>
                       </div>
                     </div>
+
+                    {/* Progress Bar */}
+                    {rentalDetails.rentedAt && rentalDetails.rentDuration && (
+                      <div className="mt-8">
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Lease Progress</p>
+                          <p className="text-xs font-bold text-primary">
+                            {(() => {
+                              const start = new Date(rentalDetails.rentedAt).getTime() / 1000;
+                              const now = Date.now() / 1000;
+                              const elapsed = Math.max(0, now - start);
+                              const progress = Math.min(100, (elapsed / rentalDetails.rentDuration) * 100);
+                              return progress.toFixed(1);
+                            })()}%
+                          </p>
+                        </div>
+                        <div className="w-full h-3 bg-muted rounded-full overflow-hidden border border-border/20">
+                          <div
+                            className="h-full bg-gradient-to-r from-primary to-blue-600 transition-all duration-1000"
+                            style={{
+                              width: `${(() => {
+                                const start = new Date(rentalDetails.rentedAt).getTime() / 1000;
+                                const now = Date.now() / 1000;
+                                const elapsed = Math.max(0, now - start);
+                                return Math.min(100, (elapsed / rentalDetails.rentDuration) * 100);
+                              })()}%`
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -861,10 +944,172 @@ const WrappedNFTDetails: React.FC = () => {
                         </p>
                       </div>
                     </div>
+
+                    {/* Sub-lease Progress Bar */}
+                    {subLeaseDetails.rentedAt && subLeaseDetails.rentDuration && (
+                      <div className="mt-8">
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Sub-lease Progress</p>
+                          <p className="text-xs font-bold text-purple-600">
+                            {(() => {
+                              const start = new Date(subLeaseDetails.rentedAt).getTime() / 1000;
+                              const now = Date.now() / 1000;
+                              const elapsed = Math.max(0, now - start);
+                              const progress = Math.min(100, (elapsed / subLeaseDetails.rentDuration) * 100);
+                              return progress.toFixed(1);
+                            })()}%
+                          </p>
+                        </div>
+                        <div className="w-full h-3 bg-muted rounded-full overflow-hidden border border-border/20">
+                          <div
+                            className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 transition-all duration-1000"
+                            style={{
+                              width: `${(() => {
+                                const start = new Date(subLeaseDetails.rentedAt).getTime() / 1000;
+                                const now = Date.now() / 1000;
+                                const elapsed = Math.max(0, now - start);
+                                return Math.min(100, (elapsed / subLeaseDetails.rentDuration) * 100);
+                              })()}%`
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Activity Section */}
+        {!loading && wrappedInfo && (
+          <div className="mt-20 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            <div className="flex items-center justify-between">
+              <h2 className="text-3xl font-black tracking-tight italic">
+                Activity <span className="text-primary text-4xl">.</span>
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-full text-muted-foreground hover:text-primary gap-2"
+                onClick={() => {
+                  if (dbWrapped?.originalNftContract && dbWrapped?.originalTokenId) {
+                    const fetchActivities = async () => {
+                      setLoadingActivities(true);
+                      try {
+                        const nftRes = await fetch(apiUrl(`/nfts/external/${dbWrapped.originalNftContract}/${dbWrapped.originalTokenId}`));
+                        const nftData = await nftRes.json();
+                        if (nftData.success && nftData.data) {
+                          const actualId = nftData.data._id || nftData.data.id.replace('local_', '');
+                          const actRes = await fetch(apiUrl(`/activities?nft=${actualId}&limit=10`));
+                          const actData = await actRes.json();
+                          if (actData.success) setActivities(actData.data);
+                        }
+                      } catch (e) { console.error(e); } finally { setLoadingActivities(false); }
+                    };
+                    fetchActivities();
+                  }
+                }}
+                disabled={loadingActivities}
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingActivities ? 'animate-spin' : ''}`} />
+                Refresh History
+              </Button>
+            </div>
+
+            <Card className="glass-card border-border/40 rounded-3xl overflow-hidden shadow-2xl">
+              <CardContent className="p-0">
+                {loadingActivities && activities.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground font-bold uppercase tracking-widest">Loading history...</p>
+                  </div>
+                ) : activities.length === 0 ? (
+                  <div className="py-20 flex flex-col items-center justify-center gap-4 text-center">
+                    <TrendingUp className="h-12 w-12 text-muted-foreground opacity-20" />
+                    <p className="text-muted-foreground font-bold italic">No activity recorded for this asset yet.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/20">
+                    {activities.map((act, index) => {
+                      const getActivityIcon = (type: string) => {
+                        switch (type) {
+                          case 'mint': return <Zap className="h-4 w-4 text-blue-500" />;
+                          case 'list': return <TrendingUp className="h-4 w-4 text-purple-500" />;
+                          case 'buy': return <DollarSign className="h-4 w-4 text-green-500" />;
+                          case 'transfer': return <ArrowRight className="h-4 w-4 text-orange-500" />;
+                          case 'rent_listed': return <Clock className="h-4 w-4 text-indigo-500" />;
+                          case 'rented': return <Users className="h-4 w-4 text-pink-500" />;
+                          case 'depositrefunded': return <ShieldCheck className="h-4 w-4 text-emerald-500" />;
+                          case 'cancelled': return <Ban className="h-4 w-4 text-red-500" />;
+                          case 'withdrawn': return <RotateCcw className="h-4 w-4 text-yellow-500" />;
+                          default: return <TrendingUp className="h-4 w-4 text-muted-foreground" />;
+                        }
+                      };
+
+                      const getActivityLabel = (type: string) => {
+                        switch (type) {
+                          case 'mint': return 'Minted';
+                          case 'list': return 'Listed';
+                          case 'buy': return 'Purchased';
+                          case 'transfer': return 'Transferred';
+                          case 'rent_listed': return 'Listed for Rent';
+                          case 'rented': return 'Rented';
+                          case 'depositrefunded': return 'Deposit Refunded';
+                          case 'cancelled': return 'Cancelled';
+                          case 'withdrawn': return 'Withdrawn';
+                          default: return type.charAt(0).toUpperCase() + type.slice(1);
+                        }
+                      };
+
+                      return (
+                        <div key={index} className="flex flex-col sm:flex-row sm:items-center gap-4 p-6 hover:bg-primary/5 transition-colors duration-300">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className="w-12 h-12 rounded-2xl bg-muted/30 flex items-center justify-center border border-border/20 shadow-sm group-hover:border-primary/30 transition-colors">
+                              {getActivityIcon(act.type)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-bold text-foreground">{getActivityLabel(act.type)}</span>
+                                {act.price && <Badge variant="secondary" className="font-mono text-[10px] font-black border-primary/20 text-primary">{act.price} ETH</Badge>}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                                <span className="truncate max-w-[120px] transition-colors hover:text-primary cursor-help" title={act.from_address}>
+                                  From {act.from?.name || act.from_address?.slice(0, 6) || 'Unknown'}
+                                </span>
+                                <ArrowRight className="h-3 w-3 opacity-30" />
+                                <span className="truncate max-w-[120px] transition-colors hover:text-primary cursor-help" title={act.to_address}>
+                                  To {act.to?.name || act.to_address?.slice(0, 6) || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:flex-col sm:items-end gap-1">
+                            <div className="text-sm font-black text-foreground italic">{act.time_ago}</div>
+                            <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">
+                              {act.timestamp ? new Date(act.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''}
+                            </div>
+                          </div>
+
+                          {act.transaction_hash && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-full ml-2 hidden sm:flex"
+                              onClick={() => window.open(`https://sepolia.etherscan.io/tx/${act.transaction_hash}`, '_blank')}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5 opacity-40 hover:opacity-100" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
       </main >

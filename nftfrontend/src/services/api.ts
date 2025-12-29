@@ -17,6 +17,8 @@ export interface NFT {
   collection: string | null;
   category: string | null;
   created_at: string;
+  is_rentable?: boolean;
+  listingId?: number | string;
 }
 
 export interface Collection {
@@ -132,7 +134,7 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
-    
+
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
@@ -142,7 +144,7 @@ class ApiService {
     });
 
     console.log(`[ApiService] Response status: ${response.status}`);
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[ApiService] HTTP error: ${response.status} - ${errorText}`);

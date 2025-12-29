@@ -776,7 +776,44 @@ class NFTMarketplaceWeb3 {
             }
             console.log(`[Web3] Getting on-chain listing for token ID: ${tokenId}`);
             const listing = await this.contract.methods.getListing(tokenId).call();
-            return listing;
+
+            // Default: use the sales listing
+            const result = { ...listing };
+
+            // Check if it's actually held by the Leasing Marketplace OR Wrapped Leasing contract
+            if (this.leasingMarketplaceAddress || this.wrappedLeasingAddress) {
+                try {
+                    const owner = await this.contract.methods.ownerOf(tokenId).call();
+                    console.log(`[Web3] Checking ownership for token ${tokenId}`);
+                    console.log(`[Web3] Owner: ${owner}`);
+                    console.log(`[Web3] LeasingMarketplace: ${this.leasingMarketplaceAddress}`);
+                    console.log(`[Web3] WrappedLeasing: ${this.wrappedLeasingAddress}`);
+
+                    const isLeasingMarketplace = this.leasingMarketplaceAddress &&
+                        owner.toLowerCase() === this.leasingMarketplaceAddress.toLowerCase();
+                    const isWrappedLeasing = this.wrappedLeasingAddress &&
+                        owner.toLowerCase() === this.wrappedLeasingAddress.toLowerCase();
+
+                    if (isLeasingMarketplace) {
+                        console.log(`[Web3] MATCH: Token ${tokenId} is owned by Leasing Marketplace (Listed for Rent)`);
+                        result.isActive = false;
+                        result.isLeasing = true;
+                    } else if (isWrappedLeasing) {
+                        console.log(`[Web3] MATCH: Token ${tokenId} is owned by Wrapped Leasing (Currently Rented)`);
+                        result.isActive = false;
+                        result.isRented = true;
+                    } else {
+                        console.log(`[Web3] NO MATCH: Owner does not match Leasing/Wrapped contracts`);
+                    }
+                } catch (e) {
+                    console.error(`[Web3] Critical Error checking owner for leasing status: ${e.message}`);
+                    throw e; // Fail hard so we don't return incorrect "Active" status
+                }
+            } else {
+                console.log(`[Web3] Leasing/Wrapped contract addresses not set, skipping check`);
+            }
+
+            return result;
         } catch (error) {
             console.error('[Web3] Error getting on-chain listing:', error.message);
             throw error;

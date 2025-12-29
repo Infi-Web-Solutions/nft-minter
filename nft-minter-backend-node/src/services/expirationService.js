@@ -1,3 +1,4 @@
+import { ethers } from 'ethers';
 import {
     wrappedLeasing,
     leasingMarketplace,
@@ -24,9 +25,13 @@ class ExpirationService {
 
         // Run immediately
         this.checkExpiredUser();
+        this.checkExpiredListings();
 
         // Then interval
-        this.intervalId = setInterval(() => this.checkExpiredUser(), this.checkInterval);
+        this.intervalId = setInterval(() => {
+            this.checkExpiredUser();
+            this.checkExpiredListings();
+        }, this.checkInterval);
     }
 
     stop() {
@@ -39,12 +44,19 @@ class ExpirationService {
 
     async checkExpiredUser() {
         try {
-            // Find active wNFTs that have passed their validUntil time
-            // Add a small buffer (e.g. 10 seconds) to ensure block time is definitely past
-            const now = Math.floor(Date.now() / 1000);
+            // Check admin wallet balance
+            const balance = await adminWallet.provider.getBalance(adminWallet.address);
+            const balanceEth = parseFloat(ethers.formatEther(balance)).toFixed(4);
+            console.log(`[ExpirationService] Admin Wallet: ${adminWallet.address} Balance: ${balanceEth} ETH`);
+
+            // 0. Update expired statuses in DB
+            await WrappedNft.updateExpiredStatuses();
+
+            // Find wNFTs that have passed their validUntil time but are not yet Unwrapped
+            const now = new Date();
 
             const expiredNfts = await WrappedNft.find({
-                status: 'Active',
+                status: { $in: ['Active', 'Expired'] },
                 validUntil: { $lt: now }
             });
 
@@ -71,30 +83,41 @@ class ExpirationService {
 
             // Double check on-chain status to avoid reverts
             const status = await contractWithSigner.getLeaseStatus(nftDoc.wId);
-            if (!status.isActive || status.timeRemaining > 0) {
-                console.warn(`Skipping wId ${nftDoc.wId}: On-chain status mismatch (Active: ${status.isActive}, Time: ${status.timeRemaining})`);
-                // If on-chain says inactive, update DB to match
-                if (!status.isActive) {
-                    nftDoc.status = 'Unwrapped'; // or 'Expired'
-                    await nftDoc.save();
-                }
+            if (!status.isActive) {
+                console.log(`[ExpirationService] wId ${nftDoc.wId} is already inactive on-chain. Updating DB.`);
+                nftDoc.status = 'Unwrapped';
+                await nftDoc.save();
+                return;
+            }
+
+            if (status.timeRemaining > 0) {
+                console.warn(`[ExpirationService] wId ${nftDoc.wId} still has ${status.timeRemaining}s remaining. Skipping.`);
                 return;
             }
 
             // Call unwrap
-            // Since lease is expired, anyone can call this (public)
-            const tx = await contractWithSigner.unwrap(nftDoc.wId);
-            console.log(`Unwrap tx sent for wId ${nftDoc.wId}: ${tx.hash}`);
+            try {
+                const tx = await contractWithSigner.unwrap(nftDoc.wId);
+                console.log(`Unwrap tx sent for wId ${nftDoc.wId}: ${tx.hash}`);
+                await tx.wait();
+                console.log(`Unwrap confirmed for wId ${nftDoc.wId}`);
 
-            await tx.wait();
-            console.log(`Unwrap confirmed for wId ${nftDoc.wId}`);
-
-            // Update DB
-            nftDoc.status = 'Unwrapped';
-            await nftDoc.save();
+                // Update DB
+                nftDoc.status = 'Unwrapped';
+                await nftDoc.save();
+            } catch (txError) {
+                if (txError.message.includes('not active')) {
+                    console.log(`[ExpirationService] wId ${nftDoc.wId} already unwrapped (caught during tx). Updating DB.`);
+                    nftDoc.status = 'Unwrapped';
+                    await nftDoc.save();
+                } else {
+                    throw txError; // Re-throw other errors (like 'lease expired')
+                }
+            }
 
             // Also Delist from Marketplace if it was listed there
             try {
+                // 1. Check if the original NFT listing needs update (Finalizing/Relisting)
                 const listing = await Listing.findOne({
                     nftAddress: { $regex: new RegExp(`^${nftDoc.originalNftContract}$`, 'i') },
                     tokenId: nftDoc.originalTokenId,
@@ -140,12 +163,98 @@ class ExpirationService {
                     });
                     console.log(`[ExpirationService] Listing status set to ${finalizedStatus} for wId ${nftDoc.wId}. Remaining: ${remaining}s`);
                 }
+
+                // 2. IMPORTANT: If this wId itself was listed for sub-lease, cancel those listings too!
+                const wLeasingAddr = process.env.WrappedLeasing_Address;
+                if (wLeasingAddr) {
+                    const subListings = await Listing.find({
+                        nftAddress: { $regex: new RegExp(`^${wLeasingAddr}$`, 'i') },
+                        tokenId: nftDoc.wId.toString(),
+                        status: { $in: ['Active', 'Rented'] }
+                    });
+
+                    if (subListings.length > 0) {
+                        console.log(`[ExpirationService] Found ${subListings.length} sub-listings for expired wId ${nftDoc.wId}. Cancelling...`);
+                        for (const sl of subListings) {
+                            sl.status = 'Finished'; // or 'Cancelled'
+                            sl.updatedAt = new Date();
+                            await sl.save();
+                        }
+                    }
+                }
+
+                // 3. IMPORTANT: If this wId was sub-leased (wwnft created), those sub-wNFTs must also disappear!
+                if (wLeasingAddr) {
+                    const subWrappedNfts = await WrappedNft.find({
+                        originalNftContract: { $regex: new RegExp(`^${wLeasingAddr}$`, 'i') },
+                        originalTokenId: nftDoc.wId.toString(),
+                        status: 'Active'
+                    });
+
+                    if (subWrappedNfts.length > 0) {
+                        console.log(`[ExpirationService] Found ${subWrappedNfts.length} sub-wNFTs for expired wId ${nftDoc.wId}. Marking as Expired...`);
+                        for (const swnft of subWrappedNfts) {
+                            swnft.status = 'Expired';
+                            swnft.updatedAt = new Date();
+                            await swnft.save();
+
+                            // Optionally trigger unwrap for the sub-wNFT too if possible, 
+                            // though marking it Expired will hide it from UI immediately.
+                        }
+                    }
+                }
+
             } catch (listErr) {
                 console.error('[ExpirationService] Error delisting associated listings:', listErr);
             }
 
         } catch (error) {
             console.error(`Failed to auto-unwrap wId ${nftDoc.wId}:`, error.message);
+        }
+    }
+
+    async checkExpiredListings() {
+        try {
+            const now = new Date();
+            // Find Active listings that have reached their listingExpiresAt
+            const expiredListings = await Listing.find({
+                status: 'Active',
+                listingExpiresAt: { $lt: now }
+            });
+
+            if (expiredListings.length === 0) return;
+
+            console.log(`[ExpirationService] Found ${expiredListings.length} expired listings window pending finish...`);
+
+            const marketplaceWithSigner = leasingMarketplace.connect(adminWallet);
+
+            for (const listing of expiredListings) {
+                try {
+                    console.log(`[ExpirationService] Finishing expired listing window for ID ${listing.listingId}...`);
+
+                    // Verify on-chain status first
+                    const onChainListing = await marketplaceWithSigner.listings(listing.listingId);
+                    if (Number(onChainListing.status) !== 1) { // 1 = Active
+                        console.log(`[ExpirationService] Listing ${listing.listingId} is not Active on-chain. Updating DB.`);
+                        listing.status = 'Finished';
+                        await listing.save();
+                        continue;
+                    }
+
+                    // Call finishExpiredListing
+                    const tx = await marketplaceWithSigner.finishExpiredListing(listing.listingId);
+                    console.log(`[ExpirationService] Finish tx sent for listing ${listing.listingId}: ${tx.hash}`);
+                    await tx.wait();
+
+                    listing.status = 'Finished';
+                    await listing.save();
+                    console.log(`[ExpirationService] Listing ${listing.listingId} finished successfully.`);
+                } catch (listingErr) {
+                    console.error(`[ExpirationService] Failed to finish listing ${listing.listingId}:`, listingErr.message);
+                }
+            }
+        } catch (err) {
+            console.error('[ExpirationService] Error in checkExpiredListings:', err);
         }
     }
 }

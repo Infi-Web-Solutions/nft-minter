@@ -165,8 +165,9 @@ const syncNftWithBlockchain = async (nft) => {
         const onChainPrice = listing.price !== undefined ? listing.price : listing[1];
         const isAuction = listing.isAuction !== undefined ? listing.isAuction : listing[3];
         const auctionEndTime = listing.auctionEndTime !== undefined ? listing.auctionEndTime : listing[4];
+        const isLeasing = listing.isLeasing || false;
 
-        log(`[Sync] isActive: ${isActive}, onChainPrice: ${onChainPrice}, isAuction: ${isAuction}`);
+        log(`[Sync] isActive: ${isActive}, onChainPrice: ${onChainPrice}, isAuction: ${isAuction}, isLeasing: ${isLeasing}`);
 
         let changed = false;
 
@@ -174,6 +175,24 @@ const syncNftWithBlockchain = async (nft) => {
             log(`[Sync] Updating is_listed: ${nft.is_listed} -> ${isActive}`);
             nft.is_listed = isActive;
             changed = true;
+        }
+
+        // Update is_rentable based on leasing status
+        if (isLeasing && !nft.is_rentable) {
+            log(`[Sync] Updating is_rentable: ${nft.is_rentable} -> true (Leasing detected)`);
+            nft.is_rentable = true;
+            changed = true;
+        } else if (!isLeasing && nft.is_rentable) {
+            // CAUTION: It might be rentable but not yet transferred to contract?
+            // For now, if we are strictly syncing on-chain state, if it's NOT in leasing contract, 
+            // it might just be a regular NFT. But users can mark "rentable" without staking sometimes?
+            // If we assume "locked in leasing marketplace" = "is_rentable" for the UI to picking it up...
+            // Let's be safe: If isActive (Sales) is true, it certainly CANNOT be rentable (locked).
+            if (isActive) {
+                log(`[Sync] Updating is_rentable: ${nft.is_rentable} -> false (Active sales listing)`);
+                nft.is_rentable = false;
+                changed = true;
+            }
         }
 
         if (isActive) {
@@ -400,6 +419,8 @@ export const buyNft = async (req, res) => {
         const oldOwner = nft.owner_address;
         nft.owner_address = buyer_address;
         nft.is_listed = false;
+        nft.is_rentable = false;
+        nft.is_rented = false;
         await nft.save();
 
         // Update user profile stats for buyer
@@ -490,6 +511,8 @@ export const updateNftOwner = async (req, res) => {
         // Update NFT in database
         nft.owner_address = newOwner;
         nft.is_listed = false; // Assuming buy removes listing
+        nft.is_rentable = false;
+        nft.is_rented = false;
         await nft.save();
 
         // Update user profile stats for new owner
@@ -728,13 +751,99 @@ export const getCollectionsByLikes = async (req, res) => {
 export const getCombinedNfts = async (req, res) => {
     try {
         const user_address = req.query.user_address;
+
+        // Build dynamic query
+        const query = {};
+        const { status, collection, blockchain, price_min, price_max } = req.query;
+
+        // Status Filters
+        const statusFilters = status ? (Array.isArray(status) ? status : [status]) : [];
+        if (statusFilters.length > 0) {
+            const orConditions = [];
+
+            if (statusFilters.includes('Buy Now')) {
+                orConditions.push({ is_listed: true, is_auction: false });
+            }
+            if (statusFilters.includes('On Auction')) {
+                orConditions.push({ is_auction: true }); // Listing might be handled by is_listed=true + is_auction=true
+            }
+            if (statusFilters.includes('On Rent') || statusFilters.includes('Rented')) {
+                // "On Rent" in UI often means "Listed for Rent" or "Currently Rented"
+                // For simplified backend logic, we assume is_rentable means "Available for Rent"
+                // And we check validation for "Rented" if we had that state stored clearly.
+                // For now, we allow is_rentable=true items.
+                orConditions.push({ is_rentable: true });
+            }
+            if (statusFilters.includes('New')) {
+                const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                // "New" should probably be combined with other availabilities, 
+                // but typically it means "New AND Listed".
+                // However, following the $or pattern, it might suggest "New OR Buy Now".
+                // Frontend logic typically creates an intersection or union depending on UI.
+                // Assuming Union ($or) for status checkboxes is standard.
+                orConditions.push({ created_at: { $gte: sevenDaysAgo }, is_listed: true });
+            }
+
+            if (orConditions.length > 0) {
+                query.$or = orConditions;
+            }
+        } else {
+            // Default: Show listed items OR rentable items
+            query.$or = [
+                { is_listed: true },
+                { is_rentable: true },
+                { is_rented: true }
+            ];
+        }
+
+        // Collection Filter
+        if (collection) {
+            const collections = Array.isArray(collection) ? collection : [collection];
+            query.nft_collection = { $in: collections };
+        }
+
+        // Price Filter
+        if (price_min || price_max) {
+            query.price = {};
+            if (price_min) query.price.$gte = parseFloat(price_min);
+            if (price_max) query.price.$lte = parseFloat(price_max);
+        }
+
         let liked_nft_ids = new Set();
         if (user_address) {
             const favorites = await Favorite.find({ user_address });
             liked_nft_ids = new Set(favorites.map(fav => fav.nft.toString()));
         }
-        const local_nfts = await NFT.find({ is_listed: true }).sort({ created_at: -1 }).limit(100);
-        const local_nfts_data = await Promise.all(local_nfts.map(async (nft) => {
+
+        // Sorting
+        const sort_by = req.query.sort_by || 'recent';
+        let sort = {};
+        if (sort_by === 'price-low') sort.price = 1;
+        else if (sort_by === 'price-high') sort.price = -1;
+        else if (sort_by === 'most-liked') sort.like_count = -1; // Note: like_count not stored on NFT, might need aggregation
+        else sort.created_at = -1; // Default recent
+
+        console.log('[nftController] getCombinedNfts Query:', JSON.stringify(query, null, 2));
+
+        const local_nfts = await NFT.find(query).sort(sort).limit(100);
+
+        // Load WrappedNft model for checking status
+        const wrappedNftModule = await import('../models/wrappedNft.js');
+        const WrappedNft = wrappedNftModule.default;
+        const wLeasingAddr = process.env.WrappedLeasing_Address;
+
+        const local_nfts_data = (await Promise.all(local_nfts.map(async (nft) => {
+            // Check if this NFT is actually a wrapped NFT that has expired
+            // (In case some are tracked as local NFTs)
+            if (wLeasingAddr && nft.nft_collection === 'Wrapped NFT') {
+                const wNft = await WrappedNft.findOne({
+                    originalNftContract: nft.creator_address, // In some cases creator stores original contract
+                    originalTokenId: nft.token_id,
+                    status: { $ne: 'Active' }
+                });
+                if (wNft) return null;
+            }
+
             const like_count = await Favorite.countDocuments({ nft: nft._id });
             return {
                 id: `local_${nft._id}`,
@@ -745,6 +854,7 @@ export const getCombinedNfts = async (req, res) => {
                 image_url: nft.image_url,
                 price: nft.price != null ? parseFloat(nft.price) : null,
                 is_listed: nft.is_listed,
+                is_rentable: nft.is_rentable || false,
                 is_auction: nft.is_auction,
                 owner_address: nft.owner_address,
                 creator_address: nft.creator_address,
@@ -755,17 +865,12 @@ export const getCombinedNfts = async (req, res) => {
                 liked: liked_nft_ids.has(nft._id.toString()),
                 like_count
             };
-        }));
+        }))).filter(n => n !== null);
+
         // Optional sorting
-        const sort_key = req.query.sort;
-        if (sort_key === 'likes') {
+        // Sorting handled in DB query
+        if (req.query.sort_by === 'most-liked') {
             local_nfts_data.sort((a, b) => (b.like_count || 0) - (a.like_count || 0));
-        } else {
-            // Shuffle for variety if no explicit sort
-            for (let i = local_nfts_data.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [local_nfts_data[i], local_nfts_data[j]] = [local_nfts_data[j], local_nfts_data[i]];
-            }
         }
         res.json({
             success: true,
@@ -807,6 +912,7 @@ export const getNftDetail = async (req, res) => {
             token_uri: nft.token_uri,
             price: nft.price != null ? parseFloat(nft.price) : null,
             is_listed: nft.is_listed,
+            is_rentable: nft.is_rentable || false,
             is_auction: nft.is_auction,
             auction_end_time: nft.auction_end_time || null,
             current_bid: nft.current_bid != null ? parseFloat(nft.current_bid) : null,
@@ -851,6 +957,7 @@ export const getNfts = async (req, res) => {
             image_url: nft.image_url,
             price: nft.price != null ? parseFloat(nft.price) : null,
             is_listed: nft.is_listed,
+            is_rentable: nft.is_rentable || false,
             is_auction: nft.is_auction,
             auction_end_time: nft.auction_end_time || null,
             current_bid: nft.current_bid != null ? parseFloat(nft.current_bid) : null,
@@ -911,6 +1018,7 @@ export const getUserCreatedNfts = async (req, res) => {
             image_url: nft.image_url,
             price: nft.price != null ? parseFloat(nft.price) : null,
             is_listed: nft.is_listed,
+            is_rentable: nft.is_rentable || false,
             is_auction: nft.is_auction,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
@@ -945,6 +1053,7 @@ export const getUserNfts = async (req, res) => {
             image_url: nft.image_url,
             price: nft.price != null ? parseFloat(nft.price) : null,
             is_listed: nft.is_listed,
+            is_rentable: nft.is_rentable || false,
             is_auction: nft.is_auction,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
@@ -980,6 +1089,7 @@ export const searchNfts = async (req, res) => {
             image_url: nft.image_url,
             price: nft.price != null ? parseFloat(nft.price) : null,
             is_listed: nft.is_listed,
+            is_rentable: nft.is_rentable || false,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
             collection: nft.nft_collection,
@@ -1241,22 +1351,35 @@ export const uploadIpfs = async (req, res) => {
     }
 };
 
+import RentalTransaction from '../models/rentalTransaction.js';
+import WrappedNft from '../models/wrappedNft.js';
+
 export const getNftByCombinedId = async (req, res) => {
     try {
         const { combined_id } = req.params;
         const { user_address } = req.query; // Get user address from query params
 
-        console.log(`[DEBUG] getNftByCombinedId called with id: ${combined_id}`);
-        console.log(`[DEBUG] User address: ${user_address}`);
+        log(`[DEBUG] getNftByCombinedId called with id: ${combined_id}`);
+        if (user_address) log(`[DEBUG] User address: ${user_address}`);
 
         // Check if this is a local NFT (has "local_" prefix)
         if (combined_id.startsWith('local_')) {
             const actualId = combined_id.replace('local_', '');
-            console.log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
+            log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
 
             try {
-                const nft = await findNftByIdOrTokenId(combined_id);
+                let nft = await findNftByIdOrTokenId(combined_id);
                 if (!nft) {
+                    log(`[DEBUG] NFT not found for id: ${combined_id} (actualId: ${actualId})`);
+
+                    // Try to debug why
+                    if (mongoose.Types.ObjectId.isValid(actualId)) {
+                        const directFind = await NFT.findById(actualId);
+                        log(`[DEBUG] Direct findById('${actualId}') result: ${directFind ? 'FOUND' : 'NULL'}`);
+                    } else {
+                        log(`[DEBUG] '${actualId}' is NOT a valid ObjectId`);
+                    }
+
                     return res.status(404).json({
                         success: false,
                         error: 'NFT not found'
@@ -1270,9 +1393,9 @@ export const getNftByCombinedId = async (req, res) => {
                 let blockchainData = null;
                 try {
                     blockchainData = await web3Utils.getNftMetadata(nft.token_id);
-                    console.log(`[DEBUG] Blockchain data retrieved:`, blockchainData);
+                    log(`[DEBUG] Blockchain data retrieved for token ${nft.token_id}`);
                 } catch (e) {
-                    console.warn(`[WARN] Could not fetch blockchain data: ${e.message}`);
+                    log(`[WARN] Could not fetch blockchain data: ${e.message}`);
                     blockchainData = null;
                 }
 
@@ -1285,9 +1408,25 @@ export const getNftByCombinedId = async (req, res) => {
                             user_address: user_address.toLowerCase()
                         });
                         liked = !!like;
-                        console.log(`[DEBUG] Like status for user ${user_address}: ${liked}`);
                     } catch (e) {
-                        console.warn(`[WARN] Could not check like status: ${e.message}`);
+                        log(`[WARN] Could not check like status: ${e.message}`);
+                    }
+                }
+
+                // Resolve wId if rented
+                let wId = null;
+                if (nft.is_rented) {
+                    try {
+                        const wrapped = await WrappedNft.findOne({
+                            originalNftContract: { $regex: new RegExp(`^${nft.contract_address}$`, 'i') },
+                            originalTokenId: nft.token_id,
+                            status: 'Active'
+                        }).sort({ createdAt: -1 });
+                        if (wrapped) {
+                            wId = wrapped.wId;
+                        }
+                    } catch (e) {
+                        log(`[WARN] Could not resolve wId: ${e.message}`);
                     }
                 }
 
@@ -1301,6 +1440,7 @@ export const getNftByCombinedId = async (req, res) => {
                     token_uri: nft.token_uri,
                     price: nft.price != null ? parseFloat(nft.price) : null,
                     is_listed: nft.is_listed,
+                    is_rentable: nft.is_rentable || false,
                     is_auction: nft.is_auction,
                     auction_end_time: nft.auction_end_time || null,
                     current_bid: nft.current_bid != null ? parseFloat(nft.current_bid) : null,
@@ -1308,6 +1448,8 @@ export const getNftByCombinedId = async (req, res) => {
                     owner_address: nft.owner_address,
                     creator_address: nft.creator_address,
                     royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
+                    is_rented: nft.is_rented || false,
+                    wId: wId,
                     collection: nft.nft_collection || 'NFT Collection',
                     category: nft.category,
                     created_at: nft.created_at,
@@ -1316,14 +1458,12 @@ export const getNftByCombinedId = async (req, res) => {
                     liked: liked // Add the liked status
                 };
 
-                console.log(`[DEBUG] Returning NFT data with liked: ${liked}`);
-
                 return res.json({
                     success: true,
                     data: nftData
                 });
             } catch (error) {
-                console.error(`[ERROR] Error finding local NFT: ${error}`);
+                log(`[ERROR] Error finding local NFT: ${error}`);
                 return res.status(404).json({
                     success: false,
                     error: 'Local NFT not found'

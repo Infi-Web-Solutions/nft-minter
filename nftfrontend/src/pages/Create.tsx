@@ -20,7 +20,7 @@ import { apiUrl } from '@/config';
 import { getNFTMarketplaceAddress } from '@/services/configService';
 
 // Import ABI
-import NFTMarketplaceABI from '../../../smartcontract/artifacts/contracts/nftmarketplace.sol/NFTMarketplace.json';
+import NFTMarketplaceABI from '@/abis/NFTMarketplace.json';
 
 const Create = () => {
   const { address, signer } = useWallet();

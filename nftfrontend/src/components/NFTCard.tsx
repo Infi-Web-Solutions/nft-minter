@@ -722,14 +722,12 @@ const NFTCard = ({
                     </Button>
                   )}
                   {loanStatus !== 'Requested' && loanStatus !== 'Funded' && isOwner && isRentable && isRented && (
-                    <Button
-                      size="sm"
-                      className="bg-orange-500 cursor-not-allowed whitespace-nowrap text-xs px-2 text-white"
-                      disabled
+                    <Badge
+                      className="bg-orange-500 whitespace-nowrap text-xs px-2 py-1 text-white border-0"
                       title="This NFT is currently rented out"
                     >
                       Rented Out
-                    </Button>
+                    </Badge>
                   )}
 
                   {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !is_listed && !isWrapped && !isRentable && (
@@ -742,7 +740,7 @@ const NFTCard = ({
                       {isCreator ? "Sold" : "Not for Sale"}
                     </Button>
                   )}
-                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !isRentable && !isSeller && is_listed && (
+                  {loanStatus !== 'Requested' && loanStatus !== 'Funded' && !isOwner && !isRentable && !isRented && !isSeller && is_listed && (
                     <Button
                       size="sm"
                       className="bg-gradient-to-r from-purple-500 to-blue-600 whitespace-nowrap text-xs px-2 mr-1"
@@ -767,18 +765,26 @@ const NFTCard = ({
                   {/* Rent Button */}
                   {/* Rent Button */}
                   {isRentable && !isOwner && !isWrapped && (
-                    <Button
-                      size="sm"
-                      className={`${isRented ? "bg-orange-500 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"} whitespace-nowrap text-xs px-2 ml-1`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!isRented && onRent) onRent();
-                      }}
-                      disabled={isRented}
-                      title={isRented ? "This NFT is currently rented" : "Rent this NFT"}
-                    >
-                      {isRented ? "Rented" : "Rent Now"}
-                    </Button>
+                    isRented ? (
+                      <Badge
+                        className="bg-orange-500 whitespace-nowrap text-xs px-2 py-1 ml-1 text-white border-0"
+                        title="This NFT is currently rented"
+                      >
+                        Rented
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 whitespace-nowrap text-xs px-2 ml-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onRent) onRent();
+                        }}
+                        title="Rent this NFT"
+                      >
+                        Rent Now
+                      </Button>
+                    )
                   )}
                 </>
               )}

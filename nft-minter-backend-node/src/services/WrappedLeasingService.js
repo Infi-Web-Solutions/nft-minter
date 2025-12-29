@@ -381,6 +381,34 @@ export class WrappedLeasingService {
             networkRpc: process.env.RPC_URL || 'http://localhost:8545'
         };
     }
+
+    // Find active wNFT for an original NFT
+    async getWrappedForOriginal(originalContract, originalTokenId) {
+        try {
+            // Find ACTIVE wrapped NFT with matching original details
+            const wNFT = await WrappedNft.findOne({
+                originalNftContract: new RegExp(`^${originalContract}$`, 'i'), // Case insensitive
+                originalTokenId: originalTokenId,
+                status: 'Active'
+            }).sort({ wId: -1 }); // Get latest
+
+            if (!wNFT) return null;
+
+            // Double check expiry
+            const now = Math.floor(Date.now() / 1000);
+            const isExpired = wNFT.validUntil < now;
+
+            return {
+                wId: wNFT.wId,
+                owner: wNFT.owner,
+                isActive: !isExpired,
+                validUntil: wNFT.validUntil
+            };
+        } catch (error) {
+            console.error('Service reverse lookup error:', error);
+            throw error;
+        }
+    }
 }
 
 // Singleton export

@@ -12,6 +12,7 @@ const listingSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   rentedBy: { type: String },
   rentalExpiresAt: { type: Date },
+  listingExpiresAt: { type: Date },
   remainingDuration: { type: Number, default: 0 }
 });
 

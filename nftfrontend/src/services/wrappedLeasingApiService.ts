@@ -528,6 +528,20 @@ class WrappedLeasingApiService {
       throw new Error(error.message || 'Failed to approve NFT');
     }
   }
+  /**
+   * Get active wrapped NFT for a specific original NFT
+   */
+  async getWrappedNFTForOriginal(originalContract: string, originalTokenId: string) {
+    try {
+      const response = await this.api.get(`/reverse-lookup/${originalContract}/${originalTokenId}`);
+      // Response structure: { success: true, data: { wId, owner, ... } }
+      return response.data.data;
+    } catch (error: any) {
+      // It's expected to fail if no wNFT exists, so just return null
+      // console.log('Reverse lookup not found:', error.response?.data || error.message);
+      return null;
+    }
+  }
 }
 
 export const wrappedLeasingApiService = new WrappedLeasingApiService();

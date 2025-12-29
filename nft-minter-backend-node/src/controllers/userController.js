@@ -384,20 +384,36 @@ export const getUserCreatedNFTs = async (req, res) => {
         const { walletAddress } = req.params;
         const nfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } }).lean();
         console.log(`[DEBUG] getUserCreatedNFTs found ${nfts.length} NFTs for user ${walletAddress}`);
-        const nfts_data = nfts.map(nft => ({
-            id: `local_${nft._id}`,
-            token_id: nft.token_id,
-            name: nft.name,
-            description: nft.description,
-            image_url: nft.image_url,
-            price: nft.price != null ? parseFloat(nft.price) : null,
-            is_listed: nft.is_listed,
-            is_auction: nft.is_auction,
-            owner_address: nft.owner_address,
-            creator_address: nft.creator_address,
-            collection: nft.nft_collection || 'NFT Collection',
-            category: nft.category,
-            created_at: nft.created_at,
+        const nfts_data = await Promise.all(nfts.map(async nft => {
+            const data = {
+                id: `local_${nft._id}`,
+                token_id: nft.token_id,
+                name: nft.name,
+                description: nft.description,
+                image_url: nft.image_url,
+                price: nft.price != null ? parseFloat(nft.price) : null,
+                is_listed: nft.is_listed,
+                is_auction: nft.is_auction,
+                is_rentable: nft.is_rentable,
+                is_rented: nft.is_rented,
+                owner_address: nft.owner_address,
+                creator_address: nft.creator_address,
+                collection: nft.nft_collection || 'NFT Collection',
+                category: nft.category,
+                created_at: nft.created_at,
+            };
+
+            if (nft.is_rented) {
+                const wrappedNftModule = await import('../models/wrappedNft.js');
+                const WrappedNft = wrappedNftModule.default;
+                const wNft = await WrappedNft.findOne({
+                    originalNftContract: { $regex: new RegExp(`^${nft.contract_address || ''}$`, 'i') },
+                    originalTokenId: nft.token_id,
+                    status: 'Active'
+                }).sort({ wId: -1 });
+                if (wNft) data.wId = wNft.wId;
+            }
+            return data;
         }));
         res.json({ success: true, data: nfts_data });
     } catch (error) {
@@ -412,20 +428,36 @@ export const getUserNfts = async (req, res) => {
         // Only fetch NFTs owned by the user
         const owned_nfts = await NFT.find({ owner_address: { $regex: new RegExp(`^${walletAddress}$`, 'i') } }).lean();
 
-        const nfts_data = owned_nfts.map(nft => ({
-            id: `local_${nft._id}`,
-            token_id: nft.token_id,
-            name: nft.name,
-            description: nft.description,
-            image_url: nft.image_url,
-            price: nft.price != null ? parseFloat(nft.price) : null,
-            is_listed: nft.is_listed,
-            is_auction: nft.is_auction,
-            owner_address: nft.owner_address,
-            creator_address: nft.creator_address,
-            collection: nft.nft_collection || 'NFT Collection',
-            category: nft.category,
-            created_at: nft.created_at,
+        const nfts_data = await Promise.all(owned_nfts.map(async nft => {
+            const data = {
+                id: `local_${nft._id}`,
+                token_id: nft.token_id,
+                name: nft.name,
+                description: nft.description,
+                image_url: nft.image_url,
+                price: nft.price != null ? parseFloat(nft.price) : null,
+                is_listed: nft.is_listed,
+                is_auction: nft.is_auction,
+                is_rentable: nft.is_rentable,
+                is_rented: nft.is_rented,
+                owner_address: nft.owner_address,
+                creator_address: nft.creator_address,
+                collection: nft.nft_collection || 'NFT Collection',
+                category: nft.category,
+                created_at: nft.created_at,
+            };
+
+            if (nft.is_rented) {
+                const wrappedNftModule = await import('../models/wrappedNft.js');
+                const WrappedNft = wrappedNftModule.default;
+                const wNft = await WrappedNft.findOne({
+                    originalNftContract: { $regex: new RegExp(`^${nft.contract_address || ''}$`, 'i') },
+                    originalTokenId: nft.token_id,
+                    status: 'Active'
+                }).sort({ wId: -1 });
+                if (wNft) data.wId = wNft.wId;
+            }
+            return data;
         }));
         console.log(`[DEBUG] getUserNfts found ${nfts_data} NFTs for user ${walletAddress}`);
         res.json({ success: true, data: nfts_data });
@@ -633,6 +665,8 @@ export const getUserLikedNfts = async (req, res) => {
                     price: nft.price != null ? parseFloat(nft.price) : null,
                     is_listed: Boolean(nft.is_listed),
                     is_auction: Boolean(nft.is_auction),
+                    is_rentable: Boolean(nft.is_rentable),
+                    is_rented: Boolean(nft.is_rented),
                     owner_address: nft.owner_address || '',
                     creator_address: nft.creator_address || '',
                     collection: nft.nft_collection || 'NFT Collection',
@@ -642,6 +676,17 @@ export const getUserLikedNfts = async (req, res) => {
                     liked: true,
                     favorited_at: favorite.created_at || null
                 };
+
+                if (nft.is_rented) {
+                    const wrappedNftModule = await import('../models/wrappedNft.js');
+                    const WrappedNft = wrappedNftModule.default;
+                    const wNft = await WrappedNft.findOne({
+                        originalNftContract: { $regex: new RegExp(`^${nft.contract_address || ''}$`, 'i') },
+                        originalTokenId: nft.token_id,
+                        status: 'Active'
+                    }).sort({ wId: -1 });
+                    if (wNft) nftData.wId = wNft.wId;
+                }
 
                 likedNfts.push(nftData);
             } catch (itemError) {
@@ -743,23 +788,39 @@ export const getUserLikedNftsAggregation = async (req, res) => {
             }
         ]);
 
-        const processedNfts = likedNfts.map(item => ({
-            id: `local_${item.nft_data._id}`,
-            token_id: item.nft_data.token_id || null,
-            name: item.nft_data.name || 'Unnamed NFT',
-            description: item.nft_data.description || '',
-            image_url: item.nft_data.image_url || '',
-            price: item.nft_data.price != null ? parseFloat(item.nft_data.price) : null,
-            is_listed: Boolean(item.nft_data.is_listed),
-            is_auction: Boolean(item.nft_data.is_auction),
-            owner_address: item.nft_data.owner_address || '',
-            creator_address: item.nft_data.creator_address || '',
-            collection: item.nft_data.nft_collection || 'NFT Collection',
-            category: item.nft_data.category || 'other',
-            created_at: item.nft_data.created_at || null,
-            source: 'local',
-            liked: true,
-            favorited_at: item.created_at || null
+        const processedNfts = await Promise.all(likedNfts.map(async item => {
+            const nftData = {
+                id: `local_${item.nft_data._id}`,
+                token_id: item.nft_data.token_id || null,
+                name: item.nft_data.name || 'Unnamed NFT',
+                description: item.nft_data.description || '',
+                image_url: item.nft_data.image_url || '',
+                price: item.nft_data.price != null ? parseFloat(item.nft_data.price) : null,
+                is_listed: Boolean(item.nft_data.is_listed),
+                is_auction: Boolean(item.nft_data.is_auction),
+                is_rentable: Boolean(item.nft_data.is_rentable),
+                is_rented: Boolean(item.nft_data.is_rented),
+                owner_address: item.nft_data.owner_address || '',
+                creator_address: item.nft_data.creator_address || '',
+                collection: item.nft_data.nft_collection || 'NFT Collection',
+                category: item.nft_data.category || 'other',
+                created_at: item.nft_data.created_at || null,
+                source: 'local',
+                liked: true,
+                favorited_at: item.created_at || null
+            };
+
+            if (item.nft_data.is_rented) {
+                const wrappedNftModule = await import('../models/wrappedNft.js');
+                const WrappedNft = wrappedNftModule.default;
+                const wNft = await WrappedNft.findOne({
+                    originalNftContract: { $regex: new RegExp(`^${item.nft_data.contract_address || ''}$`, 'i') },
+                    originalTokenId: item.nft_data.token_id,
+                    status: 'Active'
+                }).sort({ wId: -1 });
+                if (wNft) nftData.wId = wNft.wId;
+            }
+            return nftData;
         }));
 
         console.log(`[DEBUG] Aggregation returned ${processedNfts.length} liked NFTs`);

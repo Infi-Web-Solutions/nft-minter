@@ -1,6 +1,9 @@
 import Transaction from '../models/transaction.js';
 import Favorite from '../models/favorite.js';
 import NFT from '../models/nft.js';
+import RentalTransaction from '../models/rentalTransaction.js';
+import { ethers } from 'ethers';
+import mongoose from 'mongoose';
 
 // Get all activities with filtering and pagination
 export const getActivities = async (req, res) => {
@@ -11,8 +14,8 @@ export const getActivities = async (req, res) => {
         const filter = {};
 
         if (nft) {
-            // Check if nft is a valid ObjectId
-            if (nft.match(/^[0-9a-fA-F]{24}$/)) {
+            // Validate NFT ID format
+            if (mongoose.Types.ObjectId.isValid(nft)) {
                 filter.nft = nft;
             } else {
                 console.warn(`[getActivities] Invalid NFT ID format: ${nft}, ignoring filter`);
@@ -76,13 +79,89 @@ export const getActivities = async (req, res) => {
             .skip(skip)
             .limit(parseInt(limit));
 
-        // Filter out activities with unknown NFTs (where nft is null or undefined)
+        // FETCH RENTAL TRANSACTIONS IF SEARCHING BY NFT OR USER
+        let rentalActivities = [];
+        if (nft || user) {
+            const rentalFilter = {};
+            if (nft && nft.match(/^[0-9a-fA-F]{24}$/)) {
+                const nftDoc = await NFT.findById(nft);
+                if (nftDoc) {
+                    rentalFilter.nftAddress = { $regex: new RegExp(`^${nftDoc.contract_address || ''}$`, 'i') };
+                    rentalFilter.tokenId = nftDoc.token_id;
+                }
+            } else if (user) {
+                rentalFilter.$or = [
+                    { owner: user.toLowerCase() },
+                    { renter: user.toLowerCase() }
+                ];
+            }
+
+            const rentals = await RentalTransaction.find(rentalFilter)
+                .sort({ createdAt: -1 })
+                .limit(parseInt(limit));
+
+            try {
+                rentalActivities = rentals.map(r => {
+                    let rentPrice = null;
+                    try {
+                        if (r.rentAmount && r.rentAmount !== "0") {
+                            rentPrice = ethers.formatEther(r.rentAmount);
+                        } else if (r.pricePerSecond && r.pricePerSecond !== "0") {
+                            // pricePerSecond * 86400 (one day)
+                            rentPrice = ethers.formatEther(BigInt(r.pricePerSecond) * 86400n);
+                        }
+                    } catch (e) {
+                        console.warn(`[getActivities] Error formatting rental price for ${r._id}:`, e.message);
+                    }
+
+                    return {
+                        id: r._id,
+                        type: r.type === 'Listed' ? 'rent_listed' : r.type === 'Rented' ? 'rented' : r.type.toLowerCase(),
+                        nft: r.nftAddress,
+                        from: {
+                            address: r.owner || '',
+                            name: r.owner ? r.owner.slice(0, 6) + '...' + r.owner.slice(-4) : 'Unknown',
+                        },
+                        to: {
+                            address: r.renter || '',
+                            name: r.renter ? r.renter.slice(0, 6) + '...' + r.renter.slice(-4) : 'N/A',
+                        },
+                        price: rentPrice,
+                        timestamp: r.createdAt,
+                        time_ago: getTimeAgo(r.createdAt),
+                        transaction_hash: r.transactionHash,
+                        block_number: r.blockNumber || 0
+                    };
+                });
+            } catch (mapErr) {
+                console.error('[ERROR] Error mapping rental activities:', mapErr);
+                rentalActivities = [];
+            }
+
+            // Try to attach NFT data to rental activities if we have it
+            if (nft && rentalActivities.length > 0 && mongoose.Types.ObjectId.isValid(nft)) {
+                try {
+                    const nftDoc = await NFT.findById(nft);
+                    if (nftDoc) {
+                        rentalActivities.forEach(ra => {
+                            ra.nft = {
+                                id: nftDoc.token_id,
+                                name: nftDoc.name,
+                                image_url: nftDoc.image_url,
+                                collection: nftDoc.nft_collection || nftDoc.collection || 'NFT Marketplace',
+                                token_id: nftDoc.token_id
+                            };
+                        });
+                    }
+                } catch (err) {
+                    console.warn(`[getActivities] Error fetching NFT doc for rentals: ${err.message}`);
+                }
+            }
+        }
+
         const validActivities = activities.filter(activity => activity.nft != null);
 
-        const total_items = await Transaction.countDocuments(filter);
-        const total_pages = Math.ceil(total_items / parseInt(limit));
-
-        // Transform activities to match frontend format
+        // Transform standard activities
         const transformedActivities = validActivities.map(activity => ({
             id: activity._id,
             type: activity.transaction_type,
@@ -112,14 +191,45 @@ export const getActivities = async (req, res) => {
             gas_price: activity.gas_price || null
         }));
 
+        // Combine and sort
+        const allTransformedActivities = [...transformedActivities, ...rentalActivities]
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, parseInt(limit));
+
+        const total_transactions = await Transaction.countDocuments(filter);
+        let total_rentals = 0;
+        if (nft || user) {
+            const rentalFilter = {};
+            if (nft && mongoose.Types.ObjectId.isValid(nft)) {
+                try {
+                    const nftDoc = await NFT.findById(nft);
+                    if (nftDoc) {
+                        rentalFilter.nftAddress = { $regex: new RegExp(`^${nftDoc.contract_address || ''}$`, 'i') };
+                        rentalFilter.tokenId = nftDoc.token_id;
+                    }
+                } catch (err) {
+                    console.warn(`[getActivities] Error fetching NFT doc for count: ${err.message}`);
+                }
+            } else if (user) {
+                rentalFilter.$or = [
+                    { owner: user.toLowerCase() },
+                    { renter: user.toLowerCase() }
+                ];
+            }
+            total_rentals = await RentalTransaction.countDocuments(rentalFilter);
+        }
+
+        const grand_total = total_transactions + total_rentals;
+        const total_pages = Math.ceil(grand_total / parseInt(limit));
+
         res.status(200).json({
             success: true,
-            data: transformedActivities,
+            data: allTransformedActivities,
             pagination: {
                 page: parseInt(page),
                 total_pages,
-                total_items,
-                has_next: parseInt(page) < total_pages,
+                total_items: grand_total,
+                has_next: (parseInt(page) * parseInt(limit)) < grand_total,
                 has_previous: parseInt(page) > 1
             }
         });

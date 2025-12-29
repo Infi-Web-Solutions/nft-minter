@@ -27,6 +27,10 @@ export interface NFT {
   contract_address?: string;
   // Flag to indicate this NFT represents a wrapped leasing token (wNFT)
   isWrapped?: boolean;
+  is_rentable?: boolean;
+  is_rented?: boolean;
+  listingId?: number | string;
+  wId?: number | string;
 }
 
 export interface NFTResponse {
@@ -45,11 +49,29 @@ import { apiUrl } from '../config';
 class NFTService {
   private baseUrl = apiUrl('');
 
-  async getCombinedNFTs(userAddress?: string): Promise<NFT[]> {
+  async getCombinedNFTs(userAddress?: string, filters: any = {}, sortBy: string = 'recent'): Promise<NFT[]> {
     try {
-      const url = userAddress
-        ? apiUrl(`/nfts/combined/?user_address=${userAddress}`)
-        : apiUrl('/nfts/combined/');
+      const params = new URLSearchParams();
+      if (userAddress) params.append('user_address', userAddress);
+
+      // Add filters
+      if (filters.status && filters.status.length > 0) {
+        filters.status.forEach((s: string) => params.append('status', s));
+      }
+      if (filters.collections && filters.collections.length > 0) {
+        filters.collections.forEach((c: string) => params.append('collection', c));
+      }
+      if (filters.blockchain && filters.blockchain.length > 0) {
+        filters.blockchain.forEach((b: string) => params.append('blockchain', b));
+      }
+      if (filters.priceRange) {
+        params.append('price_min', filters.priceRange[0].toString());
+        params.append('price_max', filters.priceRange[1].toString());
+      }
+
+      params.append('sort_by', sortBy);
+
+      const url = apiUrl(`/nfts/combined/?${params.toString()}`);
 
       const response = await fetch(url);
       const data: NFTResponse = await response.json();

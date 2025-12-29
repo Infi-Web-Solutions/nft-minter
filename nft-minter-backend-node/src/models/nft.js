@@ -12,6 +12,7 @@ const nftSchema = new mongoose.Schema({
     price: { type: Number },
     is_listed: { type: Boolean, default: false },
     is_rentable: { type: Boolean, default: false },
+    is_rented: { type: Boolean, default: false },
     is_auction: { type: Boolean, default: false },
     auction_end_time: { type: Date },
     current_bid: { type: Number },

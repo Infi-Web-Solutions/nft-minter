@@ -5,15 +5,17 @@ const LEASING_MARKETPLACE_ABI = [
     "function listForRent(address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration) external",
     "function rent(uint256 listingId, uint256 durationSeconds) external payable",
     "function getTotalCost(uint256 listingId, uint256 durationSeconds) external view returns (uint256 rentAmount, uint256 deposit, uint256 platformFee, uint256 wrapFee, uint256 totalRequired)",
-    "function listings(uint256) external view returns (address owner, address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration, uint8 status)",
+    "function listings(uint256) external view returns (address owner, address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration, uint256 listingExpiresAt, uint8 status)",
     "function rentals(uint256) external view returns (address renter, uint256 wId, uint256 deposit, uint256 rentAmount, uint256 expiresAt)",
     "function pendingBalances(address) external view returns (uint256)",
     "function withdraw() external",
     "function refundDeposit(uint256 listingId) external",
     "function cancelListing(uint256 listingId) external",
-    "event LeaseListed(uint256 indexed listingId, address indexed owner, address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration)",
-    "event LeaseRented(uint256 indexed listingId, address indexed renter, uint256 wId, uint256 rentPaid, uint256 depositHeld, uint256 expiresAt)",
-    "function listingCounter() external view returns (uint256)"
+    "function listingCounter() external view returns (uint256)",
+    "function relistRemaining(uint256 listingId) external",
+    "event LeaseListed(uint256 indexed listingId, address indexed owner, address indexed nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration, uint256 listingExpiresAt)",
+    "event LeaseRented(uint256 indexed listingId, address indexed renter, uint256 wId, uint256 rentAmount, uint256 deposit, uint256 expiresAt)",
+    "event LeaseCancelled(uint256 indexed listingId)"
 ];
 
 const ERC721_ABI = [
@@ -254,26 +256,52 @@ class LeasingMarketplaceService {
         return await this.contract.pendingBalances(address);
     }
 
+    async getRentalInfo(listingId: number) {
+        if (!this.contract) throw new Error("Not initialized");
+        return await this.contract.rentals(listingId);
+    }
+
+    async relistRemaining(listingId: number) {
+        if (!this.contract) throw new Error("Not initialized");
+        const tx = await this.contract.relistRemaining(listingId);
+        return await tx.wait();
+    }
+
     // Helper to find the latest active listing ID for a given NFT
     async getListingIdForNFT(nftAddress: string, tokenId: string): Promise<number | null> {
         if (!this.contract) throw new Error("Not initialized");
+        console.log('[LeasingService] Looking for listing:', { nftAddress, tokenId });
 
         try {
             // 1. Try events first (Efficient)
+            console.log('[LeasingService] Trying event filter...');
             const filter = this.contract.filters.LeaseListed();
             const events = await this.contract.queryFilter(filter);
+            console.log('[LeasingService] Found', events.length, 'LeaseListed events');
 
-            const matchingEvents = events.filter((e: any) =>
-                e.args &&
-                e.args.nft.toLowerCase() === nftAddress.toLowerCase() &&
-                e.args.tokenId.toString() === tokenId.toString()
-            );
+            const matchingEvents = events.filter((e: any) => {
+                if (!e.args) return false;
+                const eventNft = e.args.nft.toLowerCase();
+                const eventTokenId = e.args.tokenId.toString();
 
+                // Compare addresses
+                if (eventNft !== nftAddress.toLowerCase()) return false;
+
+                // Compare token IDs robustly (handle potential hex vs decimal mismatch)
+                try {
+                    return BigInt(eventTokenId) === BigInt(tokenId);
+                } catch {
+                    return eventTokenId === tokenId;
+                }
+            });
+
+            console.log('[LeasingService] Matching events:', matchingEvents.length);
             if (matchingEvents.length > 0) {
                 // Get the latest event
                 const latestEvent = matchingEvents[matchingEvents.length - 1];
                 // @ts-ignore
                 const listingId = Number(latestEvent.args[0]);
+                console.log('[LeasingService] Latest listing ID from event:', listingId);
 
                 // Verify it's still active
                 const listing = await this.contract.listings(listingId);
@@ -288,12 +316,21 @@ class LeasingMarketplaceService {
 
         // 2. Fallback: Scan recent listings (Robust)
         try {
+            console.log('[LeasingService] Starting manual scan...');
             const counter = Number(await this.contract.listingCounter());
+            console.log('[LeasingService] Listing counter:', counter);
             // Scan last 100 listings
             const scanDepth = 100;
-            const start = Math.max(1, counter - scanDepth + 1);
+            // IDs are 0 to counter-1
+            const maxId = counter - 1;
+            if (maxId < 0) {
+                console.log('[LeasingService] No listings exist (counter=0)');
+                return null;
+            }
 
-            for (let i = counter; i >= start; i--) {
+            const start = Math.max(0, maxId - scanDepth + 1);
+
+            for (let i = maxId; i >= start; i--) {
                 const listing = await this.contract.listings(i);
                 if (
                     listing.nft.toLowerCase() === nftAddress.toLowerCase() &&

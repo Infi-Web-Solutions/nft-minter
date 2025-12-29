@@ -1,13 +1,8 @@
-
-
 import pkg from 'express';
 const { Request, Response } = pkg;
 import { wrappedLeasingService } from '../services/WrappedLeasingService.js';
 import WrappedNft from '../models/wrappedNft.js';
 
-/**
- * Validate NFT ownership and approval status
- */
 export const validateNFT = async (req, res) => {
   const { nftContract, tokenId, ownerAddress } = req.query;
 
@@ -302,13 +297,11 @@ export const getUserWrappedNFTs = async (req, res) => {
     // Update expired statuses first
     await WrappedNft.updateExpiredStatuses();
 
-    // Find NFTs where user is owner or renter, EXCLUDING unwrapped
+    // Find NFTs where user is the RENTER (current holder of wNFT), ONLY Active
+    // The original owner should NOT see these in their "Rented NFTs" section
     const wrappedNfts = await WrappedNft.find({
-      $or: [
-        { owner: { $regex: new RegExp(`^${userAddress}$`, 'i') } },
-        { renter: { $regex: new RegExp(`^${userAddress}$`, 'i') } }
-      ],
-      status: { $ne: 'Unwrapped' }
+      renter: { $regex: new RegExp(`^${userAddress}$`, 'i') },
+      status: 'Active'
     }).sort({ createdAt: -1 });
 
     return res.json({ success: true, data: wrappedNfts });
@@ -380,5 +373,22 @@ export const getWrappedDetails = async (req, res) => {
     return res
       .status(500)
       .json({ error: error.message || 'Failed to get wrapped NFT details' });
+  }
+};
+
+/**
+ * Get active wrapped NFT for original info
+ */
+export const getWrappedForOriginal = async (req, res) => {
+  const { originalContract, originalTokenId } = req.params;
+  try {
+    const result = await wrappedLeasingService.getWrappedForOriginal(originalContract, originalTokenId);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'No active wrapped NFT found' });
+    }
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('Reverse lookup error:', error.message || error);
+    return res.status(500).json({ error: error.message });
   }
 };

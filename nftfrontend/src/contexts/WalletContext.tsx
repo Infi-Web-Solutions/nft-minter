@@ -65,12 +65,88 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     }
   }, []);
 
+
+
+  const disconnectWallet = React.useCallback(() => {
+    setIsConnected(false);
+    setAddress(null);
+    setBalance(null);
+    setChainId(null);
+    setProvider(null);
+    setSigner(null);
+    setError(null);
+
+    // Clear localStorage
+    localStorage.removeItem('walletConnected');
+    localStorage.removeItem('walletAddress');
+  }, []);
+
+  const handleAccountsChanged = React.useCallback(async (accounts: string[]) => {
+    if (accounts.length === 0) {
+      // User disconnected their wallet
+      disconnectWallet();
+    } else {
+      // User switched accounts - only reconnect if different
+      if (accounts[0] !== address) {
+        await connectToWallet(accounts[0]);
+      }
+    }
+  }, [address, disconnectWallet]);
+
+  const handleChainChanged = React.useCallback(async (newChainIdHex: string) => {
+    // Instead of reloading, just update the state
+    // window.location.reload(); 
+    const newChainId = parseInt(newChainIdHex, 16);
+    setChainId(newChainId);
+
+    // Re-initialize provider to ensure it points to the right network
+    if (window.ethereum) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      setProvider(provider);
+      setSigner(signer);
+      await web3Service.initialize(provider);
+    }
+  }, []);
+
+  const handleDisconnect = React.useCallback(() => {
+    disconnectWallet();
+  }, [disconnectWallet]);
+
+  // Check if wallet is already connected on mount
+  useEffect(() => {
+    checkWalletConnection();
+  }, []);
+
+  // Listen for account changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.ethereum) {
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      window.ethereum.on('chainChanged', handleChainChanged);
+      window.ethereum.on('disconnect', handleDisconnect);
+
+      return () => {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+        window.ethereum.removeListener('disconnect', handleDisconnect);
+      };
+    }
+  }, [handleAccountsChanged, handleChainChanged, handleDisconnect]);
+
   const checkWalletConnection = async () => {
     try {
       if (window.ethereum) {
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
         if (accounts.length > 0) {
-          await connectToWallet(accounts[0]);
+          // Verify if we have a saved state to avoid unnecessary re-connects
+          const savedAddress = localStorage.getItem('walletAddress');
+          if (savedAddress && savedAddress.toLowerCase() === accounts[0].toLowerCase()) {
+            await connectToWallet(accounts[0]);
+          } else if (!savedAddress) {
+            // If no saved address but metamask has accounts, might want to auto-connect or wait for user
+            // Let's auto-connect for better UX if they authorized before
+            await connectToWallet(accounts[0]);
+          }
         }
       }
     } catch (err) {
@@ -81,15 +157,15 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const connectWallet = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       if (!window.ethereum) {
         throw new Error('No Ethereum wallet detected. Please install MetaMask or another Web3 wallet.');
       }
 
       // Request account access
-      const accounts = await window.ethereum.request({ 
-        method: 'eth_requestAccounts' 
+      const accounts = await window.ethereum.request({
+        method: 'eth_requestAccounts'
       });
 
       if (accounts.length > 0) {
@@ -106,6 +182,11 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   };
 
   const connectToWallet = async (accountAddress: string) => {
+    // Avoid re-connecting if already connected to the same address
+    if (isConnected && address === accountAddress && provider && signer) {
+      return;
+    }
+
     try {
       if (!window.ethereum) throw new Error('No Ethereum provider found');
 
@@ -132,26 +213,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       // Create/update user profile in backend
       const profileCreated = await createOrUpdateProfile(accountAddress);
       if (profileCreated) {
-        toast.success('Profile initialized successfully');
+        // toast.success('Profile initialized successfully'); // Reduced noise
       }
     } catch (err: any) {
       console.error('Error connecting to wallet:', err);
       setError(err.message || 'Failed to connect to wallet');
     }
-  };
-
-  const disconnectWallet = () => {
-    setIsConnected(false);
-    setAddress(null);
-    setBalance(null);
-    setChainId(null);
-    setProvider(null);
-    setSigner(null);
-    setError(null);
-
-    // Clear localStorage
-    localStorage.removeItem('walletConnected');
-    localStorage.removeItem('walletAddress');
   };
 
   const switchNetwork = async (targetChainId: number) => {
@@ -190,25 +257,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       console.error('Error adding Sepolia network:', err);
       setError(err.message || 'Failed to add Sepolia network');
     }
-  };
-
-  const handleAccountsChanged = async (accounts: string[]) => {
-    if (accounts.length === 0) {
-      // User disconnected their wallet
-      disconnectWallet();
-    } else {
-      // User switched accounts
-      await connectToWallet(accounts[0]);
-    }
-  };
-
-  const handleChainChanged = async (chainId: string) => {
-    // Reload the page when chain changes
-    window.location.reload();
-  };
-
-  const handleDisconnect = () => {
-    disconnectWallet();
   };
 
   const value: WalletContextType = {

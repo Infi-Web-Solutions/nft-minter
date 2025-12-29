@@ -136,8 +136,11 @@ contract WrappedLeasing is ERC721URIStorageUpgradeable, ReentrancyGuardUpgradeab
     function transferFrom(address from, address to, uint256 tokenId) public virtual override(ERC721Upgradeable, IERC721) whenNotPaused {
         if (from != address(0) && to != address(0)) {
             WrappedInfo storage info = wrapped[tokenId];
-            require(info.active, "not active");
-            require(block.timestamp <= info.validUntil, "lease expired");
+            // Only enforce lease active/not-expired if NOT transferring back to original owner
+            if (to != info.owner) {
+                require(info.active, "not active");
+                require(block.timestamp <= info.validUntil, "lease expired");
+            }
         }
         super.transferFrom(from, to, tokenId);
     }

@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { ethers } from 'ethers';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { apiUrl } from '@/config';
@@ -767,8 +768,8 @@ const Profile = () => {
                       const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
                       const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
                       const listingInfo = activeListings.get(loanKey);
-                      const isRentable = !!listingInfo;
-                      const isRented = listingInfo?.status === 'Rented';
+                      const isRentable = !!listingInfo || nft.is_rentable || nft.is_rented;
+                      const isRented = listingInfo?.status === 'Rented' || nft.is_rented;
 
                       let seller = undefined;
                       if (listingInfo) {
@@ -798,7 +799,7 @@ const Profile = () => {
                           title={nft.name}
                           collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'NFT Collection'}
                           owner_address={nft.owner_address}
-                          is_listed={nft.is_listed}
+                          is_listed={(isRentable || isRented) ? false : nft.is_listed}
                           liked={isNFTLiked({ ...nft, id: nftId })}
                           onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                           canLike={true}
@@ -807,9 +808,7 @@ const Profile = () => {
                           isRented={isRented}
                           seller={seller}
                           creator_address={nft.creator_address}
-                          onClick={() => {
-                            window.location.href = `/nft/${nftId}`;
-                          }}
+                          onClick={isRented && nft.wId ? () => { window.location.href = `/wnft/${nft.wId}`; } : () => { window.location.href = `/nft/${nftId}`; }}
                           loanStatus={loanInfo?.status}
                           loanBorrower={loanInfo?.borrower}
                           loanId={loanInfo?.loanId}
@@ -857,8 +856,8 @@ const Profile = () => {
                       const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
                       const loanInfo = loanKey ? activeLoans.get(loanKey) : undefined;
                       const listingInfo = activeListings.get(loanKey);
-                      const isRentable = !!listingInfo;
-                      const isRented = listingInfo?.status === 'Rented';
+                      const isRentable = !!listingInfo || nft.is_rentable || nft.is_rented;
+                      const isRented = listingInfo?.status === 'Rented' || nft.is_rented;
 
                       let seller = undefined;
                       if (listingInfo) {
@@ -877,7 +876,7 @@ const Profile = () => {
                           title={nft.name}
                           collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'NFT Collection'}
                           owner_address={nft.owner_address}
-                          is_listed={nft.is_listed}
+                          is_listed={(isRentable || isRented) ? false : nft.is_listed}
                           liked={isNFTLiked({ ...nft, id: nftId })}
                           onLike={(newLikedState) => handleLikeToggle({ ...nft, id: nftId }, newLikedState)}
                           canLike={true}
@@ -886,9 +885,7 @@ const Profile = () => {
                           isRented={isRented}
                           seller={seller}
                           creator_address={nft.creator_address}
-                          onClick={() => {
-                            window.location.href = `/nft/${nftId}`;
-                          }}
+                          onClick={isRented && nft.wId ? () => { window.location.href = `/wnft/${nft.wId}`; } : () => { window.location.href = `/nft/${nftId}`; }}
                           loanStatus={loanInfo?.status}
                           loanBorrower={loanInfo?.borrower}
                           loanId={loanInfo?.loanId}
@@ -947,8 +944,8 @@ const Profile = () => {
 
                       const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${nft.token_id}` : '';
                       const listingInfo = activeListings.get(loanKey);
-                      const isRentable = !!listingInfo;
-                      const isRented = listingInfo?.status === 'Rented';
+                      const isRentable = !!listingInfo || nft.is_rentable || nft.is_rented;
+                      const isRented = listingInfo?.status === 'Rented' || nft.is_rented;
 
                       return (
                         <NFTCard
@@ -961,16 +958,14 @@ const Profile = () => {
                           title={nft.name}
                           collection={typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'NFT Collection'}
                           owner_address={nft.owner_address}
-                          is_listed={nft.is_listed}
+                          is_listed={(isRentable || isRented) ? false : (nft.is_listed || false)}
                           liked={true}
                           onLike={(newLikedState) => handleLikeToggle(nft, newLikedState)}
                           canLike={true}
                           source="local"
                           isRentable={isRentable}
                           isRented={isRented}
-                          onClick={() => {
-                            window.location.href = `/nft/${nftId}`;
-                          }}
+                          onClick={isRented && nft.wId ? () => { window.location.href = `/wnft/${nft.wId}`; } : () => { window.location.href = `/nft/${nftId}`; }}
                           onRequestLoan={() => {
                             setSelectedLoanNft({
                               contract: contractAddr,
@@ -1187,11 +1182,14 @@ const Profile = () => {
                             image={nft.image_url}
                             tokenId={nft.tokenId}
                             id={nftId}
-                            price={nft.listingPrice || (nft.feePaid ? (Number(nft.feePaid) / 1e18).toFixed(4) : '0')}
+                            price={
+                              nft.listingPrice ? nft.listingPrice :
+                                (nft.feePaid && nft.feePaid !== '0' ? parseFloat(ethers.formatEther(nft.feePaid)).toFixed(4) : '0')
+                            }
                             title={nft.name}
                             collection={nft.collection || 'Wrapped NFT'}
                             owner_address={address}
-                            is_listed={false}
+                            is_listed={!!nft.listingPrice}
                             liked={false}
                             canLike={false}
                             source="rented"

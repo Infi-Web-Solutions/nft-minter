@@ -105,6 +105,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
   const [myRentals, setMyRentals] = useState<any[]>([]);
   const [rentalsLoading, setRentalsLoading] = useState(false);
   const [finishedListing, setFinishedListing] = useState<any>(null);
+  const [lessorAddress, setLessorAddress] = useState<string>('');
+  const [currentRentalInfo, setCurrentRentalInfo] = useState<any>(null);
 
   // Rental cost breakdown state
   const [listingDetails, setListingDetails] = useState<{
@@ -112,6 +114,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     pricePerDay: string;
     minDays: number;
     maxDays: number;
+    listingExpiresAt: number;
   } | null>(null);
   const [rentalCost, setRentalCost] = useState<{
     rentAmount: string;
@@ -183,6 +186,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
             console.error('Error checking FeeManager config:', configError);
             setFeeManagerConfigured(false);
           }
+          setServicesInitialized(true);
         } catch (error) {
           console.error('Error initializing services:', error);
         }
@@ -246,7 +250,12 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
     setLoading(true);
     setNotFound(false);
+    setListingId(null);
+    setMarketplaceListingStatus(0);
+    setRentalCost(null);
     setNftData(null);
+    setIsWNFT(false);
+    setCurrentWNFTRemainingSeconds(null);
 
     try {
       const addrTrimmed = addr.trim();
@@ -401,6 +410,42 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
             toast.error('No NFT found on blockchain');
           }
         }
+
+        // Check if this is a wrapped NFT being searched directly (original address)
+        // If the owner is the WrappedLeasing contract, the user might be the wNFT holder
+        // We need to check if they hold the active wNFT for this token
+        const config = await import('@/services/configService'); // Re-import config for wrappedLeasingAddress
+        const wrappedLeasingAddress = await config.getWrappedLeasingAddress();
+
+        if (address && data.data?.owner_address &&
+          data.data.owner_address.toLowerCase() !== address.toLowerCase() &&
+          data.data.owner_address.toLowerCase() === wrappedLeasingAddress.toLowerCase()) {
+
+          try {
+            // Verify if user holds the wNFT for this original NFT
+            // This requires a new API endpoint or smart logic.
+            // For now, let's try to find an active wNFT for this original token in the user's list or by querying.
+            // Better approach: Ask backend "get active wNFT for original X token Y"
+            const wNFT = await wrappedLeasingApiService.getWrappedNFTForOriginal(addrTrimmed, idTrimmed);
+
+            if (wNFT && wNFT.owner.toLowerCase() === address.toLowerCase() && wNFT.isActive) {
+              toast.info("You hold the sub-lease (wNFT) for this asset. Switching to sub-lease mode.");
+              // Switch to wNFT context
+              setContractAddress(wrappedLeasingAddress);
+              setTokenId(wNFT.wId.toString());
+              setIsWNFT(true);
+              // Re-fetch with new details
+              // Note: This re-fetch might trigger the wNFT path above, which is desired.
+              // To avoid infinite loop, ensure the wNFT path handles the already set state.
+              // For now, let's just call handleSearch again with the new context.
+              // This will re-run the entire handleSearch with the wNFT details.
+              handleSearch(wrappedLeasingAddress, wNFT.wId.toString());
+              return; // Exit current handleSearch as a new one is triggered
+            }
+          } catch (e) {
+            console.log("Not holding wNFT for this wrapped asset", e);
+          }
+        }
       }
 
 
@@ -487,6 +532,16 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     // Log revert data if present
     if (error?.data) console.log('[Transaction] Error data:', error.data);
     if (error?.revert) console.log('[Transaction] Revert info:', error.revert);
+
+    // Filter out status mismatches for specific user-friendly messages
+    const msg = (error.message || '').toLowerCase();
+    const code = error.code;
+
+    if (msg.includes('not rentable') || msg.includes('not active') || (code === 'CALL_EXCEPTION' && msg.includes('missing revert data'))) {
+      toast.error('The listing status has changed. Please refresh and try again.');
+      checkMarketplaceStatus();
+      return;
+    }
 
     // Check for user rejection
     if (error?.code === 4001 ||
@@ -1039,20 +1094,41 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
   const [marketplaceListingStatus, setMarketplaceListingStatus] = useState<number | null>(null);
   const [isLister, setIsLister] = useState(false);
+  const [servicesInitialized, setServicesInitialized] = useState(false);
 
   const checkMarketplaceStatus = async () => {
     if (!contractAddress || !tokenId) return;
 
+    // Re-initialize service to ensure we're using the latest contract state
+    if (provider && signer) {
+      try {
+        await leasingMarketplaceService.initialize(provider, signer);
+      } catch (e) {
+        console.error('Failed to re-initialize marketplace service:', e);
+      }
+    }
+
+    // Clear current listing state while fetching
+    setListingId(null);
+    setMarketplaceListingStatus(0);
+    setListingDetails(null);
+    setRentalCost(null);
+    setIsWNFT(false);
+    setCurrentWNFTRemainingSeconds(null);
+
     // Check if owner is marketplace
     try {
+      console.log('[DEBUG] Checking listing for:', contractAddress, tokenId);
       const id = await leasingMarketplaceService.getListingIdForNFT(contractAddress, tokenId);
-      setListingId(id);
+      console.log('[DEBUG] Listing ID returned:', id);
 
-      if (id) {
+      if (id !== null) {
         setIsMarketplaceOwner(true);
         // Fetch details to check if I am the lister
         const listing = await leasingMarketplaceService.getListingDetails(id);
         setMarketplaceListingStatus(Number(listing.status));
+        setListingId(id); // Set ID after status to avoid effect race condition
+        setLessorAddress(listing.owner);
         console.log('[CollateralLeasingSidebar] Listing details:', listing);
 
         if (address && listing.owner.toLowerCase() === address.toLowerCase()) {
@@ -1061,28 +1137,63 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
           setIsLister(false);
         }
 
+        // Fetch rental info if rented
+        if (Number(listing.status) === 2) {
+          try {
+            const rental = await leasingMarketplaceService.getRentalInfo(id);
+            setCurrentRentalInfo({
+              renter: rental.renter,
+              wId: Number(rental.wId),
+              expiresAt: Number(rental.expiresAt)
+            });
+            console.log('[CollateralLeasingSidebar] Rental info:', rental);
+          } catch (rentalErr) {
+            console.error("Error fetching rental info", rentalErr);
+            setCurrentRentalInfo(null);
+          }
+        } else {
+          setCurrentRentalInfo(null);
+        }
+
+        // Store listing details for display
         // Store listing details for display
         const pricePerSecond = listing.pricePerSecond;
         const pricePerDay = ethers.formatEther(pricePerSecond * 86400n);
         const minDays = Number(listing.minDuration) / 86400;
-        const maxDays = Number(listing.maxDuration) / 86400;
+
+        // Calculate effective max duration based on hard expiry
+        const listingExpiresAt = Number(listing.listingExpiresAt);
+        const now = Math.floor(Date.now() / 1000);
+        let effectiveMaxSeconds = Number(listing.maxDuration);
+
+        // If listing has an expiry (non-zero), clamp effective max
+        if (listingExpiresAt > 0) {
+          const secondsUntilExpiry = Math.max(0, listingExpiresAt - now);
+          effectiveMaxSeconds = Math.min(effectiveMaxSeconds, secondsUntilExpiry);
+        }
+
+        const maxDays = effectiveMaxSeconds / 86400;
 
         setListingDetails({
           pricePerSecond,
           pricePerDay,
           minDays,
-          maxDays
+          maxDays,
+          listingExpiresAt
         });
 
         // Set default rent duration to min days, but clamp it to max days
+        // Ensure default is at least 1 unit if possible, or whatever fits
         const defaultDuration = Math.min(maxDays, Math.max(minDays, 1));
-        setRentDuration(defaultDuration.toString());
+
         if (maxDays < 1) {
           setRentDurationUnit('minutes');
-          setRentDuration((maxDays * 1440).toString());
+          // Default to full remaining minutes if less than an hour
+          const remainingMins = Math.floor(effectiveMaxSeconds / 60);
+          setRentDuration(remainingMins.toString());
         } else {
           setRentDurationUnit('days');
-          setRentDuration(Math.ceil(minDays).toString());
+          setRentDuration(Math.ceil(defaultDuration).toString());
         }
 
         console.log('[CollateralLeasingSidebar] Listing price info:', {
@@ -1094,7 +1205,11 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
       } else {
         setIsMarketplaceOwner(false);
         setIsLister(false);
+        setLessorAddress('');
         setListingDetails(null);
+        setCurrentRentalInfo(null);
+        setListingId(null);
+        setMarketplaceListingStatus(0);
 
         // Fetch finished listing for partial relist info
         try {
@@ -1116,7 +1231,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
   // Calculate rental cost when duration changes
   const calculateRentalCost = async () => {
-    if (!listingId || !rentDuration || parseInt(rentDuration) <= 0) {
+    if (listingId === null || !rentDuration || marketplaceListingStatus !== 1) {
       setRentalCost(null);
       return;
     }
@@ -1124,6 +1239,12 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setCalculatingCost(true);
     try {
       let durationInDays = parseFloat(rentDuration);
+      if (isNaN(durationInDays) || durationInDays <= 0) {
+        setRentalCost(null);
+        setCalculatingCost(false);
+        return;
+      }
+
       if (rentDurationUnit === 'hours') durationInDays = durationInDays / 24;
       if (rentDurationUnit === 'minutes') durationInDays = durationInDays / 1440;
 
@@ -1144,21 +1265,61 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
         }
       }
 
-      const cost = await leasingMarketplaceService.calculateCost(listingId, durationInDays);
-      setRentalCost({
-        rentAmount: ethers.formatEther(cost.rentAmount),
-        deposit: ethers.formatEther(cost.deposit),
-        platformFee: ethers.formatEther(cost.platformFee),
-        wrapFee: ethers.formatEther(cost.wrapFee),
-        totalRequired: ethers.formatEther(cost.totalRequired)
-      });
+      console.log(`[CollateralLeasingSidebar] Calculating cost for Listing ID: ${listingId}, Status: ${marketplaceListingStatus}, Duration: ${durationInDays}`);
+
+      try {
+        const cost = await leasingMarketplaceService.calculateCost(listingId, durationInDays);
+        setRentalCost({
+          rentAmount: ethers.formatEther(cost.rentAmount),
+          deposit: ethers.formatEther(cost.deposit),
+          platformFee: ethers.formatEther(cost.platformFee),
+          wrapFee: ethers.formatEther(cost.wrapFee),
+          totalRequired: ethers.formatEther(cost.totalRequired)
+        });
+      } catch (innerErr: any) {
+        // SILENT FAIL for status mismatches (e.g., someone else rents while sidebar is open)
+        const msg = (innerErr.message || '').toLowerCase();
+        const code = innerErr.code;
+
+        if (
+          msg.includes('not rentable') ||
+          msg.includes('not active') ||
+          msg.includes('missing revert data') ||
+          msg.includes('execution reverted') ||
+          code === 'CALL_EXCEPTION'
+        ) {
+          console.log(`[CollateralLeasingSidebar] Syncing status: Cost calc failed (revert/mismatch). Code: ${code}`);
+          setRentalCost(null);
+          checkMarketplaceStatus();
+          return;
+        }
+        throw innerErr;
+      }
+
     } catch (e: any) {
-      console.error("Error calculating rental cost", e);
       const errorMessage = e.message || 'Failed to calculate rental cost';
-      if (errorMessage.includes('FeeManager')) {
-        toast.error('FeeManager is not configured. Rental prices cannot be calculated.');
+      const lowercaseMsg = errorMessage.toLowerCase();
+
+      if (
+        lowercaseMsg.includes('not rentable') ||
+        lowercaseMsg.includes('not active') ||
+        lowercaseMsg.includes('missing revert data') ||
+        lowercaseMsg.includes('execution reverted') ||
+        e.code === 'CALL_EXCEPTION'
+      ) {
+        setRentalCost(null);
+        checkMarketplaceStatus();
+        return;
+      }
+
+      console.error("Error calculating rental cost", e);
+
+      if (errorMessage.includes('exceeds window')) {
+        toast.error('Rental duration exceeds listing expiration time.');
+      } else if (errorMessage.includes('FeeManager')) {
+        toast.error('Pricing service is currently unavailable.');
       } else {
-        toast.error(`Failed to calculate cost: ${errorMessage}`);
+        toast.error(`Price calculation error: ${errorMessage}`);
       }
       setRentalCost(null);
     } finally {
@@ -1166,21 +1327,30 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
   };
 
-  // Recalculate cost when duration changes
   useEffect(() => {
-    if (listingId && rentDuration && isMarketplaceOwner && !isLister) {
+    console.log('[Cost Calc] Effect triggered:', {
+      listingId,
+      rentDuration,
+      isMarketplaceOwner,
+      isLister,
+      marketplaceListingStatus,
+      willCalculate: listingId !== null && rentDuration && isMarketplaceOwner && !isLister && marketplaceListingStatus === 1
+    });
+    if (listingId !== null && rentDuration && isMarketplaceOwner && !isLister && marketplaceListingStatus === 1) {
       const timer = setTimeout(() => {
         calculateRentalCost();
       }, 500); // Debounce
       return () => clearTimeout(timer);
+    } else if (marketplaceListingStatus !== 1) {
+      setRentalCost(null);
     }
-  }, [listingId, rentDuration, rentDurationUnit, isMarketplaceOwner, isLister]);
+  }, [listingId, rentDuration, rentDurationUnit, isMarketplaceOwner, isLister, marketplaceListingStatus]);
 
   useEffect(() => {
-    if (leasingType === 'marketplace' && nftData) {
+    if (leasingType === 'marketplace' && nftData && servicesInitialized) {
       checkMarketplaceStatus();
     }
-  }, [leasingType, nftData]);
+  }, [leasingType, nftData, servicesInitialized]);
 
   const handleListForRent = async () => {
     if (!contractAddress || !tokenId || !listingPrice || !minDuration || !maxDuration) {
@@ -1189,8 +1359,13 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
 
     // If this is a wNFT sub-lease, enforce that requested maxDuration does not exceed
-    // the remaining lease duration on the underlying wrapped NFT (with a 1-hour safety buffer).
+    // the remaining lease duration on the underlying wrapped NFT (with a safety buffer).
     if (isWNFT && currentWNFTRemainingSeconds !== null) {
+      if (currentWNFTRemainingSeconds === 0) {
+        toast.error('The parent lease for this NFT has expired. You cannot list it for sub-lease.');
+        return;
+      }
+
       let maxSecondsRequested = parseFloat(maxDuration);
       if (listingDurationUnit === 'days') maxSecondsRequested *= 86400;
       else if (listingDurationUnit === 'hours') maxSecondsRequested *= 3600;
@@ -1419,6 +1594,26 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setProcessing(true);
     try {
       toast.loading('Cancelling listing...');
+
+      // Check if there's a lingering wNFT that needs unwrapping first
+      try {
+        const rental = await leasingMarketplaceService.getRentalInfo(listingId);
+        if (rental && rental.wId && Number(rental.wId) > 0) {
+          const wIdStr = rental.wId.toString();
+          // Check status
+          const status = await wrappedLeasingApiService.getLeaseStatus(wIdStr);
+          if (status.isActive) {
+            toast.loading('Unwrapping NFT to Marketplace first...');
+            console.log('[handleCancelListing] Found active wNFT, unwrapping:', wIdStr);
+            await wrappedLeasingApiService.unwrapNFT(wIdStr);
+            toast.success('Unwrapped successfully, now cancelling...');
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Error checking/unwrapping wNFT during cancel:', checkErr);
+        // Continue to try cancel, maybe it was already unwrapped
+      }
+
       await leasingMarketplaceService.cancelListing(listingId);
       toast.dismiss();
       toast.success('Listing Cancelled & NFT Returned');
@@ -1493,6 +1688,59 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     }
   };
 
+  // mark lifecycle completion
+  // ... (existing logic)
+
+  const handleRelistRemaining = async () => {
+    if (!listingId) return;
+    setProcessing(true);
+    try {
+      // Check if there's a lingering wNFT that needs unwrapping first
+      if (currentRentalInfo && currentRentalInfo.wId) {
+        const wIdStr = currentRentalInfo.wId.toString();
+        console.log(`[handleRelistRemaining] Checking status for wId: ${wIdStr}`);
+        try {
+          const status = await wrappedLeasingApiService.getLeaseStatus(wIdStr);
+          console.log(`[handleRelistRemaining] wId ${wIdStr} status:`, status);
+
+          if (status.isActive) {
+            toast.loading('Unwrapping NFT to Marketplace first...');
+            console.log('[handleRelistRemaining] Found active wNFT, unwrapping:', wIdStr);
+            await wrappedLeasingApiService.unwrapNFT(wIdStr);
+            toast.success('Unwrapped successfully, now updating listing...');
+          } else {
+            console.log('[handleRelistRemaining] wId is NOT active, skipping unwrap.');
+          }
+        } catch (unwrapErr: any) {
+          console.warn('Error checking/unwrapping wNFT during relist:', unwrapErr);
+          toast.error(`Cannot update yet: ${unwrapErr.message || 'Lease still active'}`);
+          setProcessing(false); // Stop processing
+          return; // STOP execution here
+        }
+      }
+
+      toast.loading('Updating listing state...', { id: 'relist' });
+      await leasingMarketplaceService.relistRemaining(listingId);
+      toast.dismiss('relist');
+      toast.success('Listing state updated!');
+
+      // Sync with backend too
+      try {
+        await fetch(apiUrl(`/listings/${listingId}/sync`));
+      } catch (e) {
+        console.warn("Backend sync failed after relist", e);
+      }
+
+      await checkMarketplaceStatus();
+      handleSearch();
+    } catch (e: any) {
+      toast.dismiss('relist');
+      handleTransactionError(e, 'Failed to update listing');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // ===== END MARKETPLACE FUNCTIONS =====
 
   // ===== END WRAPPED LEASING FUNCTIONS =====
@@ -1516,6 +1764,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
     setListingDetails(null);
     setRentalCost(null);
     setFinishedListing(null);
+    setLessorAddress('');
     onOpenChange(false);
   };
 
@@ -1888,24 +2137,32 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                           <div className="font-semibold">{nftData.collection || 'N/A'}</div>
                         </div>
                         <div className="bg-card/50 rounded-lg p-3 col-span-2">
-                          <div className="text-sm text-muted-foreground mb-1">Owner</div>
+                          <div className="text-sm text-muted-foreground mb-1">
+                            {isMarketplaceOwner ? 'Lessor (Original Owner)' : 'Owner'}
+                          </div>
                           <div className="flex items-center gap-2">
                             <code className="text-xs bg-black/20 p-1 rounded flex-1 truncate">
-                              {nftData.owner_address}
+                              {isMarketplaceOwner && lessorAddress ? lessorAddress : nftData.owner_address}
                             </code>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-6 w-6"
-                              onClick={() => copyToClipboard(nftData.owner_address)}
+                              onClick={() => copyToClipboard(isMarketplaceOwner && lessorAddress ? lessorAddress : nftData.owner_address)}
                             >
                               <Copy className="h-3 w-3" />
                             </Button>
                           </div>
-                          {address && nftData.owner_address.toLowerCase() !== address.toLowerCase() && (
+                          {address && nftData.owner_address && nftData.owner_address.toLowerCase() !== address.toLowerCase() && !isLister && (
                             <div className="text-xs text-red-500 mt-2 flex items-center gap-1 font-medium bg-red-500/10 p-2 rounded">
                               <AlertTriangle className="h-3 w-3" />
                               You do not own this NFT
+                            </div>
+                          )}
+                          {isLister && (
+                            <div className="text-xs text-blue-500 mt-2 flex items-center gap-1 font-medium bg-blue-500/10 p-2 rounded">
+                              <ShieldCheck className="h-3 w-3" />
+                              You listed this NFT (Held by contract)
                             </div>
                           )}
                         </div>
@@ -1979,15 +2236,18 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                           </Button>
                         </div>
                       )}
-
                       {leasingType === 'marketplace' && (
                         <div className="mt-4 border-t border-border pt-4 space-y-4">
                           {isMarketplaceOwner ? (
                             <div className="space-y-4">
-                              <div className={`${marketplaceListingStatus === 2 ? 'bg-orange-500/10 border-orange-500/20' : marketplaceListingStatus === 4 ? 'bg-blue-500/10 border-blue-500/20' : 'bg-green-500/10 border-green-500/20'} p-3 rounded-lg border`}>
-                                <h4 className={`font-semibold flex items-center gap-2 ${marketplaceListingStatus === 2 ? 'text-orange-500' : marketplaceListingStatus === 4 ? 'text-blue-500' : 'text-green-500'}`}>
+                              <div className={`${marketplaceListingStatus === 2 ? (currentRentalInfo && currentRentalInfo.expiresAt < Math.floor(Date.now() / 1000) ? 'bg-amber-500/10 border-amber-500/20' : 'bg-orange-500/10 border-orange-500/20') : marketplaceListingStatus === 4 ? 'bg-blue-500/10 border-blue-500/20' : 'bg-green-500/10 border-green-500/20'} p-3 rounded-lg border`}>
+                                <h4 className={`font-semibold flex items-center gap-2 ${marketplaceListingStatus === 2 ? (currentRentalInfo && currentRentalInfo.expiresAt < Math.floor(Date.now() / 1000) ? 'text-amber-500' : 'text-orange-500') : marketplaceListingStatus === 4 ? 'text-blue-500' : 'text-green-500'}`}>
                                   {marketplaceListingStatus === 2 ? (
-                                    <><Clock className="h-4 w-4" /> Rented Out</>
+                                    currentRentalInfo && currentRentalInfo.expiresAt < Math.floor(Date.now() / 1000) ? (
+                                      <><Clock className="h-4 w-4" /> Rental Expired (Pending Update)</>
+                                    ) : (
+                                      <><Clock className="h-4 w-4" /> Rented Out</>
+                                    )
                                   ) : marketplaceListingStatus === 4 ? (
                                     <><CheckCircle2 className="h-4 w-4" /> Rental Period Completed</>
                                   ) : (
@@ -1996,12 +2256,31 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                 </h4>
                                 <p className="text-xs text-muted-foreground mt-1">
                                   {marketplaceListingStatus === 2
-                                    ? "This NFT is currently being rented."
+                                    ? (currentRentalInfo && currentRentalInfo.expiresAt < Math.floor(Date.now() / 1000)
+                                      ? "The rental time has finished, but the listing hasn't been updated yet."
+                                      : "This NFT is currently being rented.")
                                     : marketplaceListingStatus === 4
                                       ? "The rental has ended. You can now reclaim your asset."
                                       : "This NFT is listed on the marketplace."}
                                 </p>
                               </div>
+
+                              {/* STICKY STATE FIX: If Rented but expired (with 15s buffer), show update button */}
+                              {marketplaceListingStatus === 2 && currentRentalInfo && (currentRentalInfo.expiresAt + 15) < Math.floor(Date.now() / 1000) && (
+                                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg space-y-2">
+                                  <p className="text-xs text-amber-600 font-medium">
+                                    The active rental has expired on-chain. Click below to finalize this rental and restore the listing (or finish it).
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    className="w-full bg-amber-600 hover:bg-amber-700"
+                                    onClick={handleRelistRemaining}
+                                    disabled={processing}
+                                  >
+                                    {processing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <><RefreshCw className="h-4 w-4 mr-2" /> Update Listing Status</>}
+                                  </Button>
+                                </div>
+                              )}
 
                               {/* Listing Details */}
                               {listingDetails && (
@@ -2027,12 +2306,20 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                         return `${formatDuration(min)} - ${formatDuration(max)}`;
                                       })()}
                                     </div>
+                                    {listingDetails.listingExpiresAt > 0 && (
+                                      <>
+                                        <span className="text-muted-foreground mt-2">Listing Window Expires</span>
+                                        <div className="font-bold mt-2 text-amber-500">
+                                          {new Date(listingDetails.listingExpiresAt * 1000).toLocaleString()}
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
                                 </div>
                               )}
 
-                              {/* Rent Duration Input - only for renters */}
-                              {!isLister && (
+                              {/* Rent Duration Input - only for potential renters when available */}
+                              {!isLister && marketplaceListingStatus !== 2 && (
                                 <>
                                   <div className="space-y-2">
                                     <Label>Rent Duration</Label>
@@ -2105,31 +2392,34 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                 </>
                               )}
 
-                              <Button
-                                onClick={handleRentNFT}
-                                disabled={processing || isLister || !rentalCost || (isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0))}
-                                className="w-full bg-green-600 hover:bg-green-700"
-                              >
-                                {processing ? (
-                                  <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Renting...</>
-                                ) : isLister ? (
-                                  'You own this listing'
-                                ) : isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0) ? (
-                                  'Parent Lease Expired'
-                                ) : !rentalCost ? (
-                                  'Enter duration to see cost'
-                                ) : (
-                                  <>🏠 Rent NFT for Ξ {parseFloat(rentalCost.totalRequired).toFixed(4)}</>
-                                )}
-                              </Button>
+                              {/* Rent Button - Hidden for lister, handles different states for others */}
+                              {!isLister && (
+                                <Button
+                                  onClick={handleRentNFT}
+                                  disabled={processing || marketplaceListingStatus === 2 || !rentalCost || (isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0))}
+                                  className="w-full bg-green-600 hover:bg-green-700"
+                                >
+                                  {processing ? (
+                                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Renting...</>
+                                  ) : marketplaceListingStatus === 2 ? (
+                                    'Currently Rented Out'
+                                  ) : isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0) ? (
+                                    'Parent Lease Expired'
+                                  ) : !rentalCost ? (
+                                    'Enter duration to see cost'
+                                  ) : (
+                                    <>🏠 Rent NFT for Ξ {parseFloat(rentalCost.totalRequired).toFixed(4)}</>
+                                  )}
+                                </Button>
+                              )}
 
-                              {isWNFT && currentWNFTRemainingSeconds !== null && currentWNFTRemainingSeconds > 0 && rentalCost === null && rentDuration && (
+                              {isWNFT && !isLister && currentWNFTRemainingSeconds !== null && currentWNFTRemainingSeconds > 0 && rentalCost === null && rentDuration && (
                                 <p className="text-xs text-amber-500 mt-2 text-center bg-amber-500/10 p-2 rounded border border-amber-500/20">
                                   Rental duration must be strictly less than parent lease remaining time ({formatTimeRemaining(currentWNFTRemainingSeconds)}).
                                 </p>
                               )}
 
-                              {isWNFT && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0) && (
+                              {isWNFT && !isLister && (currentWNFTRemainingSeconds === null || currentWNFTRemainingSeconds === 0) && (
                                 <p className="text-xs text-red-500 mt-2 text-center bg-red-500/10 p-2 rounded border border-red-500/20">
                                   This listing is for a sub-lease, but the parent lease has expired or is no longer active.
                                 </p>
@@ -2137,8 +2427,8 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
 
                               {isLister && (
                                 <div className="pt-2 border-t border-border/50">
-                                  <p className="text-xs text-muted-foreground mb-2 text-center">
-                                    {marketplaceListingStatus === 4 ? "Rental period has finished." : "You listed this NFT."}
+                                  <p className="text-xs text-muted-foreground mb-3 text-center italics bg-muted/20 p-2 rounded">
+                                    {marketplaceListingStatus === 4 ? "Rental period has finished. Reclaim your asset below." : "Manage your listing below."}
                                   </p>
                                   <Button
                                     onClick={handleCancelListing}
@@ -2147,7 +2437,7 @@ const CollateralLeasingSidebar: React.FC<CollateralLeasingSidebarProps> = ({
                                     className={`w-full ${marketplaceListingStatus === 4 ? "bg-blue-600 hover:bg-blue-700" : ""}`}
                                   >
                                     {processing ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                     ) : marketplaceListingStatus === 4 ? (
                                       <><RefreshCw className="h-4 w-4 mr-2" /> Reclaim NFT</>
                                     ) : marketplaceListingStatus === 2 ? (

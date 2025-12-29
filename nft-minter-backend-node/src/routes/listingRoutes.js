@@ -5,7 +5,8 @@ import {
     syncListingsFromBlockchain,
     saveListing,
     updateListingStatus,
-    getFinishedListing
+    getFinishedListing,
+    syncListing
 } from '../controllers/listingController.js';
 
 const router = express.Router();
@@ -27,5 +28,8 @@ router.post('/', saveListing);
 
 // Update listing status
 router.put('/:listingId/status', updateListingStatus);
+
+// Sync specific listing from blockchain
+router.get('/:listingId/sync', syncListing);
 
 export default router;

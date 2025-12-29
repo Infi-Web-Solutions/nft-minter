@@ -124,6 +124,14 @@ const Marketplace = () => {
                 const wId = String(l.tokenId);
                 const info = await wrappedLeasingApiService.getWrappedInfo(wId);
 
+                // EXPIRE CHECK: If the wNFT is not active or time is up, skip it
+                const now = Math.floor(Date.now() / 1000);
+                if (!info.active || (info.validUntil && info.validUntil < now)) {
+                  console.log(`[Marketplace] Skipping expired/inactive wNFT #${wId}`);
+                  // Optionally update backend status here too if we want to be proactive
+                  return null;
+                }
+
                 // Load original NFT metadata for image/name
                 let originalMeta: any = null;
                 try {
@@ -192,11 +200,10 @@ const Marketplace = () => {
                 return null;
               }
             } else {
-              // It's a regular listing (local or external)
-              // Fetch metadata to ensure we can display it, especially if it's not in our local DB
+              // It's a regular listing from the Leasing Marketplace (Direct Rental)
+              // Fetch metadata to ensure we can display it
               try {
                 // We fetch metadata for ALL active listings to ensure we have the latest data
-                // Deduplication happens in the render/memo
                 const metaRes = await fetch(
                   apiUrl(`/nfts/external/${l.nftAddress}/${l.tokenId}`)
                 );
@@ -204,11 +211,18 @@ const Marketplace = () => {
 
                 if (metaJson.success && metaJson.data) {
                   const nftItem = metaJson.data;
-                  // Ensure it has the correct listing status from the listing object
-                  nftItem.is_listed = true;
+                  // CORRECTION: Listings from /listings/active are RENTAL/LEASE listings, not Sales.
+                  // So we must NOT mark is_listed=true (which means For Sale).
+                  nftItem.is_listed = false;
+                  nftItem.is_rentable = true; // Mark as rentable
+
+                  // Calculate daily price from pricePerSecond
                   nftItem.price = l.pricePerSecond
                     ? parseFloat(ethers.formatEther(BigInt(l.pricePerSecond) * 86400n)) // Daily price
                     : nftItem.price;
+
+                  // Add listingId to the NFT object so we can use it later
+                  nftItem.listingId = l.listingId;
 
                   return { type: 'external', data: nftItem };
                 }
@@ -271,7 +285,8 @@ const Marketplace = () => {
     const fetchNFTs = async () => {
       setLoadingLocal(true);
       try {
-        const nfts = await nftService.getCombinedNFTs(address);
+        console.log('[Marketplace] Fetching with filters:', filters);
+        const nfts = await nftService.getCombinedNFTs(address, filters, sortBy);
         console.log('[Marketplace] Fetched NFTs:', nfts.length);
         console.log('[Marketplace] First NFT sample:', nfts[0]);
         console.log('[Marketplace] All NFTs:', nfts);
@@ -330,6 +345,22 @@ const Marketplace = () => {
       .map(([name]) => name);
   }, [deduplicatedNfts]);
 
+  // Debug: Log deduplicated Xano
+  useEffect(() => {
+    const xano = deduplicatedNfts.find(n => n.name && n.name.toLowerCase().includes('xano'));
+    if (xano) {
+      console.log('[Marketplace DEBUG] Found Xano in deduplicatedNfts:', {
+        id: xano.id,
+        is_listed: xano.is_listed,
+        is_rentable: (xano as any).is_rentable,
+        contract_address: xano.contract_address,
+        source: xano.source
+      });
+    } else {
+      console.log('[Marketplace DEBUG] Xano NOT found in deduplicatedNfts');
+    }
+  }, [deduplicatedNfts]);
+
   // Filter and sort NFTs based on current filters
   const filteredNfts = useMemo(() => {
     console.log('[Marketplace] Starting filter with', deduplicatedNfts.length, 'deduplicated NFTs');
@@ -374,7 +405,7 @@ const Marketplace = () => {
         case 'Has Offers':
           return Array.isArray(nft.sell_orders) && nft.sell_orders.length > 0;
         case 'On Rent':
-          return isRentable && !isRented;
+          return (isRentable || nft.is_rentable) && !isRented;
         case 'Loan':
           return !!loanInfo;
         case 'Rented':
@@ -577,7 +608,7 @@ const Marketplace = () => {
 
         <div className="flex items-center justify-between mb-6">
           <p className="text-muted-foreground">
-            Showing {filteredNfts.length} of {allNfts.length} NFTs
+            Showing {filteredNfts.length} of {deduplicatedNfts.length} NFTs
           </p>
 
           <div className="flex items-center space-x-4">
@@ -665,8 +696,9 @@ const Marketplace = () => {
                 const loanKey = contractAddr ? `${contractAddr.toLowerCase()}-${String(nft.token_id)}` : '';
                 // DEBUG: Force rentable for testing if needed, but let's log first
                 const listingInfo = activeListings.get(loanKey);
-                const isRentable = !!listingInfo;
-                const isRented = listingInfo?.status === 'Rented';
+                // An NFT is rentable if it has an active listing OR it's marked as rentable/rented in DB
+                const isRentable = !!listingInfo || nft.is_rentable || nft.is_rented;
+                const isRented = listingInfo?.status === 'Rented' || nft.is_rented;
                 const isOwner =
                   !!address &&
                   !!nft.owner_address &&
@@ -743,7 +775,7 @@ const Marketplace = () => {
                       handleLikeToggle(nft.id, newLikedState);
                     }}
                     owner_address={nft.owner_address}
-                    is_listed={nft.is_listed}
+                    is_listed={isRentable ? false : nft.is_listed}
                     loanStatus={loanInfo?.status}
                     loanBorrower={loanInfo?.borrower}
                     loanId={loanInfo?.loanId}
@@ -778,17 +810,24 @@ const Marketplace = () => {
                     onClick={
                       nft.isWrapped
                         ? () => window.location.href = `/wnft/${nft.token_id}`
-                        : isRentable && !nft.isWrapped
+                        : isRented
                           ? () => {
-                            if (!isRented) {
+                            const targetWId = (listingInfo as any)?.wId || nft.wId;
+                            if (targetWId) {
+                              window.location.href = `/wnft/${targetWId}`;
+                            } else {
+                              window.location.href = `/nft/${nft.id}`;
+                            }
+                          }
+                          : isRentable && !nft.isWrapped
+                            ? () => {
                               setSelectedLoanNft({
                                 contract: contractAddr,
                                 tokenId: String(nft.token_id)
                               });
                               setShowCollateralSidebar(true);
                             }
-                          }
-                          : undefined
+                            : undefined
                     }
                   />
                 );

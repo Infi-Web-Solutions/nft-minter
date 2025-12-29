@@ -23,7 +23,11 @@ import {
   ExternalLink,
   Copy,
   Calendar,
-  ArrowLeft
+  ArrowLeft,
+  ArrowRight,
+  ShieldCheck,
+  RotateCcw,
+  Ban
 } from 'lucide-react';
 import { useWallet } from '@/contexts/WalletContext';
 import { nftService } from '@/services/nftService';
@@ -34,6 +38,7 @@ import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { apiService } from '@/services/api';
 import { getNFTMarketplaceAddress } from '@/services/configService';
 import { AuctionInfo } from '@/components/AuctionInfo';
+import { wrappedLeasingApiService } from '@/services/wrappedLeasingApiService';
 import {
   Dialog,
   DialogContent,
@@ -69,6 +74,8 @@ const NFTDetails = () => {
     totalVolume: '0 ETH',
     properties: []
   });
+  const [rentalDetails, setRentalDetails] = useState<any>(null);
+  const [loanInfo, setLoanInfo] = useState<any>(null);
 
   const [following, setFollowing] = useState<any[]>([]);
   const [mintTransactionHash, setMintTransactionHash] = useState<string | null>(null);
@@ -123,6 +130,11 @@ const NFTDetails = () => {
 
         if (data.success) {
           nftData = data.data;
+          if (nftData.is_rented && nftData.wId) {
+            // If the user purposefully navigated to /nft/:id, auto-redirect for better UX.
+            navigate(`/wnft/${nftData.wId}`, { replace: true });
+            return;
+          }
         } else {
           toast.error(data.error || 'NFT not found');
           navigate('/');
@@ -156,6 +168,35 @@ const NFTDetails = () => {
         // Fetch NFT statistics
         fetchNFTStats(nftData);
 
+        // Fetch rental details if rented
+        if (nftData.is_rented && nftData.wId) {
+          wrappedLeasingApiService.getWrappedDetails(String(nftData.wId))
+            .then(res => {
+              if (res.success) setRentalDetails(res.data);
+            })
+            .catch(err => console.error('Failed to fetch rental details:', err));
+        }
+
+        // Fetch loan information
+        try {
+          const loansRes = await fetch(apiUrl('/loans/open'));
+          const loansData = await loansRes.json();
+          if (loansData.success && loansData.data) {
+            // Find loan for this specific NFT
+            const nftLoan = loansData.data.find((loan: any) => {
+              const nftContract = nftData.contract_address || contractAddress;
+              return loan.nftContract?.toLowerCase() === nftContract?.toLowerCase() &&
+                String(loan.tokenId) === String(nftData.token_id) &&
+                (loan.status === 'Requested' || loan.status === 'Funded');
+            });
+            if (nftLoan) {
+              setLoanInfo(nftLoan);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch loan info:', err);
+        }
+
       } catch (e) {
         console.error('Error fetching NFT:', e);
         toast.error('Failed to load NFT');
@@ -166,7 +207,7 @@ const NFTDetails = () => {
     };
 
     fetchNFT();
-  }, [id, navigate]);
+  }, [id, navigate, contractAddress]);
 
   const fetchNFTStats = async (nftData: any) => {
     try {
@@ -442,7 +483,8 @@ const NFTDetails = () => {
   const isOwner = !!address && !!nft.owner_address && address.toLowerCase() === nft.owner_address.toLowerCase();
 
   const formatPrice = (price: any) => {
-    if (!price || price === '0') return 'Not for sale';
+    if (nft?.is_rented) return 'Currently Rented';
+    if (!nft?.is_listed || !price || price === '0') return 'Not for sale';
     return `Ξ${typeof price === 'string' ? price : price.toString()}`;
   };
 
@@ -527,7 +569,11 @@ const NFTDetails = () => {
 
               <div className="space-y-4">
                 <div>
-                  <Badge variant="secondary" className="mb-2">{typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}</Badge>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="secondary">{typeof nft.collection === 'string' ? nft.collection : nft.collection?.name || 'Unknown Collection'}</Badge>
+                    {nft.is_rented && <Badge className="bg-indigo-500 hover:bg-indigo-600 text-white border-0">RENTED</Badge>}
+                    {nft.is_rentable && !nft.is_rented && <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white border-0">LISTED FOR RENT</Badge>}
+                  </div>
                   <h1 className="text-3xl font-bold gradient-text mb-2">{nft.name}</h1>
                   <p className="text-muted-foreground leading-relaxed">{nft.description || 'No description available'}</p>
                 </div>
@@ -571,6 +617,64 @@ const NFTDetails = () => {
                       <Button variant="ghost" size="icon" onClick={() => window.open(`https://sepolia.etherscan.io/address/${contractAddress}`, '_blank')} disabled={!contractAddress}><ExternalLink className="h-4 w-4" /></Button>
                     </div>
                   </div>
+
+                  {nft.is_rented && (
+                    <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-6 mt-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                          <Clock className="h-5 w-5 text-indigo-500" />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-indigo-500 italic">Active Rental</h3>
+                          <p className="text-xs text-muted-foreground uppercase tracking-widest font-bold">This NFT is currently leased out</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground font-bold uppercase mb-1">Current Renter</p>
+                            <div className="flex items-center gap-2">
+                              <code className="text-sm font-mono bg-background/50 px-2 py-1 rounded border border-border/10">
+                                {rentalDetails?.rental?.renter || 'Loading...'}
+                              </code>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => copyToClipboard(rentalDetails?.rental?.renter)}>
+                                <Copy className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground font-bold uppercase mb-1">Lease Expiry</p>
+                            <p className="font-semibold">
+                              {rentalDetails?.rental?.expiresAt ? new Date(rentalDetails.rental.expiresAt).toLocaleString() : 'Loading...'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground font-bold uppercase mb-1">Rental Terms</p>
+                            <div className="flex items-center gap-4">
+                              <div className="text-center bg-background/30 rounded-lg p-2 flex-1">
+                                <p className="text-[10px] text-muted-foreground font-bold italic">PRICE</p>
+                                <p className="text-sm font-bold">Ξ{rentalDetails?.rental?.rentAmount || '0.00'}</p>
+                              </div>
+                              <div className="text-center bg-background/30 rounded-lg p-2 flex-1">
+                                <p className="text-[10px] text-muted-foreground font-bold italic">DEPOSIT</p>
+                                <p className="text-sm font-bold">Ξ{rentalDetails?.rental?.depositAmount || '0.00'}</p>
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold"
+                            onClick={() => navigate(`/wnft/${nft.wId}`)}
+                          >
+                            View Wrapped Details <ExternalLink className="ml-2 h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </TabsContent>
                 <TabsContent value="properties" className="mt-6">
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -585,16 +689,65 @@ const NFTDetails = () => {
                 </TabsContent>
                 <TabsContent value="activity" className="mt-6">
                   <div className="space-y-4">
-                    {activity.length === 0 ? <div className="text-center text-muted-foreground py-8">No activity yet.</div> : activity.map((act: any, index) => (
-                      <div key={index} className="flex items-center gap-4 p-4 bg-card/50 rounded-lg">
-                        <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">{act.type === "Minted" ? <Zap className="h-4 w-4 text-primary" /> : <DollarSign className="h-4 w-4 text-green-500" />}</div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1"><span className="font-medium">{act.type}</span>{act.price && <Badge variant="secondary">{act.price}</Badge>}</div>
-                          <div className="text-sm text-muted-foreground">{act.description || `${act.type} - ${act.nft_name || ''}`}</div>
-                        </div>
-                        <div className="text-right text-sm text-muted-foreground"><div>{act.timestamp ? new Date(act.timestamp).toLocaleDateString() : ''}</div></div>
+                    {activity.length === 0 ? (
+                      <div className="text-center text-muted-foreground py-12 bg-card/30 rounded-xl border border-dashed border-border">
+                        <TrendingUp className="h-12 w-12 mx-auto mb-3 opacity-20" />
+                        <p>No activity yet.</p>
                       </div>
-                    ))}
+                    ) : activity.map((act: any, index) => {
+                      const getActivityIcon = (type: string) => {
+                        switch (type) {
+                          case 'mint': return <Zap className="h-4 w-4 text-blue-500" />;
+                          case 'list': return <TrendingUp className="h-4 w-4 text-purple-500" />;
+                          case 'buy': return <DollarSign className="h-4 w-4 text-green-500" />;
+                          case 'transfer': return <ArrowRight className="h-4 w-4 text-orange-500" />;
+                          case 'rent_listed': return <Clock className="h-4 w-4 text-indigo-500" />;
+                          case 'rented': return <Users className="h-4 w-4 text-pink-500" />;
+                          case 'depositrefunded': return <ShieldCheck className="h-4 w-4 text-emerald-500" />;
+                          case 'cancelled': return <Ban className="h-4 w-4 text-red-500" />;
+                          case 'withdrawn': return <RotateCcw className="h-4 w-4 text-yellow-500" />;
+                          default: return <TrendingUp className="h-4 w-4 text-muted-foreground" />;
+                        }
+                      };
+
+                      const getActivityLabel = (type: string) => {
+                        switch (type) {
+                          case 'mint': return 'Minted';
+                          case 'list': return 'Listed';
+                          case 'buy': return 'Purchased';
+                          case 'transfer': return 'Transferred';
+                          case 'rent_listed': return 'Listed for Rent';
+                          case 'rented': return 'Rented';
+                          case 'depositrefunded': return 'Deposit Refunded';
+                          case 'cancelled': return 'Cancelled';
+                          case 'withdrawn': return 'Withdrawn';
+                          default: return type.charAt(0).toUpperCase() + type.slice(1);
+                        }
+                      };
+
+                      return (
+                        <div key={index} className="flex items-center gap-4 p-4 bg-card/50 rounded-lg hover:bg-card/80 transition-colors border border-border/10">
+                          <div className="w-10 h-10 rounded-full bg-background flex items-center justify-center border border-border/20 shadow-sm">
+                            {getActivityIcon(act.type)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="font-semibold text-foreground">{getActivityLabel(act.type)}</span>
+                              {act.price && <Badge variant="secondary" className="font-mono text-xs font-bold text-primary">{act.price} ETH</Badge>}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <span className="truncate">From {act.from?.name || 'Unknown'}</span>
+                              <ArrowRight className="h-3 w-3 opacity-30" />
+                              <span className="truncate">To {act.to?.name || 'N/A'}</span>
+                            </div>
+                          </div>
+                          <div className="text-right flex flex-col items-end">
+                            <div className="text-sm font-medium text-foreground">{act.time_ago}</div>
+                            <div className="text-[10px] text-muted-foreground">{act.timestamp ? new Date(act.timestamp).toLocaleDateString() : ''}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -605,12 +758,19 @@ const NFTDetails = () => {
             <Card className="glass-card p-6">
               <div className="space-y-4">
                 <div>
-                  <div className="text-sm text-muted-foreground mb-1">Current Price</div>
+                  <div className="text-sm text-muted-foreground mb-1 flex items-center justify-between">
+                    Current Price
+                    <Button variant="link" size="sm" className="h-auto p-0 text-xs text-primary" onClick={() => setActiveTab('activity')}>
+                      View History
+                    </Button>
+                  </div>
                   <div className="text-3xl font-bold text-green-500">{formatPrice(nft.price)}</div>
-                  <div className="text-lg text-muted-foreground">{nft.price && nft.price !== '0' ? `$${(parseFloat(nft.price.toString()) * 1700).toFixed(2)}` : 'Not for sale'}</div>
+                  <div className="text-lg text-muted-foreground">
+                    {nft.is_rented ? 'Current lease active' : nft.price && nft.price !== '0' ? `$${(parseFloat(nft.price.toString()) * 1700).toFixed(2)}` : 'Not for sale'}
+                  </div>
                 </div>
 
-                {nft.is_listed && !isOwner && (
+                {nft.is_listed && !isOwner && !loanInfo && (
                   <div className={`grid ${!(nft.is_auction || nft.isAuction) ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
                     {!(nft.is_auction || nft.isAuction) && <Button className="bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 transition-smooth" onClick={handleBuyNow}>Buy Now</Button>}
                     <Button variant="outline" onClick={handleMakeOffer}>Make Offer</Button>
@@ -642,11 +802,80 @@ const NFTDetails = () => {
                   </Button>
                 )}
 
+                {loanInfo && (
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ShieldCheck className="h-4 w-4 text-amber-500" />
+                        <span className="text-sm font-semibold text-amber-500">Locked as Collateral</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        This NFT is currently locked as collateral for an active loan and cannot be purchased or transferred.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="text-center">
                   <Button variant="ghost" className="text-accent-foreground"><TrendingUp className="h-4 w-4 mr-2" />View Price History</Button>
                 </div>
               </div>
             </Card>
+
+            {loanInfo && (
+              <Card className="glass-card p-6 border-amber-500/20">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-amber-500" />
+                  Collateral Loan
+                </h3>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-card/50 rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Status</div>
+                      <Badge className={loanInfo.status === 'Funded' ? 'bg-green-500' : 'bg-yellow-500'}>
+                        {loanInfo.status}
+                      </Badge>
+                    </div>
+                    <div className="bg-card/50 rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Principal</div>
+                      <div className="font-semibold">Ξ{loanInfo.principal}</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-card/50 rounded-lg p-3">
+                    <div className="text-xs text-muted-foreground mb-1">Borrower</div>
+                    <div className="font-mono text-sm truncate">{loanInfo.borrower}</div>
+                  </div>
+
+                  {loanInfo.lender && loanInfo.lender !== ethers.ZeroAddress && (
+                    <div className="bg-card/50 rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Lender</div>
+                      <div className="font-mono text-sm truncate">{loanInfo.lender}</div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-card/50 rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Interest Rate</div>
+                      <div className="font-semibold">{(loanInfo.interestBps / 100).toFixed(2)}%</div>
+                    </div>
+                    <div className="bg-card/50 rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Duration</div>
+                      <div className="font-semibold">{Math.floor(loanInfo.duration / 86400)} days</div>
+                    </div>
+                  </div>
+
+                  {loanInfo.status === 'Funded' && loanInfo.startTime && (
+                    <div className="bg-card/50 rounded-lg p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Due Date</div>
+                      <div className="font-semibold">
+                        {new Date((loanInfo.startTime + loanInfo.duration) * 1000).toLocaleDateString()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
 
             <AuctionInfo nft={nft} onAuctionEnded={() => window.location.reload()} />
 

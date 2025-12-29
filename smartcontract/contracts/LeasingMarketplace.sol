@@ -27,7 +27,8 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint256 tokenId;
         uint256 pricePerSecond;
         uint256 minDuration;
-        uint256 maxDuration;
+        uint256 maxDuration; // Initial window size
+        uint256 listingExpiresAt; // Hard deadline for return to owner
         ListingStatus status;
     }
 
@@ -61,7 +62,8 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         uint256 tokenId,
         uint256 pricePerSecond,
         uint256 minDuration,
-        uint256 maxDuration
+        uint256 maxDuration,
+        uint256 listingExpiresAt
     );
     event LeaseCancelled(uint256 indexed listingId);
     event LeaseRented(
@@ -122,18 +124,20 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         // Custody the NFT
         token.transferFrom(msg.sender, address(this), tokenId);
 
-        listingCounter++;
+        uint256 expiresAt = block.timestamp + maxDuration;
         listings[listingCounter] = LeaseListing({
-            owner: msg.sender, // For wNFTs, this is the borrower (current wNFT holder)
+            owner: msg.sender,
             nft: nft,
             tokenId: tokenId,
             pricePerSecond: pricePerSecond,
             minDuration: minDuration,
             maxDuration: maxDuration,
+            listingExpiresAt: expiresAt,
             status: ListingStatus.Active
         });
 
-        emit LeaseListed(listingCounter, msg.sender, nft, tokenId, pricePerSecond, minDuration, maxDuration);
+        emit LeaseListed(listingCounter, msg.sender, nft, tokenId, pricePerSecond, minDuration, maxDuration, expiresAt);
+        listingCounter++;
     }
 
     /// Cancel listing before it is rented or after it expires
@@ -156,7 +160,8 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     function rent(uint256 listingId, uint256 durationSeconds) external payable nonReentrant whenNotPaused {
         LeaseListing storage ls = listings[listingId];
         require(ls.status == ListingStatus.Active, "not rentable");
-        require(durationSeconds >= ls.minDuration && durationSeconds <= ls.maxDuration, "duration out of range");
+        require(durationSeconds >= ls.minDuration, "duration < min");
+        require(block.timestamp + durationSeconds <= ls.listingExpiresAt, "exceeds listing window");
         require(msg.sender != ls.owner, "owner cannot rent");
 
         uint256 rentAmount = ls.pricePerSecond * durationSeconds;
@@ -240,25 +245,32 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
 
         // Calculate remaining duration
         // Current commitment was ls.maxDuration. This renter used r.duration.
-        uint256 remaining = 0;
-        if (ls.maxDuration > r.duration) {
-            remaining = ls.maxDuration - r.duration;
-        }
-
-        if (remaining >= ls.minDuration) {
-            // Update listing to be active again with the remaining time
-            ls.maxDuration = remaining;
+        if (block.timestamp + ls.minDuration <= ls.listingExpiresAt) {
+            // There is still enough time for another rental within the original window
+            ls.maxDuration = ls.listingExpiresAt - block.timestamp;
             ls.status = ListingStatus.Active;
             
             // Clear current rental info for the next renter
             delete rentals[listingId];
             
-            emit LeaseListed(listingId, ls.owner, ls.nft, ls.tokenId, ls.pricePerSecond, ls.minDuration, ls.maxDuration);
+            emit LeaseListed(listingId, ls.owner, ls.nft, ls.tokenId, ls.pricePerSecond, ls.minDuration, ls.maxDuration, ls.listingExpiresAt);
         } else {
-            // Not enough time left for another rental
+            // Window is closed or too short
             ls.status = ListingStatus.Completed;
             emit LeaseCompleted(listingId, r.wId);
         }
+    }
+
+    /// Owner can finish a listing after window expiry to get their NFT back
+    function finishExpiredListing(uint256 listingId) external nonReentrant {
+        LeaseListing storage ls = listings[listingId];
+        require(ls.status == ListingStatus.Active, "not active");
+        require(block.timestamp > ls.listingExpiresAt, "window not expired");
+        
+        ls.status = ListingStatus.Completed;
+        IERC721(ls.nft).transferFrom(address(this), ls.owner, ls.tokenId);
+        
+        emit LeaseCancelled(listingId); // Or emit a new event LeaseFinished
     }
 
     /// Withdraw any owed balance (owner proceeds, treasury fees, renter deposit refunds)
@@ -291,6 +303,11 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
         depositBps = newDepositBps;
     }
 
+    /// Rescue any NFT sent directly to the contract without a listing
+    function rescueNFT(address nft, uint256 tokenId, address to) external onlyRole(ADMIN_ROLE) nonReentrant {
+        IERC721(nft).transferFrom(address(this), to, tokenId);
+    }
+
     /// Admin emergency withdrawal for non-rented listings (custody recovery)
     function emergencyWithdraw(uint256 listingId, address to) external onlyRole(ADMIN_ROLE) nonReentrant {
         LeaseListing storage ls = listings[listingId];
@@ -313,7 +330,8 @@ contract LeasingMarketplace is ReentrancyGuardUpgradeable, AccessControlUpgradea
     ) {
         LeaseListing storage ls = listings[listingId];
         require(ls.status == ListingStatus.Active, "not rentable");
-        require(durationSeconds >= ls.minDuration && durationSeconds <= ls.maxDuration, "duration out of range");
+        require(durationSeconds >= ls.minDuration, "duration < min");
+        require(block.timestamp + durationSeconds <= ls.listingExpiresAt, "exceeds window");
 
         rentAmount = ls.pricePerSecond * durationSeconds;
         uint16 platformBps = platformFeeBps == 0 ? feeManager.leasingFeeBps() : platformFeeBps;

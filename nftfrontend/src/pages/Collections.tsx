@@ -73,7 +73,7 @@ const Collections = () => {
 
   // Filter and sort collections
   const filteredAndSortedCollections = collections
-    .filter(collection => 
+    .filter(collection =>
       collection.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (collection.description || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
@@ -115,7 +115,7 @@ const Collections = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold mb-4">Top Collections</h1>
@@ -125,9 +125,9 @@ const Collections = () => {
         <div className="flex flex-col md:flex-row gap-4 mb-8">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-            <Input 
-              placeholder="Search collections..." 
-              className="pl-10" 
+            <Input
+              placeholder="Search collections..."
+              className="pl-10"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -187,8 +187,8 @@ const Collections = () => {
                     {filteredAndSortedCollections.map((collection, index) => (
                       <Card key={collection.name} className="hover:shadow-lg transition-shadow cursor-pointer">
                         <div className="aspect-square overflow-hidden rounded-t-lg">
-                          <img 
-                            src={getImageUrl(collection.image_url)} 
+                          <img
+                            src={getImageUrl(collection.image_url)}
                             alt={collection.name}
                             className="h-full w-full object-cover hover:scale-105 transition-transform duration-300"
                             onError={(e) => {
@@ -238,8 +238,8 @@ const Collections = () => {
                               #{index + 1}
                             </div>
                             <div className="w-16 h-16 rounded-lg overflow-hidden">
-                              <img 
-                                src={getImageUrl(collection.image_url)} 
+                              <img
+                                src={getImageUrl(collection.image_url)}
                                 alt={collection.name}
                                 className="h-full w-full object-cover"
                                 onError={(e) => {
@@ -298,9 +298,10 @@ const Collections = () => {
                     isAuction={nft.isAuction || nft.is_auction}
                     timeLeft={nft.timeLeft}
                     views={nft.views}
-                    onLike={() => {}}
+                    onLike={() => { }}
                     owner_address={nft.owner_address}
-                    is_listed={nft.is_listed}
+                    is_listed={nft.is_rentable ? false : nft.is_listed}
+                    isRentable={nft.is_rentable}
                     onClick={() => {
                       // Fix redirect issue: remove 'local_' prefix if present
                       const cleanNftId = typeof nft.id === 'string' && nft.id.startsWith('local_') ? nft.id.slice(6) : nft.id;
