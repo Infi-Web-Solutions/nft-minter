@@ -341,6 +341,21 @@ const Profile = () => {
             // Fetch metadata for the original NFT
             const res = await fetch(apiUrl(`/nfts/external/${w.originalNft}/${w.originalTokenId}`));
             const data = await res.json();
+            
+            // Log wrapped NFT object to help debug missing prices
+            console.log('[Profile] Wrapped NFT enrichment:', {
+              wId: w.wId,
+              originalNft: w.originalNft,
+              originalTokenId: w.originalTokenId,
+              wrappedFields: Object.keys(w),
+              feePaid: w.feePaid,
+              rentPrice: w.rentPrice,
+              rentalPrice: w.rentalPrice,
+              pricePerSecond: w.pricePerSecond,
+              listingPrice: listingPrice,
+              metadata_success: data.success
+            });
+            
             if (data.success) {
               return {
                 ...w,
@@ -1175,6 +1190,22 @@ const Profile = () => {
                     ) : (
                       myWrappedRentals.map((nft: any) => {
                         const nftId = typeof nft.id === 'number' ? `local_${nft.id}` : nft.id;
+                        
+                        // Calculate price from multiple sources
+                        let displayPrice = '0';
+                        if (nft.listingPrice) {
+                          displayPrice = nft.listingPrice;
+                        } else if (nft.pricePerSecond && nft.pricePerSecond !== '0') {
+                          // Daily price from pricePerSecond
+                          displayPrice = (Number(nft.pricePerSecond) * 86400 / 1e18).toFixed(4);
+                        } else if (nft.rentPrice && nft.rentPrice !== '0') {
+                          displayPrice = parseFloat(ethers.formatEther(nft.rentPrice)).toFixed(4);
+                        } else if (nft.rentalPrice && nft.rentalPrice !== '0') {
+                          displayPrice = parseFloat(ethers.formatEther(nft.rentalPrice)).toFixed(4);
+                        } else if (nft.feePaid && nft.feePaid !== '0') {
+                          displayPrice = parseFloat(ethers.formatEther(nft.feePaid)).toFixed(4);
+                        }
+                        
                         return (
                           <NFTCard
                             key={nftId}
@@ -1182,10 +1213,7 @@ const Profile = () => {
                             image={nft.image_url}
                             tokenId={nft.tokenId}
                             id={nftId}
-                            price={
-                              nft.listingPrice ? nft.listingPrice :
-                                (nft.feePaid && nft.feePaid !== '0' ? parseFloat(ethers.formatEther(nft.feePaid)).toFixed(4) : '0')
-                            }
+                            price={displayPrice}
                             title={nft.name}
                             collection={nft.collection || 'Wrapped NFT'}
                             owner_address={address}
