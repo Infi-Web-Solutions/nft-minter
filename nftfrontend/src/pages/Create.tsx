@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,22 +17,32 @@ import WalletGuard from '@/components/WalletGuard';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { apiUrl } from '@/config';
+import { getNFTMarketplaceAddress } from '@/services/configService';
 
-// Import ABI and contract address
+// Import ABI
 import NFTMarketplaceABI from '../../../smartcontract/artifacts/contracts/nftmarketplace.sol/NFTMarketplace.json';
-const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
-
-// Debug logging
-console.log('[NFT] Contract Address:', CONTRACT_ADDRESS);
-if (!CONTRACT_ADDRESS) {
-  console.error('[NFT] Error: Contract address is not set. Please check your .env file');
-}
 
 const Create = () => {
   const { address, signer } = useWallet();
   const [isUploading, setIsUploading] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [contractAddress, setContractAddress] = useState<string>('');
+
+  // Load contract address from backend config on component mount
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const address = await getNFTMarketplaceAddress();
+        setContractAddress(address);
+        console.log('[NFT] Contract Address loaded from config:', address);
+      } catch (error) {
+        console.error('[NFT] Failed to load contract address from config:', error);
+        toast.error('Failed to load configuration. Please refresh the page.');
+      }
+    };
+    loadConfig();
+  }, []);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -46,6 +56,9 @@ const Create = () => {
     price: '',
     file: null as File | null,
     fileType: 'image' as 'image' | 'video' | 'audio',
+    auctionDays: '7',
+    auctionHours: '0',
+    auctionMinutes: '0',
   });
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -172,7 +185,7 @@ const Create = () => {
     e.preventDefault();
     if (!formData.file || !address || !signer) return;
 
-    let tokenId;
+    let tokenId: any;
     let perceptualHash: string;
 
     try {
@@ -199,18 +212,20 @@ const Create = () => {
 
       // 3. Create and upload metadata
       const metadataHash = await createMetadata(imageHash);
+      // Full metadata URI that will be stored on-chain and used for metadata fetches
+      const metadataUri = `ipfs://${metadataHash}`;
 
       // 3. Mint NFT
-      if (!CONTRACT_ADDRESS) {
-        throw new Error('Contract address is not configured. Please check your environment variables.');
+      if (!contractAddress) {
+        throw new Error('Contract address is not configured. Please refresh the page.');
       }
 
       if (!NFTMarketplaceABI?.abi) {
         throw new Error('Contract ABI is not available. Please check the import path.');
       }
 
-      console.log('[NFT] Initializing contract with address:', CONTRACT_ADDRESS);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, NFTMarketplaceABI.abi, signer);
+      console.log('[NFT] Initializing contract with address:', contractAddress);
+      const contract = new ethers.Contract(contractAddress, NFTMarketplaceABI.abi, signer);
 
       if (!contract) {
         throw new Error('Failed to initialize contract');
@@ -239,7 +254,7 @@ const Create = () => {
       const tx = await contract.mintNFT(
         formData.name,
         formData.description,
-        `ipfs://${imageHash}`,
+        metadataUri,
         formData.category,
         Math.floor(parseFloat(formData.royaltyPercentage) * 100), // Convert to basis points (2.5% -> 250)
         formData.collection || 'Default Collection'
@@ -257,7 +272,6 @@ const Create = () => {
       }
 
       // Robustly extract tokenId from events or logs
-      let tokenId;
       // Try events first
       if (receipt.events) {
         for (const event of receipt.events) {
@@ -268,13 +282,20 @@ const Create = () => {
         }
       }
       console.log('[NFT] All receipt logs:', receipt.logs);
-      // Fallback: Try logs if events are undefined
+      // Fallback: Try logs if events didn't provide tokenId
       if (!tokenId && receipt.logs) {
         const transferTopic = ethers.id("Transfer(address,address,uint256)");
         for (const log of receipt.logs) {
           if (log.topics && log.topics[0] === transferTopic) {
-            tokenId = ethers.getBigInt(log.topics[3]);
-            console.log('[NFT] Extracted tokenId from logs:', tokenId);
+            try {
+              // topics[3] is the tokenId in hex; normalize to decimal string using native BigInt
+              // topics[3] is a hex string like '0x..'; assert it's a string for BigInt
+              const topic3 = (log.topics[3] as string) || '0x0';
+              tokenId = BigInt(topic3).toString();
+              console.log('[NFT] Extracted tokenId from logs:', tokenId);
+            } catch (err) {
+              console.warn('[NFT] Failed to parse tokenId from log topics', err);
+            }
             break;
           }
         }
@@ -286,13 +307,62 @@ const Create = () => {
         const price = ethers.parseEther(formData.price);
         const isAuction = formData.saleType === 'auction';
         toast.loading('Listing your NFT...', { id: 'minting' });
+
+        // Normalize tokenId to a value acceptable by ethers
+        const normalizeTokenId = (id: any) => {
+          if (!id) return null;
+          if (typeof id === 'string') return BigInt(id);
+          if (typeof id === 'bigint') return id;
+          try {
+            if (id.toString) return BigInt(id.toString());
+          } catch (e) {
+            return null;
+          }
+          return null;
+        };
+
+        const tokenIdForTx = normalizeTokenId(tokenId);
+        if (!tokenIdForTx) throw new Error('Invalid tokenId extracted; cannot list NFT');
+
+        // Calculate auction duration in seconds from user input
+        const auctionDurationSeconds = isAuction
+          ? (parseInt(formData.auctionDays || '0') * 24 * 60 * 60) +
+          (parseInt(formData.auctionHours || '0') * 60 * 60) +
+          (parseInt(formData.auctionMinutes || '0') * 60)
+          : 0;
+
         const listingTx = await contract.listNFT(
-          tokenId,
+          tokenIdForTx,
           price,
           isAuction,
-          isAuction ? 7 * 24 * 60 * 60 : 0 // 7 days for auction
+          auctionDurationSeconds
         );
-        await listingTx.wait();
+
+        // Wait for listing TX and log receipt + on-chain listing state
+        const listingReceipt = await listingTx.wait();
+        console.log('[NFT] Listing transaction receipt:', listingReceipt);
+        try {
+          if (listingReceipt.events) {
+            for (const ev of listingReceipt.events) {
+              console.log('[NFT] Listing event:', ev.event, ev.args);
+            }
+          }
+        } catch (e) {
+          console.warn('[NFT] Failed to parse listing events', e);
+        }
+
+        // Read on-chain listing to confirm price and active flag
+        try {
+          const onchainListing = await contract.getListing(tokenIdForTx);
+          console.log('[NFT] On-chain listing:', {
+            seller: onchainListing.seller,
+            price: ethers.formatEther(onchainListing.price),
+            isActive: onchainListing.isActive,
+            isAuction: onchainListing.isAuction,
+          });
+        } catch (e) {
+          console.warn('[NFT] Failed to read on-chain listing', e);
+        }
       }
 
       // Register NFT in backend
@@ -310,9 +380,10 @@ const Create = () => {
           name: formData.name,
           description: formData.description,
           image_url: `ipfs://${imageHash}${mediaTag}`,
-          token_uri: `ipfs://${metadataHash}`,
+          token_uri: metadataUri,
           creator_address: address,
           owner_address: address,
+          contract_address: contractAddress, // Store smart contract address
           price: formData.price || null,
           is_listed: !!formData.putOnSale,
           is_auction: formData.saleType === 'auction',
@@ -343,7 +414,10 @@ const Create = () => {
         saleType: 'fixed',
         price: '',
         file: null,
-        fileType: 'image'
+        fileType: 'image',
+        auctionDays: '7',
+        auctionHours: '0',
+        auctionMinutes: '0',
       });
       setPreviewUrl(null);
 
@@ -571,36 +645,85 @@ const Create = () => {
                         />
                       </div>
                       {formData.putOnSale && (
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="price">Price (ETH)</Label>
-                            <Input
-                              id="price"
-                              type="number"
-                              value={formData.price}
-                              onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))}
-                              min="0"
-                              step="0.001"
-                              placeholder="0.5"
-                              required={formData.putOnSale}
-                            />
+                        <>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label htmlFor="price">Price (ETH)</Label>
+                              <Input
+                                id="price"
+                                type="number"
+                                value={formData.price}
+                                onChange={e => setFormData(prev => ({ ...prev, price: e.target.value }))}
+                                min="0"
+                                step="0.001"
+                                placeholder="0.5"
+                                required={formData.putOnSale}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="sale-type">Sale Type</Label>
+                              <Select
+                                value={formData.saleType}
+                                onValueChange={value => setFormData(prev => ({ ...prev, saleType: value }))}
+                              >
+                                <SelectTrigger id="sale-type">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="fixed">Fixed Price</SelectItem>
+                                  <SelectItem value="auction">Auction</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="sale-type">Sale Type</Label>
-                            <Select
-                              value={formData.saleType}
-                              onValueChange={value => setFormData(prev => ({ ...prev, saleType: value }))}
-                            >
-                              <SelectTrigger id="sale-type">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="fixed">Fixed Price</SelectItem>
-                                <SelectItem value="auction">Auction</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
+
+                          {formData.saleType === 'auction' && (
+                            <div className="space-y-2">
+                              <Label>Auction Duration</Label>
+                              <div className="grid grid-cols-3 gap-3">
+                                <div className="space-y-2">
+                                  <Label htmlFor="auction-days" className="text-xs text-muted-foreground">Days</Label>
+                                  <Input
+                                    id="auction-days"
+                                    type="number"
+                                    value={formData.auctionDays}
+                                    onChange={e => setFormData(prev => ({ ...prev, auctionDays: e.target.value }))}
+                                    min="0"
+                                    max="365"
+                                    placeholder="7"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="auction-hours" className="text-xs text-muted-foreground">Hours</Label>
+                                  <Input
+                                    id="auction-hours"
+                                    type="number"
+                                    value={formData.auctionHours}
+                                    onChange={e => setFormData(prev => ({ ...prev, auctionHours: e.target.value }))}
+                                    min="0"
+                                    max="23"
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor="auction-minutes" className="text-xs text-muted-foreground">Minutes</Label>
+                                  <Input
+                                    id="auction-minutes"
+                                    type="number"
+                                    value={formData.auctionMinutes}
+                                    onChange={e => setFormData(prev => ({ ...prev, auctionMinutes: e.target.value }))}
+                                    min="0"
+                                    max="59"
+                                    placeholder="0"
+                                  />
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-2">
+                                Total: {parseInt(formData.auctionDays || '0')} days, {parseInt(formData.auctionHours || '0')} hours, {parseInt(formData.auctionMinutes || '0')} minutes
+                              </p>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -610,7 +733,7 @@ const Create = () => {
                       type="submit"
                       size="lg"
                       className="w-full bg-gradient-to-r from-purple-500 to-blue-600"
-                      disabled={!formData.file || isUploading || isMinting}
+                      disabled={!formData.file || isUploading || isMinting || !contractAddress}
                     >
                       {isUploading || isMinting ? (
                         <>

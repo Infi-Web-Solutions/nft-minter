@@ -16,6 +16,22 @@ describe("NFTMarketplace", function () {
     nftMarketplace = await NFTMarketplace.deploy();
   });
 
+  describe("Pause", function () {
+    it("blocks mint/list when paused", async function () {
+      await nftMarketplace.pause();
+      await expect(
+        nftMarketplace.connect(creator).mintNFT(
+          "Test NFT",
+          "Test Description",
+          "https://example.com/image.jpg",
+          "art",
+          500,
+          "Test Collection"
+        )
+      ).to.be.revertedWithCustomError(nftMarketplace, "EnforcedPause");
+    });
+  });
+
   describe("Deployment", function () {
     it("Should set the right owner", async function () {
       expect(await nftMarketplace.owner()).to.equal(owner.address);

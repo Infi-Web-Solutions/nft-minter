@@ -1,26 +1,3 @@
-#!/usr/bin/env node
-
-/**
- * FeeManager Initialization Script
- * 
- * This script initializes the FeeManager contract with default fee values.
- * Run this once after deploying the FeeManager contract.
- * 
- * Usage:
- *   node initialize-fee-manager.js [adminAddress]
- * 
- * Environment Variables Required:
- *   - FeeManager_Address or FEE_MANAGER_ADDRESS: The deployed FeeManager contract address
- *   - ADMIN_PRIVATE_KEY or PRIVATE_KEY: Private key of the admin account with FEE_ADMIN role
- *   - sepoliaUrl or TESTNET_URL: Sepolia RPC URL
- *   - ADMIN_ADDRESS (optional): Admin address (can also be passed as command line argument)
- * 
- * Default Values:
- *   - Marketplace Fee: 250 bps (2.5%)
- *   - Lending APR: 1000 bps (10%)
- *   - Leasing Fee: 300 bps (3%)
- *   - Treasury: 0xdA46A64ab8c6BEda14677c49D2Bdd0fC4Bf7b72D
- */
 
 import Web3 from 'web3';
 import dotenv from 'dotenv';
@@ -57,7 +34,7 @@ const CONFIG = {
     marketplaceFeeBps: 250,      // 2.5%
     lendingAprBps: 1000,          // 10%
     leasingFeeBps: 300,           // 3%
-    treasury: '0xdA46A64ab8c6BEda14677c49D2Bdd0fC4Bf7b72D'
+    treasury: '0xb6795a27f271da619c457fec2dec1c9afbb2f561'
 };
 
 async function initializeFeeManager() {
@@ -305,6 +282,12 @@ async function initializeFeeManager() {
         } else if (error.message.includes('insufficient funds')) {
             console.error('   ⚠️  Insufficient Funds: Account does not have enough ETH for gas fees.\n');
             console.error('   💡 Make sure the admin account has enough ETH for transaction gas.\n');
+        } else if (error.message.includes('replacement transaction underpriced')) {
+            console.error('   ⚠️  Transaction Underpriced: There is a pending transaction with the same nonce.\n');
+            console.error('   💡 Solutions:');
+            console.error('      1. Wait for pending transactions to complete (check on block explorer)');
+            console.error('      2. Cancel the pending transaction by sending a new one with higher gas price');
+            console.error('      3. Or wait a few minutes and try again\n');
         } else if (error.message.includes('execution reverted')) {
             console.error('   ⚠️  Transaction Reverted: The contract rejected the transaction.\n');
             console.error('   💡 Common causes:');

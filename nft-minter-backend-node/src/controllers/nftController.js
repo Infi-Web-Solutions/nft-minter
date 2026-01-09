@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import axios from 'axios';
 import NFT from '../models/nft.js';
 import Transaction from '../models/transaction.js';
 import web3Utils from '../utils/web3Utils.js';
@@ -7,7 +9,19 @@ import Collection from '../models/collection.js';
 import NFTView from '../models/nftView.js';
 import { uploadToIPFS } from '../utils/ipfsUtils.js';
 import { createRequire } from 'module';
-import hammingDistance from 'hamming-distance';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logFile = path.join(__dirname, '../../sync_debug.log');
+
+const log = (msg) => {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
+    console.log(msg);
+};
 
 // Import CommonJS module in ES module
 const require = createRequire(import.meta.url);
@@ -40,6 +54,101 @@ const calculatePerceptualHash = async (fileBuffer) => {
     } catch (error) {
         console.error('[ERROR] Failed to calculate perceptual hash:', error);
         throw new Error('Failed to calculate image hash: ' + error.message);
+    }
+};
+
+// Calculate Hamming distance between two hex strings
+const hammingDistance = (hash1, hash2) => {
+    if (!hash1 || !hash2 || hash1.length !== hash2.length) {
+        return 100; // Return high distance if invalid
+    }
+    let distance = 0;
+    for (let i = 0; i < hash1.length; i++) {
+        const val1 = parseInt(hash1[i], 16);
+        const val2 = parseInt(hash2[i], 16);
+        let xor = val1 ^ val2;
+        while (xor) {
+            distance += xor & 1;
+            xor >>= 1;
+        }
+    }
+    return distance;
+};
+
+const syncNftWithBlockchain = async (nft) => {
+    try {
+        if (!nft || !nft.token_id) {
+            log(`[Sync] Skipping sync: nft or token_id missing. nft: ${!!nft}`);
+            return nft;
+        }
+
+        log(`[Sync] Syncing NFT ${nft.token_id} with blockchain...`);
+        const listing = await web3Utils.getOnChainListing(nft.token_id);
+        log(`[Sync] On-chain listing for ${nft.token_id}: ${JSON.stringify(listing)}`);
+
+        // listing structure: [seller, price, isActive, isAuction, auctionEndTime, startingPrice, highestBid, highestBidder]
+        const isActive = listing.isActive !== undefined ? listing.isActive : listing[2];
+        const onChainPrice = listing.price !== undefined ? listing.price : listing[1];
+        const isAuction = listing.isAuction !== undefined ? listing.isAuction : listing[3];
+        const auctionEndTime = listing.auctionEndTime !== undefined ? listing.auctionEndTime : listing[4];
+
+        log(`[Sync] isActive: ${isActive}, onChainPrice: ${onChainPrice}, isAuction: ${isAuction}`);
+
+        let changed = false;
+
+        if (nft.is_listed !== isActive) {
+            log(`[Sync] Updating is_listed: ${nft.is_listed} -> ${isActive}`);
+            nft.is_listed = isActive;
+            changed = true;
+        }
+
+        if (isActive) {
+            const priceEth = web3Utils.web3.utils.fromWei(onChainPrice, 'ether');
+            if (nft.price !== parseFloat(priceEth)) {
+                log(`[Sync] Updating price: ${nft.price} -> ${priceEth}`);
+                nft.price = parseFloat(priceEth);
+                changed = true;
+            }
+
+            if (nft.is_auction !== isAuction) {
+                log(`[Sync] Updating is_auction: ${nft.is_auction} -> ${isAuction}`);
+                nft.is_auction = isAuction;
+                changed = true;
+            }
+
+            if (isAuction) {
+                const endTimeDate = new Date(Number(auctionEndTime) * 1000);
+                if (!nft.auction_end_time || nft.auction_end_time.getTime() !== endTimeDate.getTime()) {
+                    log(`[Sync] Updating auction_end_time`);
+                    nft.auction_end_time = endTimeDate;
+                    changed = true;
+                }
+            }
+        }
+
+        // Also sync owner if possible
+        try {
+            const metadata = await web3Utils.getNftMetadata(nft.token_id);
+            if (metadata && metadata.owner && nft.owner_address.toLowerCase() !== metadata.owner.toLowerCase()) {
+                log(`[Sync] Updating owner: ${nft.owner_address} -> ${metadata.owner}`);
+                nft.owner_address = metadata.owner;
+                changed = true;
+            }
+        } catch (e) {
+            log(`[Sync] Failed to sync owner: ${e.message}`);
+        }
+
+        if (changed) {
+            await nft.save();
+            log(`[Sync] NFT ${nft.token_id} updated in database`);
+        } else {
+            log(`[Sync] No changes for NFT ${nft.token_id}`);
+        }
+
+        return nft;
+    } catch (error) {
+        log(`[Sync] Error syncing NFT ${nft.token_id}: ${error.message}`);
+        return nft;
     }
 };
 
@@ -136,6 +245,7 @@ export const registerNft = async (req, res) => {
         console.log("[DEBUG] registerNft called with data:", {
             token_id: data.token_id,
             name: data.name,
+            contract_address: data.contract_address,
             has_perceptual_hash: !!data.perceptual_hash,
             perceptual_hash: data.perceptual_hash ? data.perceptual_hash.substring(0, 16) + '...' : 'none'
         });
@@ -149,6 +259,7 @@ export const registerNft = async (req, res) => {
                 token_uri: data.token_uri || '',
                 creator_address: data.creator_address,
                 owner_address: data.owner_address,
+                contract_address: data.contract_address || process.env.NFT_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS,
                 price: data.price,
                 is_listed: data.is_listed || false,
                 is_auction: data.is_auction || false,
@@ -160,6 +271,16 @@ export const registerNft = async (req, res) => {
         );
 
         console.log("[DEBUG] NFT registered successfully with ID:", nft._id);
+
+        // Update user profile stats
+        if (data.creator_address) {
+            await UserProfile.findOneAndUpdate(
+                { wallet_address: data.creator_address },
+                { $inc: { total_created: 1 } },
+                { upsert: true }
+            );
+        }
+
         return res.json({ success: true, created: !nft.isNew, nft_id: nft._id });
     } catch (error) {
         console.error("[ERROR] register_nft:", error);
@@ -206,6 +327,22 @@ export const buyNft = async (req, res) => {
         nft.owner_address = buyer_address;
         nft.is_listed = false;
         await nft.save();
+
+        // Update user profile stats for buyer
+        await UserProfile.findOneAndUpdate(
+            { wallet_address: buyer_address },
+            { $inc: { total_collected: 1 } },
+            { upsert: true }
+        );
+
+        // Update user profile stats for seller (optional: update volume)
+        if (oldOwner) {
+            await UserProfile.findOneAndUpdate(
+                { wallet_address: oldOwner },
+                { $inc: { total_volume: nft.price } },
+                { upsert: true }
+            );
+        }
 
         // Create transaction record
         const transactionData = {
@@ -277,6 +414,13 @@ export const updateNftOwner = async (req, res) => {
         nft.owner_address = newOwner;
         nft.is_listed = false; // Assuming buy removes listing
         await nft.save();
+
+        // Update user profile stats for new owner
+        await UserProfile.findOneAndUpdate(
+            { wallet_address: newOwner },
+            { $inc: { total_collected: 1 } },
+            { upsert: true }
+        );
 
         // Create transaction record
         const transactionData = {
@@ -512,7 +656,7 @@ export const getCombinedNfts = async (req, res) => {
             const favorites = await Favorite.find({ user_address });
             liked_nft_ids = new Set(favorites.map(fav => fav.nft.toString()));
         }
-        const local_nfts = await NFT.find().limit(50);
+        const local_nfts = await NFT.find({ is_listed: true }).sort({ created_at: -1 }).limit(100);
         const local_nfts_data = await Promise.all(local_nfts.map(async (nft) => {
             const like_count = await Favorite.countDocuments({ nft: nft._id });
             return {
@@ -527,7 +671,7 @@ export const getCombinedNfts = async (req, res) => {
                 is_auction: nft.is_auction,
                 owner_address: nft.owner_address,
                 creator_address: nft.creator_address,
-                collection: nft.nft_collection,
+                collection: nft.nft_collection || 'NFT Collection',
                 category: nft.category,
                 created_at: nft.created_at,
                 source: 'local',
@@ -562,10 +706,13 @@ export const getCombinedNfts = async (req, res) => {
 export const getNftDetail = async (req, res) => {
     try {
         const { token_id } = req.params;
-        const nft = await NFT.findOne({ token_id });
+        let nft = await NFT.findOne({ token_id });
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
+
+        // Sync with blockchain before returning
+        nft = await syncNftWithBlockchain(nft);
         let blockchain_data = null;
         try {
             blockchain_data = await web3Utils.getNftMetadata(token_id);
@@ -589,7 +736,7 @@ export const getNftDetail = async (req, res) => {
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
             royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-            collection: nft.nft_collection,
+            collection: nft.nft_collection || 'NFT Collection',
             category: nft.category,
             created_at: nft.created_at,
             blockchain_data
@@ -606,7 +753,7 @@ export const getNfts = async (req, res) => {
         let { page = 1, limit = 12, category, collection, price_min, price_max, sort_by = 'created_at', sort_order = 'desc' } = req.query;
         page = parseInt(page);
         limit = parseInt(limit);
-        const query = {};
+        const query = { is_listed: true };
         if (category) query.category = category;
         if (collection) query.nft_collection = collection;
         if (price_min) query.price = { ...query.price, $gte: parseFloat(price_min) };
@@ -632,7 +779,7 @@ export const getNfts = async (req, res) => {
             highest_bidder: nft.highest_bidder,
             owner_address: nft.owner_address,
             creator_address: nft.creator_address,
-            collection: nft.nft_collection,
+            collection: nft.nft_collection || 'NFT Collection',
             category: nft.category,
             created_at: nft.created_at,
         }));
@@ -677,7 +824,7 @@ export const getTrendingCollections = async (req, res) => {
 export const getUserCreatedNfts = async (req, res) => {
     try {
         const { wallet_address } = req.params;
-        const nfts = await NFT.find({ creator_address: wallet_address });
+        const nfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${wallet_address}$`, 'i') } });
         const nfts_data = nfts.map(nft => ({
             id: nft._id,
             token_id: nft.token_id,
@@ -702,8 +849,8 @@ export const getUserCreatedNfts = async (req, res) => {
 export const getUserNfts = async (req, res) => {
     try {
         const { wallet_address } = req.params;
-        const owned_nfts = await NFT.find({ owner_address: wallet_address });
-        const created_nfts = await NFT.find({ creator_address: wallet_address });
+        const owned_nfts = await NFT.find({ owner_address: { $regex: new RegExp(`^${wallet_address}$`, 'i') } });
+        const created_nfts = await NFT.find({ creator_address: { $regex: new RegExp(`^${wallet_address}$`, 'i') } });
         const nftMap = new Map();
         for (const nft of owned_nfts) {
             nftMap.set(nft.token_id, nft);
@@ -744,7 +891,8 @@ export const searchNfts = async (req, res) => {
                 { name: { $regex: query, $options: 'i' } },
                 { description: { $regex: query, $options: 'i' } },
                 { nft_collection: { $regex: query, $options: 'i' } }
-            ]
+            ],
+            is_listed: true
         });
         const nfts_data = nfts.map(nft => ({
             id: nft._id,
@@ -794,16 +942,77 @@ export const setNftListed = async (req, res) => {
         if (!nft) {
             return res.status(404).json({ success: false, error: 'NFT not found' });
         }
-        // Check on-chain listing status
-        const contract = await web3Utils.getNftMarketplaceContract();
-        const is_listed = await contract.methods.isListed(token_id).call();
-        if (is_listed) {
+
+        // Check on-chain listing status and details
+        const contract = web3Utils.contract;
+        console.log(`[setNftListed] Fetching on-chain listing for token_id: ${token_id}`);
+
+        // Add a small delay to ensure the blockchain state is updated
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const listing = await contract.methods.getListing(token_id).call();
+        console.log(`[setNftListed] On-chain listing for ${token_id}:`, listing);
+
+        // listing structure: [seller, price, isActive, isAuction, auctionEndTime, startingPrice, highestBid, highestBidder]
+        // Web3.js returns an object with both numeric and named keys
+        const isActive = listing.isActive !== undefined ? listing.isActive : listing[2];
+
+        if (isActive) {
             nft.is_listed = true;
+            nft.is_auction = listing.isAuction !== undefined ? listing.isAuction : listing[3];
+            const priceWei = listing.price !== undefined ? listing.price : listing[1];
+            nft.price = web3Utils.web3.utils.fromWei(priceWei, 'ether');
+
+            if (nft.is_auction) {
+                const endTime = listing.auctionEndTime !== undefined ? listing.auctionEndTime : listing[4];
+                nft.auction_end_time = new Date(Number(endTime) * 1000);
+            }
+
             await nft.save();
-            return res.json({ success: true, is_listed: true });
+            console.log(`[setNftListed] Successfully updated NFT ${token_id} in DB`);
+
+            return res.json({
+                success: true,
+                is_listed: true,
+                is_auction: nft.is_auction,
+                price: nft.price
+            });
         } else {
-            return res.status(400).json({ success: false, error: 'NFT is not listed on-chain' });
+            console.log(`[setNftListed] NFT ${token_id} is NOT listed on-chain. Updating DB...`);
+            // If not active on-chain, ensure it's marked as not listed in DB
+            nft.is_listed = false;
+            await nft.save();
+            return res.json({
+                success: true,
+                is_listed: false,
+                message: 'NFT is not listed on-chain. Database updated.'
+            });
         }
+    } catch (error) {
+        console.error('[ERROR] setNftListed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+export const setNftRentable = async (req, res) => {
+    try {
+        const { token_id } = req.params;
+        const { is_rentable } = req.body;
+
+        const nft = await NFT.findOne({ token_id });
+        if (!nft) {
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
+
+        nft.is_rentable = is_rentable;
+        // If rentable, it's technically not "listed for sale" in the traditional sense, 
+        // but we might want to keep is_listed false to avoid confusion in the marketplace
+        if (is_rentable) {
+            nft.is_listed = false;
+        }
+
+        await nft.save();
+        return res.json({ success: true, is_rentable: nft.is_rentable });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -913,93 +1122,6 @@ export const uploadIpfs = async (req, res) => {
     }
 };
 
-// Get NFT by combined ID (handles local_ prefix)
-// export const getNftByCombinedId = async (req, res) => {
-//     try {
-//         const { combined_id } = req.params;
-//         console.log(`[DEBUG] getNftByCombinedId called with id: ${combined_id}`);
-
-//         // Check if this is a local NFT (has "local_" prefix)
-//         if (combined_id.startsWith('local_')) {
-//             // Extract the actual ID from the local ID
-//             const actualId = combined_id.replace('local_', '');
-//             console.log(`[DEBUG] Local NFT detected, actualId: ${actualId}`);
-
-//             try {
-//                 // Try to find by database ID first, then by token_id
-//                 let nft;
-//                 try {
-//                     nft = await NFT.findById(actualId);
-//                 } catch {
-//                     nft = await NFT.findOne({ token_id: actualId });
-//                 }
-
-//                 if (!nft) {
-//                     return res.status(404).json({
-//                         success: false,
-//                         error: 'Local NFT not found'
-//                     });
-//                 }
-
-//                 // Get blockchain data
-//                 let blockchainData = null;
-//                 try {
-//                     blockchainData = await web3Utils.getNftMetadata(nft.token_id);
-//                 } catch (e) {
-//                     console.warn(`Could not fetch blockchain data: ${e.message}`);
-//                     blockchainData = null;
-//                 }
-
-//                 const nftData = {
-//                     id: `local_${nft._id}`,
-//                     token_id: nft.token_id,
-//                     name: nft.name,
-//                     description: nft.description,
-//                     image_url: nft.image_url,
-//                     token_uri: nft.token_uri,
-//                     price: nft.price != null ? parseFloat(nft.price) : null,
-//                     is_listed: nft.is_listed,
-//                     is_auction: nft.is_auction,
-//                     auction_end_time: nft.auction_end_time || null,
-//                     current_bid: nft.current_bid != null ? parseFloat(nft.current_bid) : null,
-//                     highest_bidder: nft.highest_bidder,
-//                     owner_address: nft.owner_address,
-//                     creator_address: nft.creator_address,
-//                     royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-//                     collection: nft.nft_collection,
-//                     category: nft.category,
-//                     created_at: nft.created_at,
-//                     blockchain_data: blockchainData,
-//                     source: 'local'
-//                 };
-
-//                 return res.json({
-//                     success: true,
-//                     data: nftData
-//                 });
-//             } catch (error) {
-//                 console.error(`[ERROR] Error finding local NFT: ${error}`);
-//                 return res.status(404).json({
-//                     success: false,
-//                     error: 'Local NFT not found'
-//                 });
-//             }
-//         } else {
-//             // Only local NFTs are supported now
-//             return res.status(404).json({
-//                 success: false,
-//                 error: 'Only local NFTs are supported'
-//             });
-//         }
-//     } catch (error) {
-//         console.error(`[ERROR] getNftByCombinedId: ${error}`);
-//         return res.status(500).json({
-//             success: false,
-//             error: error.message
-//         });
-//     }
-// };
-
 export const getNftByCombinedId = async (req, res) => {
     try {
         const { combined_id } = req.params;
@@ -1028,6 +1150,9 @@ export const getNftByCombinedId = async (req, res) => {
                         error: 'Local NFT not found'
                     });
                 }
+
+                // Sync with blockchain before returning
+                nft = await syncNftWithBlockchain(nft);
 
                 // Get blockchain data (with error handling)
                 let blockchainData = null;
@@ -1071,7 +1196,7 @@ export const getNftByCombinedId = async (req, res) => {
                     owner_address: nft.owner_address,
                     creator_address: nft.creator_address,
                     royalty_percentage: nft.royalty_percentage != null ? parseFloat(nft.royalty_percentage) : null,
-                    collection: nft.nft_collection,
+                    collection: nft.nft_collection || 'NFT Collection',
                     category: nft.category,
                     created_at: nft.created_at,
                     blockchain_data: blockchainData,
@@ -1184,7 +1309,7 @@ export const getNftStats = async (req, res) => {
             properties.push(
                 { trait_type: 'Rarity', value: 'Common', rarity: '45%' },
                 { trait_type: 'Category', value: nft.category || 'Art', rarity: '30%' },
-                { trait_type: 'Collection', value: nft.nft_collection || 'Unknown', rarity: '25%' }
+                { trait_type: 'Collection', value: nft.nft_collection || 'NFT Collection', rarity: '25%' }
             );
         }
 
@@ -1290,28 +1415,28 @@ const calculateLoanDetails = (nftPriceETH) => {
     const ETH_TO_USD = 1700; // Convert ETH to USD (you can make this dynamic)
     const LTV_RATIO = 0.60; // 60% Loan-to-Value ratio (conservative)
     const ANNUAL_INTEREST_RATE = 0.03; // 3% APR
-    
+
     const nftValueETH = parseFloat(nftPriceETH);
     const nftValueUSD = nftValueETH * ETH_TO_USD;
-    
+
     // Calculate max loan amount (60% of NFT value)
     const maxLoanETH = nftValueETH * LTV_RATIO;
     const maxLoanUSD = nftValueUSD * LTV_RATIO;
-    
+
     // Calculate interest for different loan periods
     const calculateInterestForPeriod = (principal, rate, months) => {
         const monthlyRate = rate / 12;
         const totalInterest = principal * monthlyRate * months;
         const totalRepayment = principal + totalInterest;
         const monthlyPayment = totalRepayment / months;
-        
+
         return {
             total_interest: parseFloat(totalInterest.toFixed(4)),
             total_repayment: parseFloat(totalRepayment.toFixed(4)),
             monthly_payment: parseFloat(monthlyPayment.toFixed(4))
         };
     };
-    
+
     return {
         nft_value: {
             eth: parseFloat(nftValueETH.toFixed(4)),
@@ -1357,28 +1482,67 @@ const calculateLoanDetails = (nftPriceETH) => {
 // Get external NFT metadata from any contract
 export const getExternalNft = async (req, res) => {
     try {
-        const { contract_address, token_id } = req.body;
-        
+        // Support both POST (body) and GET (params)
+        const contract_address = req.body.contract_address || req.params.contract;
+        const token_id = req.body.token_id || req.params.tokenId;
+
         console.log(`[DEBUG] getExternalNft called with contract: ${contract_address}, token: ${token_id}`);
-        
+
         if (!contract_address || !token_id) {
             return res.status(400).json({
                 success: false,
                 error: 'Both contract_address and token_id are required'
             });
         }
-        
+
         // Always check internal database first for ANY contract
         // This handles NFTs that were minted through this platform
-        console.log(`[DEBUG] Checking internal database for token_id: ${token_id}`);
-        const internalNft = await NFT.findOne({ token_id: parseInt(token_id) });
-        
+        console.log(`[DEBUG] Checking internal database for contract: ${contract_address}, token_id: ${token_id}`);
+        // Match by BOTH token_id and contract_address to avoid collisions between
+        // different NFT contracts (e.g. original collection vs WrappedLeasing wNFTs)
+        const internalNft = await NFT.findOne({
+            token_id: parseInt(token_id),
+            contract_address: { $regex: new RegExp(`^${contract_address}$`, 'i') }
+        });
+
         if (internalNft) {
             console.log(`[DEBUG] Found NFT in internal database - Name: ${internalNft.name}`);
-            
+
+            // For marketplace contract NFTs, fetch fresh on-chain metadata
+            console.log('[DEBUG] Checking if marketplace contract:', {
+                web3UtilsAddress: web3Utils.contractAddress,
+                requestAddress: contract_address.toLowerCase(),
+                match: web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()
+            });
+
+            if (web3Utils.contractAddress && contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+                console.log('[DEBUG] Marketplace NFT - fetching fresh on-chain metadata');
+                try {
+                    const onChainMeta = await web3Utils.contract.methods.getNFTMetadata(token_id).call();
+                    console.log('[DEBUG] Fresh on-chain metadata:', onChainMeta);
+
+                    internalNft.name = onChainMeta.name || onChainMeta[0];
+                    internalNft.description = onChainMeta.description || onChainMeta[1];
+
+                    const imageURI = onChainMeta.imageURI || onChainMeta[2];
+                    if (imageURI) {
+                        // Use robust IPFS resolution from web3Utils
+                        const resolvedImage = web3Utils._resolveIPFS(imageURI);
+                        console.log(`[DEBUG] Resolved image URL: ${resolvedImage} (from: ${imageURI})`);
+                        internalNft.image_url = resolvedImage;
+                        internalNft.token_uri = imageURI;
+                    }
+
+                    await internalNft.save();
+                    console.log('[DEBUG] Database updated with fresh metadata');
+                } catch (e) {
+                    console.warn('[DEBUG] Failed to fetch fresh metadata:', e.message);
+                }
+            }
+
             // Calculate loan details based on NFT price
             const loanDetails = calculateLoanDetails(internalNft.price);
-            
+
             // Return data from our database (most complete data)
             const formattedData = {
                 id: `local_${internalNft._id}`,
@@ -1390,7 +1554,7 @@ export const getExternalNft = async (req, res) => {
                 token_uri: internalNft.token_uri,
                 owner_address: internalNft.owner_address,
                 creator_address: internalNft.creator_address,
-                collection: internalNft.nft_collection || 'NFTMarketplace',
+                collection: internalNft.nft_collection || 'NFT Collection',
                 category: internalNft.category || 'Art',
                 contract_address: contract_address,
                 is_listed: internalNft.is_listed,
@@ -1405,27 +1569,81 @@ export const getExternalNft = async (req, res) => {
                 properties: [],
                 collateral_lending: loanDetails // Add loan calculation details
             };
-            
+
             return res.json({
                 success: true,
                 data: formattedData
             });
         }
-        
+
         // If not in our database, fetch from blockchain (external NFT)
         console.log(`[DEBUG] NFT not in database, fetching from blockchain`);
-        const nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
-        
+
+        // Special case: if this is our own NFT marketplace contract, use its full ABI
+        // to also read on-chain listing info reliably (price + isActive).
+        let nftData;
+        if (
+            web3Utils.contractAddress &&
+            contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()
+        ) {
+            console.log('[DEBUG] Contract matches marketplace contractAddress; using on-chain marketplace helpers');
+            try {
+                // Basic metadata (tokenURI/owner) is already handled in web3Utils.getExternalNftMetadata
+                // but we want full listing as in fetchNftDetails.js
+                const meta = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+                nftData = meta;
+            } catch (e) {
+                console.warn('[DEBUG] Marketplace-specific metadata fetch failed, falling back to generic external metadata', e.message);
+                nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+            }
+        } else {
+            nftData = await web3Utils.getExternalNftMetadata(contract_address, token_id);
+        }
+
         if (!nftData.success) {
             return res.status(404).json({
                 success: false,
                 error: 'NFT not found on blockchain'
             });
         }
-        
+
         console.log(`[DEBUG] External NFT fetched - Name: ${nftData.name}, Image: ${nftData.image ? 'yes' : 'no'}`);
-        
-        // Format response similar to internal NFTs
+
+        // Derive listing / price info if available (e.g. our NFTMarketplace contract)
+        let listing = nftData.listing || null;
+        // If this is our main marketplace contract and listing is missing from generic path,
+        // fetch it explicitly using the core marketplace ABI (more reliable).
+        if (!listing && web3Utils.contractAddress &&
+            contract_address.toLowerCase() === web3Utils.contractAddress.toLowerCase()) {
+            try {
+                const raw = await web3Utils.getOnChainListing(token_id);
+                const rawPrice = raw.price || raw[1];
+                const isActive = typeof raw.isActive !== 'undefined' ? raw.isActive : raw[2];
+                const isAuction = typeof raw.isAuction !== 'undefined' ? raw.isAuction : raw[3];
+                const priceEth = rawPrice && rawPrice !== '0'
+                    ? web3Utils.web3.utils.fromWei(rawPrice.toString(), 'ether')
+                    : null;
+                listing = {
+                    seller: raw.seller || raw[0],
+                    priceEth,
+                    isActive,
+                    isAuction
+                };
+                console.log('[DEBUG] On-chain marketplace listing fetched in controller:', listing);
+            } catch (e) {
+                console.warn('[DEBUG] Failed to fetch on-chain listing in controller:', e.message);
+            }
+        }
+
+        const priceEth = listing && listing.isActive && listing.priceEth
+            ? parseFloat(listing.priceEth)
+            : null;
+        const isListed = !!(listing && listing.isActive && listing.priceEth);
+
+        // REMOVED: Auto-save to database. 
+        // We now only save when a user explicitly interacts (e.g. creates a loan).
+        // This prevents the marketplace from being flooded with searched NFTs.
+
         const formattedData = {
             id: `external_${contract_address}_${token_id}`,
             nft_address: `${contract_address}:${token_id}`,
@@ -1439,9 +1657,9 @@ export const getExternalNft = async (req, res) => {
             collection: nftData.collection_name,
             category: 'External NFT',
             contract_address: contract_address,
-            is_listed: false,
-            is_auction: false,
-            price: null,
+            is_listed: isListed,
+            is_auction: listing ? !!listing.isAuction : false,
+            price: priceEth,
             source: 'external',
             blockchain_data: {
                 contract_address: contract_address,
@@ -1451,19 +1669,295 @@ export const getExternalNft = async (req, res) => {
                 symbol: nftData.symbol,
                 metadata: nftData.metadata
             },
-            properties: nftData.attributes || []
+            properties: nftData.attributes || [],
+            collateral_lending: calculateLoanDetails(priceEth) // Add loan calculation for external NFTs too
         };
-        
+
         return res.json({
             success: true,
             data: formattedData
         });
-        
+
     } catch (error) {
         console.error(`[ERROR] getExternalNft: ${error}`);
         return res.status(500).json({
             success: false,
+            error: 'Failed to fetch external NFT details'
+        });
+    }
+};
+
+export const createOffer = async (req, res) => {
+    try {
+        let { token_id } = req.params;
+        const { from_address, price, transaction_hash, block_number, gas_used, gas_price } = req.body;
+
+        console.log(`[DEBUG] createOffer called for token_id: ${token_id}`);
+        console.log('[DEBUG] Offer data:', req.body);
+
+        if (!from_address || !price) {
+            return res.status(400).json({ success: false, error: 'Missing required fields' });
+        }
+
+        // Strip the "local_" prefix if present (frontend sends IDs like "local_694926a96d2b1e5de5217aa6")
+        if (token_id.startsWith('local_')) {
+            token_id = token_id.replace('local_', '');
+            console.log(`[DEBUG] Stripped local_ prefix, new token_id: ${token_id}`);
+        }
+
+        // Find the NFT
+        let nft = null;
+
+        // Check if token_id is a valid number (for token_id lookup)
+        if (!isNaN(token_id)) {
+            nft = await NFT.findOne({ token_id: token_id });
+        }
+
+        // If not found by token_id, try by _id if it's a valid ObjectId
+        if (!nft && mongoose.Types.ObjectId.isValid(token_id)) {
+            nft = await NFT.findById(token_id);
+        }
+
+        if (!nft) {
+            console.log(`[DEBUG] NFT not found for token_id: ${token_id}`);
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
+
+        // Create Transaction record
+        const transaction = new Transaction({
+            transaction_hash: transaction_hash || `OFFER_${Date.now()}_${Math.random().toString(36).substring(7)}`, // Generate dummy hash if off-chain
+            nft: nft._id,
+            from_address: from_address.toLowerCase(),
+            to_address: nft.owner_address.toLowerCase(),
+            transaction_type: 'bid',
+            price: price,
+            block_number: block_number || 0,
+            gas_used: gas_used || 0,
+            gas_price: gas_price || 0,
+            timestamp: new Date()
+        });
+
+        await transaction.save();
+        console.log('[DEBUG] Offer transaction saved:', transaction._id);
+
+        // Update current_bid on NFT if it's an auction and this is higher
+        if (nft.is_auction && price > (nft.current_bid || 0)) {
+            nft.current_bid = price;
+            nft.highest_bidder = from_address.toLowerCase();
+            await nft.save();
+            console.log('[DEBUG] Updated NFT current_bid');
+        }
+
+        return res.status(201).json({
+            success: true,
+            data: transaction
+        });
+
+    } catch (error) {
+        console.error('[ERROR] createOffer:', error);
+        // Handle duplicate key error (if we generated a colliding hash, unlikely but possible)
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, error: 'Duplicate transaction hash' });
+        }
+        return res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+/**
+ * End an auction and transfer NFT to winner
+ */
+export const endAuction = async (req, res) => {
+    try {
+        const { token_id } = req.params;
+        const { transaction_hash, winner, final_price } = req.body;
+
+        console.log(`[endAuction] Finalizing auction for token: ${token_id}`);
+        console.log(`[endAuction] Params:`, { transaction_hash, winner, final_price });
+
+        // Find the NFT - try both string and number for token_id
+        let nft = await NFT.findOne({ token_id: token_id });
+        if (!nft && !isNaN(token_id)) {
+            nft = await NFT.findOne({ token_id: Number(token_id) });
+        }
+
+        if (!nft) {
+            console.error(`[endAuction] NFT not found for token_id: ${token_id}`);
+            return res.status(404).json({ success: false, error: 'NFT not found' });
+        }
+
+        console.log(`[endAuction] Found NFT: ${nft.name} (ID: ${nft._id})`);
+
+        // Verify the transaction if hash is provided
+        if (transaction_hash) {
+            try {
+                console.log(`[endAuction] Verifying transaction: ${transaction_hash}`);
+                const receipt = await web3Utils.web3.eth.getTransactionReceipt(transaction_hash);
+                if (!receipt) {
+                    console.warn(`[endAuction] Transaction receipt not found yet for: ${transaction_hash}`);
+                } else if (!receipt.status) {
+                    console.error(`[endAuction] Transaction failed on-chain: ${transaction_hash}`);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Transaction failed on-chain'
+                    });
+                } else {
+                    console.log(`[endAuction] Transaction confirmed!`);
+                }
+            } catch (error) {
+                console.error('[endAuction] Transaction verification error:', error);
+            }
+        }
+
+        const oldOwner = nft.owner_address;
+        let newOwner = winner;
+
+        // Wait a moment for blockchain state to propagate before fetching metadata
+        console.log(`[endAuction] Waiting 2 seconds for state propagation...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Robust check: Fetch current owner from blockchain
+        try {
+            console.log(`[endAuction] Fetching current owner from blockchain for token ${token_id}...`);
+            const blockchainMetadata = await web3Utils.getNftMetadata(nft.token_id);
+            if (blockchainMetadata && blockchainMetadata.owner) {
+                console.log(`[endAuction] Blockchain owner: ${blockchainMetadata.owner}`);
+                newOwner = blockchainMetadata.owner;
+            }
+        } catch (error) {
+            console.warn(`[endAuction] Could not fetch owner from blockchain: ${error.message}. Using provided winner.`);
+        }
+
+        // Update NFT ownership if we have a valid owner
+        if (newOwner && newOwner !== '0x0000000000000000000000000000000000000000') {
+            console.log(`[endAuction] Updating owner from ${oldOwner} to ${newOwner}`);
+            nft.owner_address = newOwner;
+
+            // Update user profile stats
+            try {
+                await UserProfile.findOneAndUpdate(
+                    { wallet_address: newOwner.toLowerCase() },
+                    { $inc: { total_collected: 1 } },
+                    { upsert: true }
+                );
+
+                if (oldOwner) {
+                    await UserProfile.findOneAndUpdate(
+                        { wallet_address: oldOwner.toLowerCase() },
+                        { $inc: { total_volume: Number(final_price) || 0 } },
+                        { upsert: true }
+                    );
+                }
+            } catch (err) {
+                console.error(`[endAuction] Error updating user profiles:`, err);
+            }
+        } else {
+            console.log(`[endAuction] No winner or zero address winner. NFT remains with ${oldOwner} or marketplace.`);
+        }
+
+        // Mark auction as ended in DB
+        nft.is_listed = false;
+        nft.is_auction = false;
+        nft.updated_at = Date.now();
+
+        await nft.save();
+        console.log(`[endAuction] NFT updated successfully in database`);
+
+        // Create transaction record
+        if (transaction_hash && winner) {
+            const transactionData = {
+                transaction_hash,
+                nft: nft._id,
+                from_address: oldOwner,
+                to_address: winner,
+                transaction_type: 'auction_end',
+                price: final_price || 0,
+                timestamp: new Date(),
+            };
+
+            await Transaction.create(transactionData);
+        }
+
+        console.log('[endAuction] Auction ended successfully');
+        return res.json({
+            success: true,
+            message: 'Auction ended successfully',
+            new_owner: nft.owner_address
+        });
+
+    } catch (error) {
+        console.error('[endAuction] Error:', error);
+        return res.status(500).json({
+            success: false,
             error: error.message
         });
+    }
+};
+
+
+
+/**
+ * Proxy image requests to bypass browser restrictions/CORS
+ */
+export const proxyImage = async (req, res) => {
+    const { url } = req.query;
+
+    if (!url) {
+        return res.status(400).send('URL parameter is required');
+    }
+
+    try {
+        // Basic validation to prevent abuse
+        // Allow IPFS gateways and standard image hosts
+        const allowedDomains = [
+            'ipfs.io',
+            'gateway.pinata.cloud',
+            'nftstorage.link',
+            'dweb.link',
+            'gateway.ipfs.io',
+            'arweave.net'
+        ];
+
+        const targetUrl = new URL(url);
+        const isAllowed = allowedDomains.some(domain => targetUrl.hostname.endsWith(domain));
+
+        if (!isAllowed) {
+            console.warn(`[Proxy] Blocked request to unauthorized domain: ${targetUrl.hostname}`);
+            // Optional: return res.status(403).send('Domain not allowed');
+            // For now, let's be permissive for debugging but log it
+        }
+
+        console.log(`[Proxy] Fetching image via axios: ${url}`);
+
+        const response = await axios({
+            method: 'get',
+            url: url,
+            responseType: 'stream',
+            timeout: 10000, // 10s timeout
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
+
+        // Forward content type
+        const contentType = response.headers['content-type'];
+        if (contentType) {
+            res.setHeader('Content-Type', contentType);
+        }
+
+        // Cache for performance (1 year)
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+        // Pipe the response stream to the client
+        response.data.pipe(res);
+
+    } catch (error) {
+        console.error(`[Proxy] Error fetching image: ${error.message}`);
+        if (error.response) {
+            console.error(`[Proxy] Upstream status: ${error.response.status}`);
+            return res.status(error.response.status).send(`Upstream error: ${error.response.statusText}`);
+        }
+        if (!res.headersSent) {
+            res.status(500).send('Failed to proxy image');
+        }
     }
 };

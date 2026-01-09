@@ -8,7 +8,10 @@ import {
     unfollowUser,
     getFollowers,
     getFollowing,
-    getUserLikedNfts
+    getUserLikedNfts,
+    getUserListings,
+    getUserRentedOut,
+    getUserRentals
 } from '../controllers/userController.js';
 
 const router = express.Router();
@@ -23,5 +26,8 @@ router.post('/:walletAddress/follow/', followUser);
 router.post('/:walletAddress/unfollow/', unfollowUser);
 router.get('/:walletAddress/followers/', getFollowers);
 router.get('/:walletAddress/following/', getFollowing);
+router.get('/:walletAddress/listings/', getUserListings);
+router.get('/:walletAddress/rented-out/', getUserRentedOut);
+router.get('/:walletAddress/rentals/', getUserRentals);
 
 export default router;

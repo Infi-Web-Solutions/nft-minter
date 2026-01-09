@@ -23,6 +23,10 @@ export interface NFT {
   is_listed?: boolean;
   is_auction?: boolean;
   sell_orders?: Array<{ current_price: string | number }>;
+  // Optional contract address for the NFT (e.g. original collection or wrapped contract)
+  contract_address?: string;
+  // Flag to indicate this NFT represents a wrapped leasing token (wNFT)
+  isWrapped?: boolean;
 }
 
 export interface NFTResponse {
@@ -43,13 +47,13 @@ class NFTService {
 
   async getCombinedNFTs(userAddress?: string): Promise<NFT[]> {
     try {
-      const url = userAddress 
+      const url = userAddress
         ? apiUrl(`/nfts/combined/?user_address=${userAddress}`)
         : apiUrl('/nfts/combined/');
-      
+
       const response = await fetch(url);
       const data: NFTResponse = await response.json();
-      
+
       if (data.success) {
         console.log('[nftService] First NFT ID:', data.data[0]?.id, 'Type:', typeof data.data[0]?.id);
         console.log('[nftService] All NFT IDs:', data.data.map(nft => ({ id: nft.id, type: typeof nft.id, source: nft.source })));
@@ -68,9 +72,9 @@ class NFTService {
     try {
       const response = await fetch(apiUrl(`/profiles/${walletAddress}/created/`));
       const data = await response.json();
-      
+
       if (data.success) {
-        return data.nfts || [];
+        return data.data || [];
       } else {
         console.error('Failed to fetch user created NFTs:', data.error);
         return [];
@@ -85,9 +89,9 @@ class NFTService {
     try {
       const response = await fetch(apiUrl(`/profiles/${walletAddress}/nfts/`));
       const data = await response.json();
-      
+
       if (data.success) {
-        return data.nfts || [];
+        return data.data || [];
       } else {
         console.error('Failed to fetch user collected NFTs:', data.error);
         return [];
@@ -107,7 +111,7 @@ class NFTService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_address: userAddress }),
       });
-      
+
       const data = await response.json();
       return { success: data.success, liked: data.liked, like_count: data.like_count, error: data.error };
     } catch (error) {
@@ -123,7 +127,7 @@ class NFTService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_owner: userAddress }),
       });
-      
+
       const data = await response.json();
       return data.success;
     } catch (error) {
@@ -136,7 +140,7 @@ class NFTService {
     try {
       const response = await fetch(apiUrl(`/profiles/${userAddress}/liked/`));
       const data = await response.json();
-      
+
       if (data.success) {
         return data.data || [];
       } else {
@@ -150,4 +154,4 @@ class NFTService {
   }
 }
 
-export const nftService = new NFTService(); 
+export const nftService = new NFTService();

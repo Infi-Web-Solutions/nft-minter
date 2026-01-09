@@ -30,6 +30,7 @@ const Navbar = () => {
   const { isConnected, address, balance, chainId, disconnectWallet, isLoading } = useWallet();
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showCollateralModal, setShowCollateralModal] = useState(false);
+  const [sidebarLeasingType, setSidebarLeasingType] = useState<'collateral' | 'wrapped' | 'marketplace'>('collateral');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
 
@@ -175,17 +176,28 @@ const Navbar = () => {
                             <p className="text-sm text-muted-foreground">Fund loans and earn interest</p>
                           </Link>
                         </NavigationMenuLink>
+                        <NavigationMenuLink asChild>
+                          <Link
+                            to="/admin/offers"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <div className="text-sm font-medium">My Offers</div>
+                            <p className="text-sm text-muted-foreground">Manage your NFT offers</p>
+                          </Link>
+                        </NavigationMenuLink>
                       </div>
                     </NavigationMenuContent>
                   </NavigationMenuItem>
-
                   <NavigationMenuItem>
                     <NavigationMenuTrigger>Leasing</NavigationMenuTrigger>
                     <NavigationMenuContent>
                       <div className="grid gap-3 p-6 w-[300px]">
                         <NavigationMenuLink asChild>
                           <button
-                            onClick={() => toast.info('Wrapped Leasing coming soon!')}
+                            onClick={() => {
+                              setSidebarLeasingType('marketplace');
+                              setShowCollateralModal(true);
+                            }}
                             className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground text-left w-full"
                           >
                             <div className="text-sm font-medium">Wrapped Leasing</div>
@@ -194,7 +206,10 @@ const Navbar = () => {
                         </NavigationMenuLink>
                         <NavigationMenuLink asChild>
                           <button
-                            onClick={() => setShowCollateralModal(true)}
+                            onClick={() => {
+                              setSidebarLeasingType('collateral');
+                              setShowCollateralModal(true);
+                            }}
                             className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground text-left w-full"
                           >
                             <div className="text-sm font-medium">Collateral Leasing</div>
@@ -202,13 +217,13 @@ const Navbar = () => {
                           </button>
                         </NavigationMenuLink>
                         <NavigationMenuLink asChild>
-                          <button
-                            onClick={() => toast.info('Leasing Program coming soon!')}
-                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground text-left w-full"
+                          <Link
+                            to="/rental-history"
+                            className="block rounded-md p-3 hover:bg-accent hover:text-accent-foreground"
                           >
-                            <div className="text-sm font-medium">Leasing Program</div>
-                            <p className="text-sm text-muted-foreground">Explore leasing programs</p>
-                          </button>
+                            <div className="text-sm font-medium">Rental History</div>
+                            <p className="text-sm text-muted-foreground">View all rental transactions</p>
+                          </Link>
                         </NavigationMenuLink>
                       </div>
                     </NavigationMenuContent>
@@ -358,7 +373,8 @@ const Navbar = () => {
               <div className="text-sm font-semibold mb-2 text-muted-foreground">Leasing</div>
               <button
                 onClick={() => {
-                  toast.info('Wrapped Leasing coming soon!');
+                  setSidebarLeasingType('wrapped');
+                  setShowCollateralModal(true);
                   setMobileMenuOpen(false);
                 }}
                 className="text-left w-full p-2 rounded hover:bg-accent hover:text-accent-foreground"
@@ -367,12 +383,22 @@ const Navbar = () => {
               </button>
               <button
                 onClick={() => {
+                  setSidebarLeasingType('collateral');
                   setShowCollateralModal(true);
                   setMobileMenuOpen(false);
                 }}
                 className="text-left w-full p-2 rounded hover:bg-accent hover:text-accent-foreground"
               >
                 Collateral Leasing
+              </button>
+              <button
+                onClick={() => {
+                  navigate('/rental-history');
+                  setMobileMenuOpen(false);
+                }}
+                className="text-left w-full p-2 rounded hover:bg-accent hover:text-accent-foreground"
+              >
+                Rental History
               </button>
               <button
                 onClick={() => {
@@ -406,7 +432,11 @@ const Navbar = () => {
 
 
       <WalletConnectionModal open={showWalletModal} onOpenChange={setShowWalletModal} />
-      <CollateralLeasingSidebar open={showCollateralModal} onOpenChange={setShowCollateralModal} />
+      <CollateralLeasingSidebar
+        open={showCollateralModal}
+        onOpenChange={setShowCollateralModal}
+        initialLeasingType={sidebarLeasingType}
+      />
     </>
   );
 };

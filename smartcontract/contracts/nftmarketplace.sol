@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -11,7 +12,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @title NFTMarketplace
  * @dev A comprehensive NFT marketplace with minting, buying, selling, auctions, and royalties
  */
-contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
+contract NFTMarketplace is ERC721, ReentrancyGuard, Pausable, Ownable {
     using Strings for uint256;
 
     // Events
@@ -27,9 +28,13 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
     event ExternalNFTListed(address indexed nftContract, uint256 indexed tokenId, address indexed seller, uint256 price);
     event ExternalNFTSold(address indexed nftContract, uint256 indexed tokenId, address indexed seller, address buyer, uint256 price);
     event ExternalNFTDelisted(address indexed nftContract, uint256 indexed tokenId, address indexed seller);
+    event MetadataUpdated(uint256 indexed tokenId, string name, string description, string metadataURI);
+    event CollectionUpdated(string indexed collectionName, string description);
+    event CollaboratorAdded(string indexed collectionName, address indexed collaborator);
+    event CollaboratorRemoved(string indexed collectionName, address indexed collaborator);
 
-    // Structs
-    struct Listing {
+    
+    struct Listing {// Structs
         address seller;
         uint256 price;
         bool isActive;
@@ -50,19 +55,22 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         string name;
         string description;
         address creator;
+        address[] collaborators;
         uint256[] tokenIds;
         bool exists;
+        uint256 createdAt;
     }
 
     struct NFTMetadata {
         string name;
         string description;
-        string imageURI;
+        string metadataURI;  // IPFS hash or external JSON URI
         string category;
         uint256 royaltyPercentage;
         address creator;
         uint256 createdAt;
         string collection;
+        bool exists;
     }
 
     // State variables
@@ -77,8 +85,8 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
     mapping(address => uint256[]) public userNFTs;
     mapping(address => uint256[]) public userListings;
     mapping(uint256 => bool) public tokenExists;
-    mapping(uint256 => string) private _tokenURIs;
     mapping(address => mapping(uint256 => ExternalListing)) public externalListings;
+    mapping(address => mapping(string => bool)) public collectionAccess;  // Access control
 
     // Modifiers
     modifier tokenExistsModifier(uint256 tokenId) {
@@ -108,7 +116,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Mint a new NFT
      * @param name NFT name
      * @param description NFT description
-     * @param imageURI Image URI
+     * @param metadataURI Metadata URI (IPFS hash or JSON URL)
      * @param category NFT category (art, gaming, music, etc.)
      * @param royaltyPercentage Royalty percentage (0-1000 = 0-10%)
      * @param collectionName Collection name
@@ -116,53 +124,64 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
     function mintNFT(
         string memory name,
         string memory description,
-        string memory imageURI,
+        string memory metadataURI,
         string memory category,
         uint256 royaltyPercentage,
         string memory collectionName
-    ) external returns (uint256) {
+    ) external whenNotPaused returns (uint256) {
         require(bytes(name).length > 0, "Name cannot be empty");
-        require(bytes(imageURI).length > 0, "Image URI cannot be empty");
+        require(bytes(metadataURI).length > 0, "Metadata URI cannot be empty");
+        require(bytes(description).length > 0, "Description cannot be empty");
         require(royaltyPercentage <= 1000, "Royalty cannot exceed 10%");
+        require(bytes(category).length > 0, "Category cannot be empty");
 
         _tokenIds++;
         uint256 newTokenId = _tokenIds;
 
-        // Create or update collection
-        if (bytes(collections[collectionName].name).length == 0) {
+        // Create or update collection with access control
+        if (!collections[collectionName].exists) {
             collections[collectionName] = Collection({
                 name: collectionName,
                 description: "",
                 creator: msg.sender,
+                collaborators: new address[](0),
                 tokenIds: new uint256[](0),
-                exists: true
+                exists: true,
+                createdAt: block.timestamp
             });
+            collectionAccess[msg.sender][collectionName] = true;
             emit CollectionCreated(collectionName, msg.sender);
+        } else {
+            // Verify access to collection
+            require(
+                collections[collectionName].creator == msg.sender || collectionAccess[msg.sender][collectionName],
+                "No permission to mint in this collection"
+            );
         }
 
         // Add token to collection
         collections[collectionName].tokenIds.push(newTokenId);
 
-        // Store metadata
+        // Store metadata with validation
         nftMetadata[newTokenId] = NFTMetadata({
             name: name,
             description: description,
-            imageURI: imageURI,
+            metadataURI: metadataURI,
             category: category,
             royaltyPercentage: royaltyPercentage,
             creator: msg.sender,
             createdAt: block.timestamp,
-            collection: collectionName
+            collection: collectionName,
+            exists: true
         });
 
         // Mint the NFT
         _safeMint(msg.sender, newTokenId);
-        _setTokenURI(newTokenId, imageURI);
         
         tokenExists[newTokenId] = true;
         userNFTs[msg.sender].push(newTokenId);
 
-        emit NFTMinted(newTokenId, msg.sender, imageURI, royaltyPercentage);
+        emit NFTMinted(newTokenId, msg.sender, metadataURI, royaltyPercentage);
         
         return newTokenId;
     }
@@ -179,7 +198,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         uint256 price,
         bool isAuction,
         uint256 auctionDuration
-    ) external tokenExistsModifier(tokenId) onlyTokenOwner(tokenId) {
+    ) external tokenExistsModifier(tokenId) onlyTokenOwner(tokenId) whenNotPaused {
         require(price > 0, "Price must be greater than 0");
         require(!listings[tokenId].isActive, "NFT already listed");
         require(ownerOf(tokenId) == msg.sender, "Not the token owner");
@@ -213,7 +232,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Buy an NFT (fixed price sale)
      * @param tokenId The NFT token ID
      */
-    function buyNFT(uint256 tokenId) external payable nonReentrant listingExists(tokenId) {
+    function buyNFT(uint256 tokenId) external payable nonReentrant listingExists(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(!listing.isAuction, "This is an auction, use placeBid instead");
         require(msg.value == listing.price, "Incorrect price");
@@ -254,7 +273,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Place a bid on an auction
      * @param tokenId The NFT token ID
      */
-    function placeBid(uint256 tokenId) external payable nonReentrant auctionActive(tokenId) {
+    function placeBid(uint256 tokenId) external payable nonReentrant auctionActive(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(msg.sender != listing.seller, "Cannot bid on your own auction");
         require(msg.value > listing.highestBid, "Bid must be higher than current bid");
@@ -275,7 +294,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev End an auction and transfer NFT to winner
      * @param tokenId The NFT token ID
      */
-    function endAuction(uint256 tokenId) external nonReentrant listingExists(tokenId) {
+    function endAuction(uint256 tokenId) external nonReentrant listingExists(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(listing.isAuction, "Not an auction");
         require(block.timestamp >= listing.auctionEndTime, "Auction not ended yet");
@@ -318,7 +337,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @dev Delist an NFT from marketplace
      * @param tokenId The NFT token ID
      */
-    function delistNFT(uint256 tokenId) external onlyTokenOwner(tokenId) listingExists(tokenId) {
+    function delistNFT(uint256 tokenId) external onlyTokenOwner(tokenId) listingExists(tokenId) whenNotPaused {
         Listing storage listing = listings[tokenId];
         require(listing.seller == msg.sender, "Not the seller");
 
@@ -366,7 +385,34 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
      * @return NFTMetadata struct
      */
     function getNFTMetadata(uint256 tokenId) external view tokenExistsModifier(tokenId) returns (NFTMetadata memory) {
+        require(nftMetadata[tokenId].exists, "Metadata does not exist");
         return nftMetadata[tokenId];
+    }
+
+    /**
+     * @dev Update NFT metadata (creator only)
+     * @param tokenId The NFT token ID
+     * @param name New name
+     * @param description New description
+     * @param metadataURI New metadata URI
+     */
+    function updateNFTMetadata(
+        uint256 tokenId,
+        string memory name,
+        string memory description,
+        string memory metadataURI
+    ) external tokenExistsModifier(tokenId) whenNotPaused {
+        require(nftMetadata[tokenId].creator == msg.sender, "Only creator can update metadata");
+        require(bytes(name).length > 0, "Name cannot be empty");
+        require(bytes(description).length > 0, "Description cannot be empty");
+        require(bytes(metadataURI).length > 0, "Metadata URI cannot be empty");
+        require(!listings[tokenId].isActive, "Cannot update listed NFT");
+
+        nftMetadata[tokenId].name = name;
+        nftMetadata[tokenId].description = description;
+        nftMetadata[tokenId].metadataURI = metadataURI;
+
+        emit MetadataUpdated(tokenId, name, description, metadataURI);
     }
 
     /**
@@ -394,10 +440,91 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         payable(owner()).transfer(address(this).balance);
     }
 
+    /**
+     * @dev Update collection description (creator only)
+     * @param collectionName The collection name
+     * @param description New description
+     */
+    function updateCollectionDescription(
+        string memory collectionName,
+        string memory description
+    ) external whenNotPaused {
+        require(collections[collectionName].exists, "Collection does not exist");
+        require(collections[collectionName].creator == msg.sender, "Only creator can update collection");
+        require(bytes(description).length > 0, "Description cannot be empty");
+
+        collections[collectionName].description = description;
+        emit CollectionUpdated(collectionName, description);
+    }
+
+    /**
+     * @dev Add collaborator to collection (creator only)
+     * @param collectionName The collection name
+     * @param collaborator The collaborator address
+     */
+    function addCollaborator(
+        string memory collectionName,
+        address collaborator
+    ) external whenNotPaused {
+        require(collections[collectionName].exists, "Collection does not exist");
+        require(collections[collectionName].creator == msg.sender, "Only creator can add collaborators");
+        require(collaborator != address(0), "Invalid collaborator address");
+        require(!collectionAccess[collaborator][collectionName], "Already a collaborator");
+
+        collections[collectionName].collaborators.push(collaborator);
+        collectionAccess[collaborator][collectionName] = true;
+        emit CollaboratorAdded(collectionName, collaborator);
+    }
+
+    /**
+     * @dev Remove collaborator from collection (creator only)
+     * @param collectionName The collection name
+     * @param collaborator The collaborator address
+     */
+    function removeCollaborator(
+        string memory collectionName,
+        address collaborator
+    ) external whenNotPaused {
+        require(collections[collectionName].exists, "Collection does not exist");
+        require(collections[collectionName].creator == msg.sender, "Only creator can remove collaborators");
+        require(collectionAccess[collaborator][collectionName], "Not a collaborator");
+
+        // Remove from collaborators array
+        address[] storage collab = collections[collectionName].collaborators;
+        for (uint256 i = 0; i < collab.length; i++) {
+            if (collab[i] == collaborator) {
+                collab[i] = collab[collab.length - 1];
+                collab.pop();
+                break;
+            }
+        }
+
+        collectionAccess[collaborator][collectionName] = false;
+        emit CollaboratorRemoved(collectionName, collaborator);
+    }
+
+    /**
+     * @dev Get collection collaborators
+     * @param collectionName The collection name
+     * @return Array of collaborator addresses
+     */
+    function getCollaborators(string memory collectionName) external view returns (address[] memory) {
+        require(collections[collectionName].exists, "Collection does not exist");
+        return collections[collectionName].collaborators;
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     /* ==========================
        External NFT Support
        ========================== */
-    function listExternalNFT(address nftContract, uint256 tokenId, uint256 price) external nonReentrant {
+    function listExternalNFT(address nftContract, uint256 tokenId, uint256 price) external nonReentrant whenNotPaused {
         require(price > 0, "Price > 0");
         require(!externalListings[nftContract][tokenId].isActive, "Already listed");
         
@@ -413,7 +540,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         emit ExternalNFTListed(nftContract, tokenId, msg.sender, price);
     }
 
-    function buyExternalNFT(address nftContract, uint256 tokenId) external payable nonReentrant {
+    function buyExternalNFT(address nftContract, uint256 tokenId) external payable nonReentrant whenNotPaused {
         ExternalListing storage listing = externalListings[nftContract][tokenId];
         require(listing.isActive, "Not listed");
         require(msg.value == listing.price, "Incorrect price");
@@ -438,7 +565,7 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
         emit ExternalNFTSold(nftContract, tokenId, seller, msg.sender, price);
     }
 
-    function cancelExternalListing(address nftContract, uint256 tokenId) external nonReentrant {
+    function cancelExternalListing(address nftContract, uint256 tokenId) external nonReentrant whenNotPaused {
         ExternalListing storage listing = externalListings[nftContract][tokenId];
         require(listing.isActive, "Not listed");
         require(listing.seller == msg.sender, "Not seller");
@@ -474,12 +601,13 @@ contract NFTMarketplace is ERC721, ReentrancyGuard, Ownable {
     }
 
     // Token URI functions
-    function _setTokenURI(uint256 tokenId, string memory _tokenURI) internal {
-        _tokenURIs[tokenId] = _tokenURI;
-    }
-
+    /**
+     * @dev Returns the Uniform Resource Identifier (URI) for a token (ERC721Metadata compliant)
+     * @param tokenId The NFT token ID
+     * @return The metadata URI
+     */
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        require(tokenExists[tokenId], "URI query for nonexistent token");
-        return _tokenURIs[tokenId];
+        require(tokenExists[tokenId] && nftMetadata[tokenId].exists, "URI query for nonexistent token");
+        return nftMetadata[tokenId].metadataURI;
     }
 }

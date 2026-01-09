@@ -23,7 +23,8 @@ import { toast } from 'sonner';
 import { nftService } from '@/services/nftService';
 import { useLikedNFTs } from '@/contexts/LikedNFTsContext';
 import { profileService, ProfileData } from '../api/useInfo';
-import { apiUrl, CONTRACT_ADDRESS } from '@/config';
+import { apiUrl } from '@/config';
+import { getNFTMarketplaceAddress } from '@/services/configService';
 
 const UserProfile = () => {
   const { walletAddress } = useParams<{ walletAddress: string }>();
@@ -40,10 +41,16 @@ const UserProfile = () => {
   const [createdNFTs, setCreatedNFTs] = useState<any[]>([]);
   const [likedNFTs, setLikedNFTs] = useState<any[]>([]);
   const [activeLoans, setActiveLoans] = useState<Map<string, string>>(new Map());
+  const [contractAddress, setContractAddress] = useState<string>('');
   
   const { likedNFTIds, refreshLikedNFTs } = useLikedNFTs();
 
   const isOwnProfile = address?.toLowerCase() === walletAddress?.toLowerCase();
+
+  // Load contract address from config
+  useEffect(() => {
+    getNFTMarketplaceAddress().then(setContractAddress).catch(console.error);
+  }, []);
 
   // Fetch active loans
   useEffect(() => {
@@ -237,7 +244,7 @@ const UserProfile = () => {
   const getLoanStatus = (nft: any) => {
       let contractAddr = '';
       if (nft.source === 'local' || !nft.source) {
-          contractAddr = CONTRACT_ADDRESS;
+          contractAddr = contractAddress;
       } else if (typeof nft.collection === 'string' && nft.collection.startsWith('0x')) {
           contractAddr = nft.collection;
       }

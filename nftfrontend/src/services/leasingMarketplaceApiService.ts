@@ -1,0 +1,391 @@
+import { ethers } from 'ethers';
+import { toast } from 'sonner';
+
+const LEASING_MARKETPLACE_ABI = [
+    "function listForRent(address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration) external",
+    "function rent(uint256 listingId, uint256 durationSeconds) external payable",
+    "function getTotalCost(uint256 listingId, uint256 durationSeconds) external view returns (uint256 rentAmount, uint256 deposit, uint256 platformFee, uint256 wrapFee, uint256 totalRequired)",
+    "function listings(uint256) external view returns (address owner, address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration, uint8 status)",
+    "function rentals(uint256) external view returns (address renter, uint256 wId, uint256 deposit, uint256 rentAmount, uint256 expiresAt)",
+    "function pendingBalances(address) external view returns (uint256)",
+    "function withdraw() external",
+    "function refundDeposit(uint256 listingId) external",
+    "function cancelListing(uint256 listingId) external",
+    "event LeaseListed(uint256 indexed listingId, address indexed owner, address nft, uint256 tokenId, uint256 pricePerSecond, uint256 minDuration, uint256 maxDuration)",
+    "event LeaseRented(uint256 indexed listingId, address indexed renter, uint256 wId, uint256 rentPaid, uint256 depositHeld, uint256 expiresAt)",
+    "function listingCounter() external view returns (uint256)"
+];
+
+const ERC721_ABI = [
+    "function approve(address to, uint256 tokenId) external",
+    "function setApprovalForAll(address operator, bool approved) external",
+    "function isApprovedForAll(address owner, address operator) external view returns (bool)",
+    "function getApproved(uint256 tokenId) external view returns (address)",
+    "function ownerOf(uint256 tokenId) external view returns (address)"
+];
+
+import { getLeasingMarketplaceAddress } from './configService';
+
+// ... (ABI definitions)
+
+class LeasingMarketplaceService {
+    private contract: ethers.Contract | null = null;
+    private provider: ethers.BrowserProvider | null = null;
+    private signer: ethers.JsonRpcSigner | null = null;
+    private contractAddress: string = '';
+
+    async initialize(provider: ethers.BrowserProvider, signer: ethers.JsonRpcSigner) {
+        this.provider = provider;
+        this.signer = signer;
+
+        try {
+            this.contractAddress = await getLeasingMarketplaceAddress();
+            if (!this.contractAddress) {
+                console.error("Leasing Marketplace Address not found in config");
+                toast.error("Leasing Marketplace address is not configured on the backend.");
+                return;
+            }
+
+            // Sanity-check that the address is a real contract, not an EOA (like an NFT owner)
+            try {
+                const code = await provider.getCode(this.contractAddress);
+                if (!code || code === "0x") {
+                    console.error(
+                        `[LeasingService] Address ${this.contractAddress} has no contract code (likely an EOA).`
+                    );
+                    toast.error("Leasing Marketplace address is invalid (no contract at that address).");
+                    this.contract = null;
+                    return;
+                }
+            } catch (checkErr) {
+                console.warn("[LeasingService] Failed to verify LeasingMarketplace contract code", checkErr);
+            }
+
+            this.contract = new ethers.Contract(this.contractAddress, LEASING_MARKETPLACE_ABI, signer);
+        } catch (e) {
+            console.error("Failed to load leasing marketplace address from config", e);
+        }
+    }
+
+    async listForRent(nftAddress: string, tokenId: string, pricePerDay: string, minDays: number, maxDays: number) {
+        if (!this.contract || !this.signer) throw new Error("Not initialized");
+
+        // 1. Verify ownership and Approve Marketplace
+        const nftContract = new ethers.Contract(nftAddress, ERC721_ABI, this.signer);
+        const userAddress = await this.signer.getAddress();
+
+        // Check if this is a wNFT (wrapped NFT)
+        const config = await import('@/services/configService');
+        const wrappedLeasingAddress = await config.getWrappedLeasingAddress();
+        const isWNFT = nftAddress.toLowerCase() === wrappedLeasingAddress.toLowerCase();
+
+        try {
+            const owner = await nftContract.ownerOf(tokenId);
+            if (owner.toLowerCase() !== userAddress.toLowerCase()) {
+                // Check if it's owned by the NFT Marketplace (meaning it's listed for sale)
+                // We can't easily import the address here without async, but we can check if it's a contract
+                // For now, just give a more helpful error
+                console.error(`Ownership mismatch: Blockchain owner ${owner}, User ${userAddress}`);
+                throw new Error(`You do not own this ${isWNFT ? 'wNFT' : 'NFT'} on-chain. Owner: ${owner.slice(0, 6)}...${owner.slice(-4)}. If listed for sale, delist it first.`);
+            }
+
+            // If it's a wNFT, validate it's active and not expired
+            if (isWNFT) {
+                const wrappedContract = new ethers.Contract(
+                    wrappedLeasingAddress,
+                    ["function getLeaseStatus(uint256 wId) external view returns (bool isActive, uint256 timeRemaining)"],
+                    this.signer
+                );
+                const [isActive, timeRemaining] = await wrappedContract.getLeaseStatus(tokenId);
+                if (!isActive || timeRemaining === 0n) {
+                    throw new Error("This wNFT is not active or has expired. You can only list active wNFTs for rent.");
+                }
+            }
+        } catch (e: any) {
+            // If ownerOf fails, it might be because the token doesn't exist or contract is invalid
+            if (e.message.includes("You do not own") || e.message.includes("not active") || e.message.includes("expired")) throw e; // Re-throw our custom errors
+            console.warn("Failed to check owner, possibly non-standard ERC721 or token does not exist", e);
+            // We continue to try approval, but it will likely fail if ownership is wrong
+        }
+
+        // Check specific approval first
+        try {
+            const approvedAddr = await nftContract.getApproved(tokenId);
+            const isApproved = approvedAddr.toLowerCase() === this.contractAddress.toLowerCase();
+
+            if (!isApproved) {
+                // Check operator approval
+                const isOperator = await nftContract.isApprovedForAll(userAddress, this.contractAddress);
+                if (!isOperator) {
+                    toast.loading("Approving Marketplace...", { id: 'approve' });
+                    try {
+                        const tx = await nftContract.approve(this.contractAddress, tokenId);
+                        await tx.wait();
+                        toast.dismiss('approve');
+                        toast.success("Approved!");
+                    } catch (e) {
+                        toast.dismiss('approve');
+                        throw e;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("Approval check failed, attempting to approve anyway...", e);
+            // If getApproved fails (e.g. non-standard ERC721), try approving anyway
+            const tx = await nftContract.approve(this.contractAddress, tokenId);
+            await tx.wait();
+        }
+
+        // 2. List
+        // Calculate price per second: (pricePerDay * 1e18) / 86400
+        const pricePerSecond = ethers.parseEther(pricePerDay) / 86400n;
+        const minSeconds = minDays * 86400;
+        const maxSeconds = maxDays * 86400;
+
+        const tx = await this.contract.listForRent(nftAddress, tokenId, pricePerSecond, minSeconds, maxSeconds);
+        const receipt = await tx.wait();
+
+        // Find LeaseListed event
+        let listingId = null;
+        if (receipt && receipt.logs) {
+            for (const log of receipt.logs) {
+                try {
+                    const parsed = this.contract.interface.parseLog({
+                        topics: [...log.topics],
+                        data: log.data
+                    });
+                    if (parsed && parsed.name === 'LeaseListed') {
+                        listingId = Number(parsed.args.listingId);
+                        break;
+                    }
+                } catch (e) {
+                    // ignore logs that don't match
+                }
+            }
+        }
+
+        return { receipt, listingId };
+    }
+
+    async calculateCost(listingId: number, durationDays: number) {
+        if (!this.contract) throw new Error("Not initialized");
+        const durationSeconds = durationDays * 86400;
+        // Call through directly so we surface the real revert reason from the contract
+        const result = await this.contract.getTotalCost(listingId, durationSeconds);
+        return {
+            rentAmount: result.rentAmount,
+            deposit: result.deposit,
+            platformFee: result.platformFee,
+            wrapFee: result.wrapFee,
+            totalRequired: result.totalRequired,
+        };
+    }
+
+    async rent(listingId: number, durationDays: number, totalEthCost: bigint) {
+        if (!this.contract) throw new Error("Not initialized");
+        const durationSeconds = durationDays * 86400;
+
+        const tx = await this.contract.rent(listingId, durationSeconds, { value: totalEthCost });
+        const receipt = await tx.wait();
+
+        // Find LeaseRented event
+        let rentalDetails = null;
+        if (receipt && receipt.logs) {
+            for (const log of receipt.logs) {
+                try {
+                    const parsed = this.contract.interface.parseLog({
+                        topics: [...log.topics],
+                        data: log.data
+                    });
+                    if (parsed && parsed.name === 'LeaseRented') {
+                        rentalDetails = {
+                            listingId: Number(parsed.args.listingId),
+                            renter: parsed.args.renter,
+                            wId: Number(parsed.args.wId),
+                            rentPaid: parsed.args.rentPaid,
+                            depositHeld: parsed.args.depositHeld,
+                            expiresAt: Number(parsed.args.expiresAt)
+                        };
+                        break;
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+
+        return { receipt, rentalDetails };
+    }
+
+    async cancelListing(listingId: number) {
+        if (!this.contract) throw new Error("Not initialized");
+        const tx = await this.contract.cancelListing(listingId);
+        return await tx.wait();
+    }
+
+    async withdraw() {
+        if (!this.contract) throw new Error("Not initialized");
+        const tx = await this.contract.withdraw();
+        return await tx.wait();
+    }
+
+    async refundDeposit(listingId: number) {
+        if (!this.contract) throw new Error("Not initialized");
+        const tx = await this.contract.refundDeposit(listingId);
+        return await tx.wait();
+    }
+
+    async getListingDetails(listingId: number) {
+        if (!this.contract) throw new Error("Not initialized");
+        return await this.contract.listings(listingId);
+    }
+
+    async getPendingBalance(address: string) {
+        if (!this.contract) throw new Error("Not initialized");
+        return await this.contract.pendingBalances(address);
+    }
+
+    // Helper to find the latest active listing ID for a given NFT
+    async getListingIdForNFT(nftAddress: string, tokenId: string): Promise<number | null> {
+        if (!this.contract) throw new Error("Not initialized");
+
+        // Filter LeaseListed events - nft and tokenId are NOT indexed, so we must fetch all and filter in JS
+        // We can filter by owner if we knew it, but here we just want to find by NFT
+        const filter = this.contract.filters.LeaseListed();
+        const events = await this.contract.queryFilter(filter);
+
+        // Filter in JS
+        const matchingEvents = events.filter((e: any) =>
+            e.args &&
+            e.args.nft.toLowerCase() === nftAddress.toLowerCase() &&
+            e.args.tokenId.toString() === tokenId.toString()
+        );
+
+        if (matchingEvents.length === 0) return null;
+
+        // Get the latest event
+        const latestEvent = matchingEvents[matchingEvents.length - 1];
+        // @ts-ignore
+        const listingId = Number(latestEvent.args[0]);
+
+        // Verify it's still active
+        const listing = await this.contract.listings(listingId);
+        // Status 1 is Active
+        if (listing.status === 1n) {
+            return listingId;
+        }
+        return null;
+    }
+    // Helper to get rentals for a user
+    async getMyRentals(userAddress: string) {
+        if (!this.contract) throw new Error("Not initialized");
+
+        const filter = this.contract.filters.LeaseRented(null, userAddress);
+        const events = await this.contract.queryFilter(filter);
+
+        const rentals = [];
+        for (const event of events) {
+            // @ts-ignore
+            const listingId = Number(event.args[0]);
+            const rental = await this.contract.rentals(listingId);
+            // Check if deposit > 0 (meaning not refunded yet)
+            if (rental.deposit > 0n) {
+                // Fetch listing details to get NFT info
+                const listing = await this.contract.listings(listingId);
+                rentals.push({
+                    listingId,
+                    wId: Number(rental.wId),
+                    deposit: rental.deposit,
+                    expiresAt: Number(rental.expiresAt),
+                    nft: listing.nft,
+                    tokenId: Number(listing.tokenId)
+                });
+            }
+        }
+        return rentals;
+    }
+
+    // Helper to get NFTs listed by user that are currently rented out
+    async getMyRentedOutNFTs(userAddress: string) {
+        if (!this.contract) throw new Error("Not initialized");
+
+        // 1. Get all listings by this user
+        const filter = this.contract.filters.LeaseListed(null, userAddress);
+        const events = await this.contract.queryFilter(filter);
+
+        const rentedOut = [];
+        for (const event of events) {
+            // @ts-ignore
+            const listingId = Number(event.args[0]);
+
+            // 2. Check current status
+            const listing = await this.contract.listings(listingId);
+
+            // Status 2 is Rented (assuming 0=None, 1=Active, 2=Rented, 3=Cancelled)
+            if (listing.status === 2n) {
+                // 3. Get rental details
+                const rental = await this.contract.rentals(listingId);
+
+                // Double check it's not expired/refunded if needed, but status 2 usually means active rental
+                // We can check if deposit is still held
+                if (rental.deposit > 0n) {
+                    rentedOut.push({
+                        listingId,
+                        renter: rental.renter,
+                        wId: Number(rental.wId),
+                        deposit: rental.deposit,
+                        rentAmount: rental.rentAmount,
+                        expiresAt: Number(rental.expiresAt),
+                        nft: listing.nft,
+                        tokenId: Number(listing.tokenId),
+                        pricePerSecond: listing.pricePerSecond
+                    });
+                }
+            }
+        }
+        return rentedOut;
+    }
+
+    // Helper to get all active listings (limited to recent for performance)
+    async getActiveListings(limit: number = 50) {
+        if (!this.contract) return [];
+
+        try {
+            // @ts-ignore
+            const counter = Number(await this.contract.listingCounter());
+            const activeListings = [];
+
+            const start = Math.max(1, counter - limit + 1);
+
+            // Fetch in parallel batches for speed
+            const promises = [];
+            for (let i = counter; i >= start; i--) {
+                promises.push(this.contract.listings(i).then((l: any) => ({ id: i, ...l })));
+            }
+
+            const results = await Promise.all(promises);
+
+            for (const listing of results) {
+                console.log(`[LeasingService] Checking listing ${listing.id}: Status=${listing.status}, NFT=${listing.nft}, TokenID=${listing.tokenId}`);
+                // Status 1 is Active
+                if (listing.status === 1n) {
+                    activeListings.push({
+                        listingId: listing.id,
+                        owner: listing.owner,
+                        nft: listing.nft,
+                        tokenId: listing.tokenId.toString(),
+                        pricePerSecond: listing.pricePerSecond,
+                        minDuration: Number(listing.minDuration),
+                        maxDuration: Number(listing.maxDuration)
+                    });
+                }
+            }
+            return activeListings;
+        } catch (e) {
+            console.error("Error fetching active listings", e);
+            return [];
+        }
+    }
+}
+
+export const leasingMarketplaceService = new LeasingMarketplaceService();

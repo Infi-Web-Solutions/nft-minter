@@ -52,7 +52,7 @@ export const uploadFileToIPFS = async (req, res) => {
     const gateways = {
       pinata: `https://gateway.pinata.cloud/ipfs/${ipfsHash}`,
       ipfs: `https://ipfs.io/ipfs/${ipfsHash}`,
-      cloudflare: `https://cloudflare-ipfs.com/ipfs/${ipfsHash}`,
+      nftstorage: `https://nftstorage.link/ipfs/${ipfsHash}`,
     };
 
     return res.status(200).json({

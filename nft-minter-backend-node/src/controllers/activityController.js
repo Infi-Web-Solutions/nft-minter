@@ -5,10 +5,22 @@ import NFT from '../models/nft.js';
 // Get all activities with filtering and pagination
 export const getActivities = async (req, res) => {
     try {
-        const { page = 1, limit = 20, type, time_filter, search, user } = req.query;
-        
+        const { page = 1, limit = 20, type, time_filter, search, user, nft } = req.query;
+
         // Build filter object
         const filter = {};
+
+        if (nft) {
+            // Check if nft is a valid ObjectId
+            if (nft.match(/^[0-9a-fA-F]{24}$/)) {
+                filter.nft = nft;
+            } else {
+                // If not a valid ObjectId (e.g. wnft_11), we can't filter by NFT reference directly
+                // We could try to filter by nft_data.token_id if we had it, but for now just ignore or return empty
+                // Returning empty might be better than crashing
+                console.warn(`[getActivities] Invalid NFT ID format: ${nft}, ignoring filter`);
+            }
+        }
 
         if (type && type !== 'all') {
             filter.transaction_type = type;
@@ -16,14 +28,14 @@ export const getActivities = async (req, res) => {
             // For 'all' activities, exclude 'like' and 'unlike' types
             filter.transaction_type = { $nin: ['like', 'unlike'] };
         }
-        
+
         if (user) {
             filter.$or = [
                 { from_address: user.toLowerCase() },
                 { to_address: user.toLowerCase() }
             ];
         }
-        
+
         if (search) {
             // Search in NFT name or addresses
             filter.$or = [
@@ -33,12 +45,12 @@ export const getActivities = async (req, res) => {
                 { to_address: { $regex: search, $options: 'i' } }
             ];
         }
-        
+
         // Time filter
         if (time_filter) {
             const now = new Date();
             let timeStart;
-            
+
             switch (time_filter) {
                 case '1h':
                     timeStart = new Date(now - 60 * 60 * 1000);
@@ -53,14 +65,14 @@ export const getActivities = async (req, res) => {
                     timeStart = new Date(now - 30 * 24 * 60 * 60 * 1000);
                     break;
             }
-            
+
             if (timeStart) {
                 filter.timestamp = { $gte: timeStart };
             }
         }
-        
+
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        
+
         const activities = await Transaction.find(filter)
             .populate('nft')
             .sort({ timestamp: -1 })
@@ -102,7 +114,7 @@ export const getActivities = async (req, res) => {
             gas_used: activity.gas_used || 0,
             gas_price: activity.gas_price || null
         }));
-        
+
         res.status(200).json({
             success: true,
             data: transformedActivities,
@@ -127,12 +139,12 @@ export const getActivityStats = async (req, res) => {
         const yesterday = new Date(now - 24 * 60 * 60 * 1000);
         const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
         const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
-        
+
         // Get counts for different time periods
         const last_24h = await getStatsForPeriod(yesterday);
         const last_7d = await getStatsForPeriod(weekAgo);
         const last_30d = await getStatsForPeriod(monthAgo);
-        
+
         res.status(200).json({
             success: true,
             data: {
@@ -150,14 +162,14 @@ export const getActivityStats = async (req, res) => {
 // Helper function to get stats for a time period
 async function getStatsForPeriod(since) {
     const filter = { timestamp: { $gte: since } };
-    
+
     const total = await Transaction.countDocuments(filter);
     const sales = await Transaction.countDocuments({ ...filter, transaction_type: 'buy' });
     const listings = await Transaction.countDocuments({ ...filter, transaction_type: 'list' });
     const mints = await Transaction.countDocuments({ ...filter, transaction_type: 'mint' });
     const transfers = await Transaction.countDocuments({ ...filter, transaction_type: 'transfer' });
     const offers = await Transaction.countDocuments({ ...filter, transaction_type: 'bid' });
-    
+
     return {
         total,
         sales,

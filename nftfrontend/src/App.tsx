@@ -25,6 +25,10 @@ import Favorites from "./pages/Favorites";
 import Contact from "./pages/Contact";
 import LendingMarketplace from "./pages/LendingMarketplace";
 import TransactionHistory from "./pages/TransactionHistory";
+import RentalHistory from "./pages/RentalHistory";
+import WrappedNFTDetails from "./pages/WrappedNFTDetails";
+import MakeOffer from "./pages/MakeOffer";
+import AdminOffers from "./pages/AdminOffers";
 import { LikedNFTsProvider } from '@/contexts/LikedNFTsContext';
 
 const queryClient = new QueryClient();
@@ -41,7 +45,7 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/marketplace" element={<Marketplace />} />
-      
+
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/profile/:walletAddress" element={<UserProfile />} />
                 <Route path="/create" element={<Create />} />
@@ -54,9 +58,13 @@ const App = () => (
                 <Route path="/notifications" element={<Notifications />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/nft/:id" element={<NFTDetails />} />
+                <Route path="/wnft/:wId" element={<WrappedNFTDetails />} />
+                <Route path="/nft/:id/offer" element={<MakeOffer />} />
+                <Route path="/admin/offers" element={<AdminOffers />} />
                 <Route path="/favorites" element={<Favorites />} />
                 <Route path="/lending" element={<LendingMarketplace />} />
                 <Route path="/history" element={<TransactionHistory />} />
+                <Route path="/rental-history" element={<RentalHistory />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>

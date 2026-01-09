@@ -21,10 +21,18 @@ class NFTMarketplaceWeb3 {
         this.lendingContractAddress = process.env.NFTCollateralLendingIntegrated_Address || process.env.NFT_COLLATERAL_CONTRACT_ADDRESS || process.env.NFT_COLLATERAL_ADDRESS || null;
 
         // Wrapped Leasing contract address
-        this.wrappedLeasingAddress = process.env.WrappedLeasing_Address || process.env.WRAPPED_LEASING_ADDRESS || null;
+        // Prefer env, but fall back to known Sepolia deployment if not set
+        this.wrappedLeasingAddress =
+            process.env.WrappedLeasing_Address ||
+            process.env.WRAPPED_LEASING_ADDRESS ||
+            // Fallback: Wrapped Lease NFT (wNFTM) proxy on Sepolia
+            '0x293a1ac2e749e33effd25c7e292f78ebd8ff7489';
+
+        // Leasing Marketplace contract address
+        this.leasingMarketplaceAddress = process.env.LeasingMarketplace_Address || process.env.LEASING_MARKETPLACE_ADDRESS || null;
 
         // FeeManager contract address
-        this.feeManagerAddress = process.env.FeeManager_Address || process.env.FEE_MANAGER_ADDRESS || null;
+        this.feeManagerAddress = process.env.FeeManager_Address || process.env.FeeManager_Address || null;
 
         this.ALCHEMY_API_URL = process.env.ALCHEMY_API_URL || null;
 
@@ -36,6 +44,7 @@ class NFTMarketplaceWeb3 {
         console.log(`[Web3] Lending contract address: ${this.lendingContractAddress}`);
         console.log(`[Web3] Wrapped Leasing address: ${this.wrappedLeasingAddress}`);
         console.log(`[Web3] FeeManager address: ${this.feeManagerAddress}`);
+        console.log(`[Web3] LeasingMarketplace address: ${this.leasingMarketplaceAddress}`);
 
         try {
             this.web3 = new Web3(new Web3.providers.HttpProvider(this.sepoliaUrl));
@@ -95,6 +104,22 @@ class NFTMarketplaceWeb3 {
                 this.wrappedLeasingContract = null;
             }
 
+            // LeasingMarketplace contract initialization
+            if (this.leasingMarketplaceAddress) {
+                try {
+                    this.leasingMarketplaceAddress = this.web3.utils.toChecksumAddress(this.leasingMarketplaceAddress);
+                    this.leasingMarketplaceAbi = this._getLeasingMarketplaceAbi();
+                    this.leasingMarketplaceContract = new this.web3.eth.Contract(this.leasingMarketplaceAbi, this.leasingMarketplaceAddress);
+                    console.log(`[Web3] LeasingMarketplace contract initialized at ${this.leasingMarketplaceAddress}`);
+                } catch (err) {
+                    console.warn('[Web3] Failed to initialize LeasingMarketplace contract:', err.message);
+                    this.leasingMarketplaceContract = null;
+                }
+            } else {
+                console.log('[Web3] No LeasingMarketplace address provided');
+                this.leasingMarketplaceContract = null;
+            }
+
             // FeeManager contract initialization
             if (this.feeManagerAddress) {
                 try {
@@ -127,6 +152,11 @@ class NFTMarketplaceWeb3 {
             // Test FeeManager contract if it exists
             if (this.feeManagerContract) {
                 this._testFeeManagerContract();
+            }
+
+            // Test LeasingMarketplace contract if it exists
+            if (this.leasingMarketplaceContract) {
+                this._testLeasingMarketplaceContract();
             }
 
         } catch (error) {
@@ -433,10 +463,70 @@ class NFTMarketplaceWeb3 {
                     "outputs": [{ "components": [{ "internalType": "address", "name": "originalNft", "type": "address" }, { "internalType": "uint256", "name": "originalTokenId", "type": "uint256" }, { "internalType": "address", "name": "owner", "type": "address" }, { "internalType": "uint256", "name": "validUntil", "type": "uint256" }, { "internalType": "bool", "name": "active", "type": "bool" }], "internalType": "struct WrappedLeasing.WrappedInfo", "name": "", "type": "tuple" }],
                     "stateMutability": "view",
                     "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "pause",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "unpause",
+                    "outputs": [],
+                    "stateMutability": "nonpayable",
+                    "type": "function"
                 }
             ];
         } catch (error) {
             console.error(`[Web3] Error loading WrappedLeasing ABI: ${error.message}`);
+            throw error;
+        }
+    }
+
+    // Load LeasingMarketplace ABI
+    _getLeasingMarketplaceAbi() {
+        try {
+            console.log('[Web3] Getting LeasingMarketplace ABI...');
+            const artifactsPath = path.join(
+                __dirname,
+                '..',
+                '..',
+                '..',
+                'smartcontract',
+                'artifacts',
+                'contracts',
+                'LeasingMarketplace.sol',
+                'LeasingMarketplace.json'
+            );
+
+            if (fs.existsSync(artifactsPath)) {
+                try {
+                    const contractData = JSON.parse(fs.readFileSync(artifactsPath, 'utf8'));
+                    if (contractData.abi && contractData.abi.length > 0) {
+                        return contractData.abi;
+                    }
+                } catch (err) {
+                    console.warn('[Web3] Failed to parse LeasingMarketplace artifact:', err.message);
+                }
+            }
+
+            console.log('[Web3] Using minimal LeasingMarketplace fallback ABI');
+            return [
+                { "inputs": [{ "internalType": "address", "name": "admin_", "type": "address" }, { "internalType": "address", "name": "feeManager_", "type": "address" }, { "internalType": "address", "name": "wrapped_", "type": "address" }], "name": "initialize", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [], "name": "pause", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [], "name": "unpause", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [{ "internalType": "address", "name": "nft", "type": "address" }, { "internalType": "uint256", "name": "tokenId", "type": "uint256" }, { "internalType": "uint256", "name": "pricePerSecond", "type": "uint256" }, { "internalType": "uint256", "name": "minDuration", "type": "uint256" }, { "internalType": "uint256", "name": "maxDuration", "type": "uint256" }], "name": "listForRent", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [{ "internalType": "uint256", "name": "listingId", "type": "uint256" }], "name": "cancelListing", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [{ "internalType": "uint256", "name": "listingId", "type": "uint256" }, { "internalType": "uint256", "name": "durationSeconds", "type": "uint256" }], "name": "rent", "outputs": [], "stateMutability": "payable", "type": "function" },
+                { "inputs": [{ "internalType": "uint256", "name": "listingId", "type": "uint256" }], "name": "refundDeposit", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [], "name": "withdraw", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [{ "internalType": "uint16", "name": "newPlatformBps", "type": "uint16" }, { "internalType": "uint16", "name": "newWrapBps", "type": "uint16" }], "name": "setFees", "outputs": [], "stateMutability": "nonpayable", "type": "function" },
+                { "inputs": [{ "internalType": "uint16", "name": "newDepositBps", "type": "uint16" }], "name": "setDepositBps", "outputs": [], "stateMutability": "nonpayable", "type": "function" }
+            ];
+        } catch (error) {
+            console.error(`[Web3] Error loading LeasingMarketplace ABI: ${error.message}`);
             throw error;
         }
     }
@@ -634,6 +724,15 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    async _testLeasingMarketplaceContract() {
+        try {
+            const chainId = await this.web3.eth.getChainId();
+            console.log(`[Web3] LeasingMarketplace chainId: ${chainId}`);
+        } catch (error) {
+            console.log(`[Web3] Warning: Could not get LeasingMarketplace info: ${error.message}`);
+        }
+    }
+
     async _testFeeManagerContract() {
         try {
             const marketplaceFee = await this.feeManagerContract.methods.marketplaceFeeBps().call();
@@ -647,6 +746,10 @@ class NFTMarketplaceWeb3 {
         } catch (error) {
             console.log(`[Web3] Warning: Could not get FeeManager info: ${error.message}`);
         }
+    }
+
+    getNftMarketplaceContract() {
+        return this.contract;
     }
 
     async getNftMetadata(tokenId) {
@@ -666,6 +769,21 @@ class NFTMarketplaceWeb3 {
         } catch (error) {
             console.error(`[Web3] Error getting NFT metadata: ${error.message}`);
             throw new Error(`Failed to fetch NFT metadata: ${error.message}`);
+        }
+    }
+
+    // Get on-chain listing info from the core NFT marketplace contract
+    async getOnChainListing(tokenId) {
+        try {
+            if (!this.contract) {
+                throw new Error('Marketplace contract not initialized');
+            }
+            console.log(`[Web3] Getting on-chain listing for token ID: ${tokenId}`);
+            const listing = await this.contract.methods.getListing(tokenId).call();
+            return listing;
+        } catch (error) {
+            console.error('[Web3] Error getting on-chain listing:', error.message);
+            throw error;
         }
     }
 
@@ -831,12 +949,50 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    async withdrawPendingNFTs(fromAddress) {
+        if (!this.lendingContract) throw new Error('Lending contract not initialized');
+        try {
+            const gas = await this.lendingContract.methods.withdrawPendingNFTs().estimateGas({ from: fromAddress });
+            const result = await this.lendingContract.methods.withdrawPendingNFTs().send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error withdrawing pending NFTs:', error.message);
+            throw error;
+        }
+    }
+
+    async pauseLending(fromAddress) {
+        if (!this.lendingContract) throw new Error('Lending contract not initialized');
+        try {
+            const gas = await this.lendingContract.methods.pause().estimateGas({ from: fromAddress });
+            const result = await this.lendingContract.methods.pause().send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error pausing lending contract:', error.message);
+            throw error;
+        }
+    }
+
+    async unpauseLending(fromAddress) {
+        if (!this.lendingContract) throw new Error('Lending contract not initialized');
+        try {
+            const gas = await this.lendingContract.methods.unpause().estimateGas({ from: fromAddress });
+            const result = await this.lendingContract.methods.unpause().send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error unpausing lending contract:', error.message);
+            throw error;
+        }
+    }
+
     // Wrapped Leasing Methods
-    async wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, fromAddress) {
+    async wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, originalOwner, fromAddress) {
         if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
         try {
-            const gas = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI).estimateGas({ from: fromAddress });
-            const result = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI).send({ from: fromAddress, gas });
+            const leasingFeeBps = await this.getLeasingFeeBps();
+            const wrapFee = (BigInt(durationSeconds) * BigInt(leasingFeeBps)) / 10000n;
+            const gas = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, originalOwner).estimateGas({ from: fromAddress, value: wrapFee });
+            const result = await this.wrappedLeasingContract.methods.wrap(nftContract, tokenId, renter, durationSeconds, metadataURI, originalOwner).send({ from: fromAddress, gas, value: wrapFee });
             return result;
         } catch (error) {
             console.error('[Web3] Error wrapping NFT:', error.message);
@@ -852,6 +1008,28 @@ class NFTMarketplaceWeb3 {
             return result;
         } catch (error) {
             console.error('[Web3] Error unwrapping NFT:', error.message);
+            throw error;
+        }
+    }
+
+    async pauseWrappedLeasing(fromAddress) {
+        if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
+        try {
+            const gas = await this.wrappedLeasingContract.methods.pause().estimateGas({ from: fromAddress });
+            return await this.wrappedLeasingContract.methods.pause().send({ from: fromAddress, gas });
+        } catch (error) {
+            console.error('[Web3] Error pausing WrappedLeasing:', error.message);
+            throw error;
+        }
+    }
+
+    async unpauseWrappedLeasing(fromAddress) {
+        if (!this.wrappedLeasingContract) throw new Error('WrappedLeasing contract not initialized');
+        try {
+            const gas = await this.wrappedLeasingContract.methods.unpause().estimateGas({ from: fromAddress });
+            return await this.wrappedLeasingContract.methods.unpause().send({ from: fromAddress, gas });
+        } catch (error) {
+            console.error('[Web3] Error unpausing WrappedLeasing:', error.message);
             throw error;
         }
     }
@@ -878,6 +1056,112 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    // LeasingMarketplace Methods
+    async listForRent(nftContract, tokenId, pricePerSecond, minDuration, maxDuration, fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.listForRent(nftContract, tokenId, pricePerSecond, minDuration, maxDuration).estimateGas({ from: fromAddress });
+            const result = await this.leasingMarketplaceContract.methods.listForRent(nftContract, tokenId, pricePerSecond, minDuration, maxDuration).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error listing for rent:', error.message);
+            throw error;
+        }
+    }
+
+    async cancelListing(listingId, fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.cancelListing(listingId).estimateGas({ from: fromAddress });
+            const result = await this.leasingMarketplaceContract.methods.cancelListing(listingId).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error cancelling listing:', error.message);
+            throw error;
+        }
+    }
+
+    async rentListing(listingId, durationSeconds, valueWei, fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.rent(listingId, durationSeconds).estimateGas({ from: fromAddress, value: valueWei });
+            const result = await this.leasingMarketplaceContract.methods.rent(listingId, durationSeconds).send({ from: fromAddress, value: valueWei, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error renting listing:', error.message);
+            throw error;
+        }
+    }
+
+    async refundDeposit(listingId, fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.refundDeposit(listingId).estimateGas({ from: fromAddress });
+            const result = await this.leasingMarketplaceContract.methods.refundDeposit(listingId).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error refunding deposit:', error.message);
+            throw error;
+        }
+    }
+
+    async withdrawLeasing(fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.withdraw().estimateGas({ from: fromAddress });
+            const result = await this.leasingMarketplaceContract.methods.withdraw().send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error withdrawing:', error.message);
+            throw error;
+        }
+    }
+
+    async setLeasingFees(platformBps, wrapBps, fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.setFees(platformBps, wrapBps).estimateGas({ from: fromAddress });
+            const result = await this.leasingMarketplaceContract.methods.setFees(platformBps, wrapBps).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error setting leasing fees:', error.message);
+            throw error;
+        }
+    }
+
+    async setDepositBps(newDepositBps, fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.setDepositBps(newDepositBps).estimateGas({ from: fromAddress });
+            const result = await this.leasingMarketplaceContract.methods.setDepositBps(newDepositBps).send({ from: fromAddress, gas });
+            return result;
+        } catch (error) {
+            console.error('[Web3] Error setting deposit bps:', error.message);
+            throw error;
+        }
+    }
+
+    async pauseLeasingMarketplace(fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.pause().estimateGas({ from: fromAddress });
+            return await this.leasingMarketplaceContract.methods.pause().send({ from: fromAddress, gas });
+        } catch (error) {
+            console.error('[Web3] Error pausing LeasingMarketplace:', error.message);
+            throw error;
+        }
+    }
+
+    async unpauseLeasingMarketplace(fromAddress) {
+        if (!this.leasingMarketplaceContract) throw new Error('LeasingMarketplace contract not initialized');
+        try {
+            const gas = await this.leasingMarketplaceContract.methods.unpause().estimateGas({ from: fromAddress });
+            return await this.leasingMarketplaceContract.methods.unpause().send({ from: fromAddress, gas });
+        } catch (error) {
+            console.error('[Web3] Error unpausing LeasingMarketplace:', error.message);
+            throw error;
+        }
+    }
     // FeeManager Methods
     async getMarketplaceFeeBps() {
         if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
@@ -954,8 +1238,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100); // 10% increase
+
             const gas = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setMarketplaceFeeBps(bps).send({
+                from: fromAddress,
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -971,8 +1264,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
+
             const gas = await this.feeManagerContract.methods.setLendingAprBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setLendingAprBps(bps).send({
+                from: fromAddress,
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -988,8 +1290,17 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
+
             const gas = await this.feeManagerContract.methods.setLeasingFeeBps(bps).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setLeasingFeeBps(bps).send({
+                from: fromAddress,
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
@@ -1005,12 +1316,49 @@ class NFTMarketplaceWeb3 {
             if (!hasRole) {
                 throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
             }
+            const nonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+            const gasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(gasPrice) * BigInt(110) / BigInt(100);
+
             const gas = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
-            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ from: fromAddress, gas });
+            const result = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({
+                from: fromAddress,
+                gas,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: nonce
+            });
             return result;
         } catch (error) {
             const errorMsg = this._extractRevertReason(error);
             console.error('[Web3] Error setting treasury:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    async pauseFeeManager(fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const hasRole = await this.checkHasFeeAdminRole(fromAddress);
+            if (!hasRole) throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
+            const gas = await this.feeManagerContract.methods.pause().estimateGas({ from: fromAddress });
+            return await this.feeManagerContract.methods.pause().send({ from: fromAddress, gas });
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error pausing FeeManager:', errorMsg);
+            throw new Error(errorMsg);
+        }
+    }
+
+    async unpauseFeeManager(fromAddress) {
+        if (!this.feeManagerContract) throw new Error('FeeManager contract not initialized');
+        try {
+            const hasRole = await this.checkHasFeeAdminRole(fromAddress);
+            if (!hasRole) throw new Error(`Account ${fromAddress} does not have FEE_ADMIN role`);
+            const gas = await this.feeManagerContract.methods.unpause().estimateGas({ from: fromAddress });
+            return await this.feeManagerContract.methods.unpause().send({ from: fromAddress, gas });
+        } catch (error) {
+            const errorMsg = this._extractRevertReason(error);
+            console.error('[Web3] Error unpausing FeeManager:', errorMsg);
             throw new Error(errorMsg);
         }
     }
@@ -1123,22 +1471,54 @@ class NFTMarketplaceWeb3 {
             };
 
             console.log('[Web3] Setting FeeManager values...');
-            
+
+            // Get base gas price and nonce for all transactions
+            const baseGasPrice = await this.web3.eth.getGasPrice();
+            const increasedGasPrice = BigInt(baseGasPrice) * BigInt(110) / BigInt(100); // 10% increase
+            let currentNonce = await this.web3.eth.getTransactionCount(fromAddress, 'pending');
+
             // Set Marketplace Fee
             const gas1 = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).estimateGas({ from: fromAddress });
-            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({ from: fromAddress, gas: gas1 });
-            
+            results.marketplaceFee = await this.feeManagerContract.methods.setMarketplaceFeeBps(marketplaceFeeBps).send({
+                from: fromAddress,
+                gas: gas1,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
+
+            // Wait a bit between transactions to avoid nonce issues
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
             // Set Lending APR
             const gas2 = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).estimateGas({ from: fromAddress });
-            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({ from: fromAddress, gas: gas2 });
-            
+            results.lendingApr = await this.feeManagerContract.methods.setLendingAprBps(lendingAprBps).send({
+                from: fromAddress,
+                gas: gas2,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
             // Set Leasing Fee
             const gas3 = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).estimateGas({ from: fromAddress });
-            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({ from: fromAddress, gas: gas3 });
-            
+            results.leasingFee = await this.feeManagerContract.methods.setLeasingFeeBps(leasingFeeBps).send({
+                from: fromAddress,
+                gas: gas3,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
             // Set Treasury
             const gas4 = await this.feeManagerContract.methods.setTreasury(treasuryAddress).estimateGas({ from: fromAddress });
-            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({ from: fromAddress, gas: gas4 });
+            results.treasury = await this.feeManagerContract.methods.setTreasury(treasuryAddress).send({
+                from: fromAddress,
+                gas: gas4,
+                gasPrice: increasedGasPrice.toString(),
+                nonce: currentNonce++
+            });
 
             console.log('[Web3] FeeManager values set successfully');
             return results;
@@ -1183,6 +1563,42 @@ class NFTMarketplaceWeb3 {
         }
     }
 
+    /**
+     * Resolve IPFS URIs with multiple gateways
+     * @private
+     */
+    _resolveIPFS(uri, usePinata = false) {
+        if (!uri) return '';
+        if (typeof uri !== 'string') return '';
+        if (uri.toLowerCase().startsWith('http') && !uri.toLowerCase().includes('/ipfs/')) return uri;
+
+        let hash = '';
+        const lowerUri = uri.toLowerCase();
+        if (lowerUri.startsWith('ipfs://')) {
+            hash = uri.substring(7);
+        } else if (lowerUri.startsWith('ipfs/')) {
+            hash = uri.substring(5);
+        } else if (lowerUri.includes('/ipfs/')) {
+            const ipfsIndex = lowerUri.indexOf('/ipfs/');
+            hash = uri.substring(ipfsIndex + 6).split('?')[0];
+        } else if (uri.match(/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|ba[A-Za-z2-7]{57})$/)) {
+            hash = uri;
+        }
+
+        if (!hash) return uri;
+
+        const gateways = [
+            'https://ipfs.io/ipfs/',
+            'https://gateway.pinata.cloud/ipfs/',
+            'https://nftstorage.link/ipfs/',
+            'https://dweb.link/ipfs/',
+            'https://gateway.ipfs.io/ipfs/'
+        ];
+
+        const primaryGateway = usePinata ? gateways[1] : gateways[0];
+        return `${primaryGateway}${hash}`;
+    }
+
     async isConnected() {
         try {
             return await this.web3.eth.net.isListening();
@@ -1190,9 +1606,219 @@ class NFTMarketplaceWeb3 {
             return false;
         }
     }
-}
+    async getExternalNftMetadata(contractAddress, tokenId) {
+        try {
+            console.log(`[Web3] Fetching external NFT metadata for ${contractAddress} #${tokenId}`);
+
+            // Generic ERC721 ABI + marketplace functions
+            const erc721Abi = [
+                {
+                    "inputs": [],
+                    "name": "name",
+                    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [],
+                    "name": "symbol",
+                    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "tokenURI",
+                    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "ownerOf",
+                    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "getListing",
+                    "outputs": [
+                        {
+                            "components": [
+                                { "internalType": "address", "name": "seller", "type": "address" },
+                                { "internalType": "uint256", "name": "price", "type": "uint256" },
+                                { "internalType": "bool", "name": "isActive", "type": "bool" },
+                                { "internalType": "bool", "name": "isAuction", "type": "bool" },
+                                { "internalType": "uint256", "name": "auctionEndTime", "type": "uint256" },
+                                { "internalType": "uint256", "name": "startingPrice", "type": "uint256" },
+                                { "internalType": "uint256", "name": "highestBid", "type": "uint256" },
+                                { "internalType": "address", "name": "highestBidder", "type": "address" }
+                            ],
+                            "internalType": "struct NFTMarketplace.Listing",
+                            "name": "",
+                            "type": "tuple"
+                        }
+                    ],
+                    "stateMutability": "view",
+                    "type": "function"
+                },
+                // getNFTMetadata for marketplace NFTs - THIS IS THE KEY ADDITION
+                {
+                    "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+                    "name": "getNFTMetadata",
+                    "outputs": [
+                        {
+                            "components": [
+                                { "internalType": "string", "name": "name", "type": "string" },
+                                { "internalType": "string", "name": "description", "type": "string" },
+                                { "internalType": "string", "name": "metadataURI", "type": "string" },
+                                { "internalType": "string", "name": "category", "type": "string" },
+                                { "internalType": "uint256", "name": "royaltyPercentage", "type": "uint256" },
+                                { "internalType": "address", "name": "creator", "type": "address" },
+                                { "internalType": "uint256", "name": "createdAt", "type": "uint256" },
+                                { "internalType": "string", "name": "collection", "type": "string" },
+                                { "internalType": "bool", "name": "exists", "type": "bool" }
+                            ],
+                            "internalType": "struct NFTMarketplace.NFTMetadata",
+                            "name": "",
+                            "type": "tuple"
+                        }
+                    ],
+                    "stateMutability": "view",
+                    "type": "function"
+                }
+            ];
+
+            const contract = new this.web3.eth.Contract(erc721Abi, contractAddress);
+
+            // Fetch on-chain data
+            const [tokenURI, owner, name, symbol] = await Promise.all([
+                contract.methods.tokenURI(tokenId).call().catch(() => ''),
+                contract.methods.ownerOf(tokenId).call().catch(() => null),
+                contract.methods.name().call().catch(() => 'NFT Collection'),
+                contract.methods.symbol().call().catch(() => '')
+            ]);
+
+            if (!owner) {
+                throw new Error('NFT does not exist or owner could not be fetched');
+            }
+
+            // Resolve IPFS URI
+            let metadataUrl = this._resolveIPFS(tokenURI);
+            console.log(`[Web3] Resolved metadata URL: ${metadataUrl} (from tokenURI: ${tokenURI})`);
+
+            // Fetch metadata JSON
+            let metadata = {};
+            try {
+                if (metadataUrl) {
+                    const response = await fetch(metadataUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.startsWith('image/')) {
+                        console.log(`[Web3] Metadata URL points directly to an image: ${metadataUrl}`);
+                        metadata = { image: metadataUrl, name: `NFT #${tokenId}` };
+                    } else {
+                        metadata = await response.json();
+                    }
+                    console.log(`[Web3] Fetched metadata:`, metadata);
+                }
+            } catch (err) {
+                console.warn(`[Web3] Failed to fetch metadata JSON from ${metadataUrl}:`, err.message);
+                // Try fallback if it's an IPFS link
+                if (tokenURI.startsWith('ipfs://') || (tokenURI && !tokenURI.startsWith('http'))) {
+                    const fallbackUrl = this._resolveIPFS(tokenURI, true);
+                    console.log(`[Web3] Trying fallback gateway: ${fallbackUrl}`);
+                    try {
+                        const response = await fetch(fallbackUrl);
+                        if (response.ok) {
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.startsWith('image/')) {
+                                metadata = { image: fallbackUrl, name: `NFT #${tokenId}` };
+                            } else {
+                                metadata = await response.json();
+                            }
+                            console.log(`[Web3] Fetched metadata from fallback:`, metadata);
+                        }
+                    } catch (fallbackErr) {
+                        console.warn(`[Web3] Fallback gateway failed:`, fallbackErr.message);
+                    }
+                }
+            }
+
+            // ========== Try to fetch on-chain metadata using getNFTMetadata ==========
+            try {
+                const onChainMeta = await contract.methods.getNFTMetadata(tokenId).call();
+                console.log('[Web3] On-chain getNFTMetadata result:', onChainMeta);
+
+                if (onChainMeta && onChainMeta.exists) {
+                    // Override with on-chain name and description
+                    if (onChainMeta.name) {
+                        metadata.name = onChainMeta.name;
+                    }
+                    if (onChainMeta.description) {
+                        metadata.description = onChainMeta.description;
+                    }
+                    if (onChainMeta.metadataURI && !metadata.image) {
+                        metadata.image = this._resolveIPFS(onChainMeta.metadataURI);
+                    }
+                    console.log(`[Web3] Using on-chain metadata: name="${metadata.name}", description="${metadata.description}"`);
+                }
+            } catch (e) {
+                console.log('[Web3] getNFTMetadata not available or failed:', e.message);
+            }
+
+            // Resolve image IPFS URI
+            let rawImage = metadata.image || metadata.image_url || '';
+            let imageUrl = this._resolveIPFS(rawImage);
+            console.log(`[Web3] Final resolved image URL: ${imageUrl} (from raw: ${rawImage})`);
+
+            // Optional: try to read on-chain listing info
+            let listingInfo = null;
+            try {
+                const rawListing = await contract.methods.getListing(tokenId).call();
+                if (rawListing) {
+                    const rawPrice = rawListing.price || rawListing[1];
+                    const isActive = typeof rawListing.isActive !== 'undefined' ? rawListing.isActive : rawListing[2];
+                    const isAuction = typeof rawListing.isAuction !== 'undefined' ? rawListing.isAuction : rawListing[3];
+                    const priceEth = rawPrice && rawPrice !== '0'
+                        ? this.web3.utils.fromWei(rawPrice.toString(), 'ether')
+                        : null;
+                    listingInfo = {
+                        seller: rawListing.seller || rawListing[0],
+                        priceEth,
+                        isActive,
+                        isAuction
+                    };
+                    console.log('[Web3] Listing info fetched for external NFT:', listingInfo);
+                }
+            } catch (e) {
+                console.log('[Web3] getListing not supported or failed for external NFT:', e.message);
+            }
+
+            return {
+                success: true,
+                name: metadata.name || `${name} #${tokenId}`,
+                description: metadata.description || '',
+                image: imageUrl,
+                token_uri: tokenURI,
+                owner_address: owner,
+                collection_name: name,
+                symbol: symbol,
+                metadata: metadata,
+                attributes: metadata.attributes || [],
+                listing: listingInfo
+            };
+
+        } catch (error) {
+            console.error(`[Web3] Error fetching external NFT: ${error.message}`);
+            return { success: false, error: error.message };
+        }
+    }
+};
 
 // Create singleton instance
-const web3Instance = new NFTMarketplaceWeb3();
-
-export default web3Instance;
+const web3Utils = new NFTMarketplaceWeb3();
+export default web3Utils;

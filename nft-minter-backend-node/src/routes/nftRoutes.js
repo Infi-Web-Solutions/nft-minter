@@ -20,7 +20,11 @@ import {
     getNftStats,
     trackNftView,
     getCollections,
-    getExternalNft
+    getExternalNft,
+    setNftRentable,
+    createOffer,
+    endAuction,
+    proxyImage
 } from '../controllers/nftController.js';
 
 const router = express.Router();
@@ -43,6 +47,10 @@ router.get('/combined/:combined_id/', getNftByCombinedId);
 
 // External NFT
 router.post('/external/', getExternalNft);
+router.get('/external/:contract/:tokenId/', getExternalNft); // GET route for external NFTs
+
+// Proxy Image (New)
+router.get('/proxy-image', proxyImage);
 
 // Blockchain
 router.get('/contract/info/', getContractInfo);
@@ -55,5 +63,8 @@ router.get('/:nft_id/stats/', getNftStats);
 router.post('/:nft_id/track-view/', trackNftView);
 router.post('/:nft_id/toggle-like/', toggleNftLike);
 router.post('/:token_id/set_listed/', setNftListed);
+router.post('/:token_id/set_rentable/', setNftRentable);
+router.post('/:token_id/offers/create/', createOffer);
+router.post('/:token_id/end-auction/', endAuction);
 
 export default router;

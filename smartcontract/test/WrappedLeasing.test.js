@@ -38,6 +38,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1000,
             "ipfs://metadata",
+            owner.address,
             { value: 0 }
         );
 
@@ -88,6 +89,63 @@ describe("WrappedLeasing", function () {
         expect(await nft.ownerOf(1)).to.equal(owner.address);
     });
 
+    it("blocks wrap when paused", async function () {
+        await wrapped.connect(admin).pause();
+        await nft.connect(owner).approve(wrapped.target, 1);
+        await expect(
+            wrapped.connect(owner).wrap(
+                nft.target,
+                1,
+                renter.address,
+                100,
+                "",
+                owner.address,
+                { value: 0 }
+            )
+        ).to.be.revertedWithCustomError(wrapped, "EnforcedPause");
+    });
+
+    it("takes fee when set", async function () {
+        await feeManager.connect(admin).setLeasingFeeBps(500); // 5%
+        await nft.connect(owner).approve(wrapped.target, 1);
+        const duration = 1000;
+        const fee = (BigInt(duration) * 500n) / 10000n;
+        await wrapped.connect(owner).wrap(
+            nft.target,
+            1,
+            renter.address,
+            duration,
+            "",
+            owner.address,
+            { value: fee }
+        );
+    });
+
+    it("force expires after grace and returns NFT", async function () {
+        await feeManager.connect(admin).setLeasingFeeBps(0);
+        await wrapped.connect(admin).setGracePeriod(2);
+
+        await nft.connect(owner).approve(wrapped.target, 1);
+        const wrapTx = await wrapped.connect(owner).wrap(
+            nft.target,
+            1,
+            renter.address,
+            1, // 1s duration
+            "",
+            owner.address,
+            { value: 0 }
+        );
+        const rcpt = await wrapTx.wait();
+        const wId = rcpt.logs.find(l => l.fragment && l.fragment.name === "Wrapped").args.wId;
+
+        // wait past expiry + grace
+        await ethers.provider.send("evm_increaseTime", [5]);
+        await ethers.provider.send("evm_mine");
+
+        await wrapped.connect(other).forceExpire(wId);
+        expect(await nft.ownerOf(1)).to.equal(owner.address);
+    });
+
     // -------------------------
     // 3. UNWRAP AFTER EXPIRY
     // -------------------------
@@ -100,6 +158,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1, // 1 second duration
             "",
+            owner.address,
             { value: 0 }
         );
         const txRcpt = await wrapTx.wait();
@@ -128,6 +187,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1000,
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -150,6 +210,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1,
             "",
+            owner.address,
             { value: 0 }
         );
 
@@ -177,6 +238,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             1000,
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -199,6 +261,7 @@ describe("WrappedLeasing", function () {
             renter.address,
             100,
             "",
+            owner.address,
             { value: 0 }
         );
         const rcpt = await wrapTx.wait();
@@ -228,6 +291,7 @@ describe("WrappedLeasing", function () {
                 renter.address,
                 1000,
                 "",
+                owner.address,
                 { value: 0 } // no fee
             )
         ).to.be.revertedWith("insufficient fee");

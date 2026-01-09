@@ -1,0 +1,12 @@
+{
+  "network": "testnet",
+  "chainId": "11155111",
+  "contractAddress": "0xEf4521C13E1A93d436b500a6885CfbddeAb59635",
+  "contractName": "NFTMarketplace",
+  "deployer": "0xB6795a27f271dA619c457fEC2dEC1c9afbB2f561",
+  "deploymentTime": "2025-12-17T11:23:26.506Z",
+  "deploymentTimeMs": "9.76",
+  "owner": "0xB6795a27f271dA619c457fEC2dEC1c9afbB2f561",
+  "marketplaceFee": "250",
+  "transactionHash": "0x663ba52f7318961e3d2c751b3e15ed167fdb9cd831db2e294b5869c12890a4f1"
+}
